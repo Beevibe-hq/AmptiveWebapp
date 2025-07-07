@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes wavy-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes hero-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.wavy-gradient-animation {
+  animation: wavy-gradient 15s ease infinite;
+}
+
+.hero-gradient-bg {
+  background: linear-gradient(45deg, #1A052E, #4B0082, #8A2BE2, #4B0082, #1A052E);
+  background-size: 300% 300%;
+  animation: hero-gradient 8s ease-in-out infinite;
+}
