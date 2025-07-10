@@ -2,6 +2,10 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Users, Star, Calendar, DollarSign } from 'lucide-react';
 import QRCodeGenerator from '../components/QRCodeGenerator';
+import EventCard from '../components/EventCard';
+import brewhouseImage from '../assets/brewhouse.png';
+import promoGif from '../assets/GIF promo (1mouth analog) v2.gif';
+import karaImage from '../assets/kara.png';
 
 interface HeroSlideProps {
   title: string;
@@ -445,6 +449,353 @@ const Homepage: React.FC = () => {
         </div>
       </div>
       
+      {/* Upcoming Events Section */}
+      <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
+        <div className="flex justify-between items-center mb-8">
+          <h2 className="text-2xl font-bold text-black">Upcoming Events</h2>
+        </div>
+        
+        {/* Events Grid - 2 rows max on desktop/tablet, horizontal scroll on mobile */}
+        <div className="relative">
+          {/* Desktop/Tablet Grid (2 rows, 5 cards per row) */}
+          <div className="hidden sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 max-h-[900px] overflow-hidden">
+          {/* Example Event Card 1 - Video */}
+          <EventCard
+            title="Karaoke Traffic Vibes"
+            location="Lekki Phase 1, Lagos"
+            status="Upcoming"
+            price={[
+              { type: 'Regular', price: 5000 },
+              { type: 'VIP', price: 10000 },
+              { type: 'VVIP', price: 20000 }
+            ]}
+            date="2025-07-12T20:00:00"
+            media={{
+              type: 'image',
+              src: karaImage,
+              alt: 'Karaoke Traffic Vibes'
+            }}
+          />
+          
+          {/* Example Event Card 2 - GIF */}
+          <EventCard
+            title="Clinton Flames"
+            location="Victoria Island, Lagos"
+            status="Upcoming"
+            price={10000}
+            date="2025-07-13T19:30:00"
+            media={{
+              type: 'image',
+              src: 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp',
+              alt: 'Clinton Flames'
+            }}
+          />
+          
+          {/* Example Event Card 3 - Local Image */}
+          <EventCard
+            title="1analog Girl"
+            location="Ikeja, Lagos"
+            status="Live Now"
+            price={0}
+            date="2025-07-07T22:00:00"
+            media={{
+              type: 'gif',
+              src: promoGif,
+              alt: '1analog Girl',
+              autoplay: true,
+              loop: true
+            }}
+          />
+          
+          {/* Example Event Card 4 - Remote Image */}
+          <EventCard
+            title="Reekado Banks Live In Abuja"
+            location="Garki, Abuja"
+            status="Registration Open"
+            price={[
+              { type: 'Early Bird', price: 2000 },
+              { type: 'Regular', price: 5000 },
+              { type: 'VIP', price: 10000 }
+            ]}
+            date="2025-07-20T21:00:00"
+            media={{
+              type: 'image',
+              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp',
+              alt: 'Reekado Banks Live In Abuja'
+            }}
+          />
+          
+          {/* Example Event Card 5 - Another Video */}
+          <EventCard
+            title="House Party/pool Party"
+            location="Ikoyi, Lagos"
+            status="Live Now"
+            price={10000}
+            date="2025-07-07T23:30:00"
+            media={{
+              type: 'image',
+              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751906823/yflortvspnhc5idiol9t.webp',
+              alt: 'House Party/pool Party'
+            }}
+          />
+          
+          {/* Second Row - New Events */}
+          <EventCard
+            title="Afrobeat Night Live"
+            location="Yaba, Lagos"
+            status="Upcoming"
+            price={[
+              { type: 'Early Bird', price: 3000 },
+              { type: 'Regular', price: 5000 },
+              { type: 'VIP', price: 8000 }
+            ]}
+            date="2025-07-25T21:00:00"
+            media={{
+              type: 'image',
+              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752002405/mgoz620c4yjyeb0xa6hd.webp',
+              alt: 'Afrobeat Night Live',
+            }}
+          />
+          
+          <EventCard
+            title="Tech Conference 2025"
+            location="Maitama, Abuja"
+            status="Registration Open"
+            price={15000}
+            date="2025-08-05T09:00:00"
+            media={{
+              type: 'image',
+              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751984779/nlhtme0suacdfjyypc8s.webp',
+              alt: 'Tech Conference 2025',
+            }}
+          />
+          
+          <EventCard
+            title="Art Exhibition"
+            location="Wuse, Abuja"
+            status="Upcoming"
+            price={0}
+            date="2025-07-30T10:00:00"
+            media={{
+              type: 'image',
+              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961673/yzh40wdpkykt96kogcam.webp',
+              alt: 'Art Exhibition',
+            }}
+          />
+          
+          <EventCard
+            title="Food Festival"
+            location="GRA, Port Harcourt"
+            status="Live Now"
+            price={[
+              { type: 'Tasting Pass', price: 5000 },
+              { type: 'VIP Experience', price: 15000 }
+            ]}
+            date="2025-07-10T12:00:00"
+            media={{
+              type: 'image',
+              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961662/ltctlgwlgfma1hzlfs1q.webp',
+              alt: 'Food Festival',
+            }}
+          />
+          
+          <EventCard
+            title="Jazz Night"
+            location="GRA, Ilorin"
+            status="Upcoming"
+            price={[
+              { type: 'Standard', price: 7000 },
+              { type: 'VIP', price: 12000 }
+            ]}
+            date="2025-08-15T20:00:00"
+            media={{
+              type: 'image',
+              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
+              alt: 'Jazz Night',
+            }}
+          />
+          
+          {/* Third row removed as per user request */}
+          </div>
+          
+          {/* Show More Button for Desktop/Tablet */}
+          <div className="mt-10 w-full hidden sm:block">
+            <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200" style={{ paddingLeft: '2rem', paddingRight: '2rem' }}>
+              View more events
+            </button>
+          </div>
+          
+          {/* Mobile Layout */}
+          <div className="sm:hidden">
+            {/* Horizontal Scrollable Cards */}
+            <div className="-mx-4 px-4 overflow-x-auto pb-4">
+              <div className="flex space-x-4 w-max">
+                {[
+                  /* First 10 events */
+                  {
+                    title: "Karaoke Traffic Vibes",
+                    location: "Lekki Phase 1, Lagos",
+                    status: "Upcoming",
+                    price: [
+                      { type: 'Regular', price: 5000 },
+                      { type: 'VIP', price: 10000 },
+                      { type: 'VVIP', price: 20000 }
+                    ],
+                    date: "2025-07-12T20:00:00",
+                    media: {
+                      type: 'image',
+                      src: karaImage,
+                      alt: 'Karaoke Traffic Vibes'
+                    }
+                  },
+                  {
+                    title: "Clinton Flames",
+                    location: "Victoria Island, Lagos",
+                    status: "Upcoming",
+                    price: 10000,
+                    date: "2025-07-13T19:30:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp',
+                      alt: 'Clinton Flames'
+                    }
+                  },
+                  {
+                    title: "1analog Girl",
+                    location: "Ikeja, Lagos",
+                    status: "Live Now",
+                    price: 0,
+                    date: "2025-07-07T22:00:00",
+                    media: {
+                      type: 'gif',
+                      src: promoGif,
+                      alt: '1analog Girl',
+                      autoplay: true,
+                      loop: true
+                    }
+                  },
+                  {
+                    title: "Reekado Banks Live In Abuja",
+                    location: "Garki, Abuja",
+                    status: "Registration Open",
+                    price: [
+                      { type: 'Early Bird', price: 2000 },
+                      { type: 'Regular', price: 5000 },
+                      { type: 'VIP', price: 10000 }
+                    ],
+                    date: "2025-07-20T21:00:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp',
+                      alt: 'Reekado Banks Live In Abuja'
+                    }
+                  },
+                  {
+                    title: "House Party/pool Party",
+                    location: "Ikoyi, Lagos",
+                    status: "Live Now",
+                    price: 10000,
+                    date: "2025-07-07T23:30:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751906823/yflortvspnhc5idiol9t.webp',
+                      alt: 'House Party/pool Party'
+                    }
+                  },
+                  {
+                    title: "Afrobeat Night Live",
+                    location: "Yaba, Lagos",
+                    status: "Upcoming",
+                    price: [
+                      { type: 'Early Bird', price: 3000 },
+                      { type: 'Regular', price: 5000 },
+                      { type: 'VIP', price: 8000 }
+                    ],
+                    date: "2025-07-25T21:00:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752002405/mgoz620c4yjyeb0xa6hd.webp',
+                      alt: 'Afrobeat Night Live'
+                    }
+                  },
+                  {
+                    title: "Tech Conference 2025",
+                    location: "Maitama, Abuja",
+                    status: "Registration Open",
+                    price: 15000,
+                    date: "2025-08-05T09:00:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751984779/nlhtme0suacdfjyypc8s.webp',
+                      alt: 'Tech Conference 2025'
+                    }
+                  },
+                  {
+                    title: "Art Exhibition",
+                    location: "Wuse, Abuja",
+                    status: "Upcoming",
+                    price: 0,
+                    date: "2025-07-30T10:00:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961673/yzh40wdpkykt96kogcam.webp',
+                      alt: 'Art Exhibition'
+                    }
+                  },
+                  {
+                    title: "Food Festival",
+                    location: "GRA, Port Harcourt",
+                    status: "Live Now",
+                    price: [
+                      { type: 'Tasting Pass', price: 5000 },
+                      { type: 'VIP Experience', price: 15000 }
+                    ],
+                    date: "2025-07-10T12:00:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961662/ltctlgwlgfma1hzlfs1q.webp',
+                      alt: 'Food Festival'
+                    }
+                  },
+                  {
+                    title: "Jazz Night",
+                    location: "GRA, Ilorin",
+                    status: "Upcoming",
+                    price: [
+                      { type: 'Standard', price: 7000 },
+                      { type: 'VIP', price: 12000 }
+                    ],
+                    date: "2025-08-15T20:00:00",
+                    media: {
+                      type: 'image',
+                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
+                      alt: 'Jazz Night'
+                    }
+                  }
+                ].map((event, index) => (
+                  <div key={index} className="w-64 flex-shrink-0">
+                    <EventCard
+                      title={event.title}
+                      status={event.status}
+                      price={event.price}
+                      date={event.date}
+                      media={event.media}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Show More Button for Mobile - Now outside the scrollable area */}
+            <div className="mt-6 w-full px-4">
+              <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
+                View more events
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Rest of the homepage content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Add your homepage sections here */}
