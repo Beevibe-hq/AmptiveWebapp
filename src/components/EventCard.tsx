@@ -11,8 +11,6 @@ const formatEventDate = (dateString?: string): string => {
   const currentDate = new Date(); // Get current date for comparison
   
   const currentDay = today.getDay();
-  const currentMonth = today.getMonth();
-  const currentYear = today.getFullYear();
   
   // Calculate start of current week (Sunday)
   const startOfWeek = new Date(today);
@@ -38,7 +36,7 @@ const formatEventDate = (dateString?: string): string => {
   }
 };
 
-interface MediaSource {
+export interface MediaSource {
   type: MediaType;
   src: string;
   alt?: string;
@@ -51,13 +49,6 @@ interface MediaSource {
 // Format price with Naira symbol and thousand separators
 const formatPrice = (price: number): string => {
   return `₦${price.toLocaleString()}`;
-};
-
-// Generate a random price between min and max (in thousands)
-const generateRandomPrice = (min: number, max: number): number => {
-  const random = Math.floor(Math.random() * (max - min + 1)) + min;
-  // Round to nearest 500
-  return Math.round(random / 500) * 500;
 };
 
 interface TicketPrice {

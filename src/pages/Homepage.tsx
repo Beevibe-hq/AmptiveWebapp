@@ -1,15 +1,46 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import toast, { Toaster } from 'react-hot-toast';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Users, Star, Calendar, DollarSign } from 'lucide-react';
-import QRCodeGenerator from '../components/QRCodeGenerator';
-import EventCard from '../components/EventCard';
-import brewhouseImage from '../assets/brewhouse.png';
-import promoGif from '../assets/GIF promo (1mouth analog) v2.gif';
+import { Calendar } from 'lucide-react';
+import EventCard, { MediaSource } from '../components/EventCard';
+import GeometricPattern from '../components/GeometricPattern';
+
+interface EventType {
+  id: number;
+  title: string;
+  location: string;
+  country: string;
+  status: string;
+  price: number | Array<{ type: string; price: number }>;
+  date: string;
+  media: MediaSource;
+}
+
 import karaImage from '../assets/kara.png';
+import communityMusicImage from '../assets/Community card 1.png';
+import communityFoodImage from '../assets/Community card 4.png';
+import communityArtImage from '../assets/Community card 2.png';
+
+const techConferenceCardStyles = `
+  .tech-conference-card p {
+    color: white !important;
+  }
+  .tech-conference-card p.text-gray-500 {
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+`;
+
+import communityTechImage from '../assets/Community card 5.png';
+import communitySportsImage from '../assets/Community card 6 (1).png';
+import communityFashionImage from '../assets/Community card 8.png';
+import communityGamingImage from '../assets/Community card 9.png';
+import communityHealthImage from '../assets/Community card 10.png';
+import communityEducationImage from '../assets/Community card 11.png';
+import communityTravelImage from '../assets/Community card 16.png';
 
 interface HeroSlideProps {
   title: string;
-  mobileTitle?: string;
   description: string;
   ctaText: string;
   ctaLink: string;
@@ -24,8 +55,7 @@ interface HeroSlideProps {
 }
 
 const HeroSlide: React.FC<HeroSlideProps> = ({ 
-  title, 
-  mobileTitle,
+  title,
   description, 
   ctaText, 
   ctaLink, 
@@ -254,9 +284,340 @@ const SLIDES = [
 ];
 
 const Homepage: React.FC = () => {
+  // Add styles for tech-conference-card
+  useEffect(() => {
+    const styleTag = document.createElement('style');
+    styleTag.textContent = techConferenceCardStyles;
+    document.head.appendChild(styleTag);
+    
+    return () => {
+      document.head.removeChild(styleTag);
+    };
+  }, []);
+
+  // State for filter dropdowns
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isTopEventsFilterOpen, setIsTopEventsFilterOpen] = useState(false);
+  const [userCountry, setUserCountry] = useState('Loading...');
+  const [showAllTopEvents, setShowAllTopEvents] = useState(false);
+  const [filters, setFilters] = useState({
+    country: 'Loading...',
+    priceRange: { min: '', max: '' },
+    dateRange: { start: '', end: '' },
+  });
+  const [filteredEvents, setFilteredEvents] = useState<EventType[]>([]);
+
+  // Get user's country on component mount
+  useEffect(() => {
+    const fetchUserCountry = async () => {
+      try {
+        const response = await fetch('https://ipapi.co/json/');
+        const data = await response.json();
+        setUserCountry(data.country_name || 'Nigeria');
+        setFilters(prev => ({
+          ...prev,
+          country: data.country_name || 'Nigeria'
+        }));
+      } catch (error) {
+        console.error('Error fetching user country:', error);
+        setUserCountry('Nigeria');
+        setFilters(prev => ({
+          ...prev,
+          country: 'Nigeria'
+        }));
+      }
+    };
+
+    fetchUserCountry();
+  }, []);
+
+  // Sample events data
+  const events = [
+    {
+      id: 1,
+      title: "Karaoke Traffic Vibes",
+      location: "Lekki Phase 1, Lagos",
+      country: "Nigeria",
+      status: "Upcoming",
+      price: [
+        { type: 'Regular', price: 5000 },
+        { type: 'VIP', price: 10000 },
+        { type: 'VVIP', price: 20000 }
+      ],
+      date: "2025-07-12T20:00:00",
+      media: {
+        type: 'image' as const,
+        src: karaImage,
+        alt: 'Karaoke Traffic Vibes'
+      } as MediaSource
+    },
+    {
+      id: 2,
+      title: "Clinton Flames",
+      location: "Victoria Island, Lagos",
+      country: "Nigeria",
+      status: "Upcoming",
+      price: 10000,
+      date: "2025-07-13T19:30:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp',
+        alt: 'Clinton Flames'
+      } as MediaSource
+    },
+    {
+      id: 3,
+      title: "1analog Girl",
+      location: "Ikeja, Lagos",
+      country: "Nigeria",
+      status: "Live Now",
+      price: 0,
+      date: "2025-07-07T22:00:00",
+      media: {
+        type: 'gif' as const,
+        src: 'http://localhost:3000/src/assets/GIF%20promo%20(1mouth%20analog)%20v2.gif',
+        alt: '1analog Girl',
+        autoplay: true,
+        loop: true
+      } as MediaSource
+    },
+    {
+      id: 4,
+      title: "Reekado Banks Live In Abuja",
+      location: "Garki, Abuja",
+      country: "Nigeria",
+      status: "Registration Open",
+      price: [
+        { type: 'Early Bird', price: 2000 },
+        { type: 'Regular', price: 5000 },
+        { type: 'VIP', price: 10000 }
+      ],
+      date: "2025-07-20T21:00:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp',
+        alt: 'Reekado Banks Live In Abuja'
+      } as MediaSource
+    },
+    {
+      id: 5,
+      title: "House Party/pool Party",
+      location: "Ikoyi, Lagos",
+      country: "Nigeria",
+      status: "Live Now",
+      price: 10000,
+      date: "2025-07-07T23:30:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751906823/yflortvspnhc5idiol9t.webp',
+        alt: 'House Party/pool Party'
+      } as MediaSource
+    },
+    {
+      id: 6,
+      title: "Afrobeat Night Live",
+      location: "Yaba, Lagos",
+      country: "Nigeria",
+      status: "Upcoming",
+      price: [
+        { type: 'Early Bird', price: 3000 },
+        { type: 'Regular', price: 5000 },
+        { type: 'VIP', price: 8000 }
+      ],
+      date: "2025-07-25T21:00:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752002405/mgoz620c4yjyeb0xa6hd.webp',
+        alt: 'Afrobeat Night Live',
+      } as MediaSource
+    },
+    {
+      id: 7,
+      title: "Tech Conference 2025",
+      location: "Maitama, Abuja",
+      country: "Nigeria",
+      status: "Registration Open",
+      price: 15000,
+      date: "2025-08-05T09:00:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751984779/nlhtme0suacdfjyypc8s.webp',
+        alt: 'Tech Conference 2025',
+      } as MediaSource
+    },
+    {
+      id: 8,
+      title: "Art Exhibition",
+      location: "Wuse, Abuja",
+      country: "Nigeria",
+      status: "Upcoming",
+      price: 0,
+      date: "2025-07-30T10:00:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961673/yzh40wdpkykt96kogcam.webp',
+        alt: 'Art Exhibition',
+      } as MediaSource
+    },
+    {
+      id: 9,
+      title: "Food Festival",
+      location: "GRA, Port Harcourt",
+      country: "Nigeria",
+      status: "Live Now",
+      price: [
+        { type: 'Tasting Pass', price: 5000 },
+        { type: 'VIP Experience', price: 15000 }
+      ],
+      date: "2025-07-10T12:00:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961662/ltctlgwlgfma1hzlfs1q.webp',
+        alt: 'Food Festival',
+      } as MediaSource
+    },
+    {
+      id: 10,
+      title: "Jazz Night",
+      location: "GRA, Ilorin",
+      country: "Nigeria",
+      status: "Upcoming",
+      price: [
+        { type: 'Standard', price: 7000 },
+        { type: 'VIP', price: 12000 }
+      ],
+      date: "2025-08-15T20:00:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
+        alt: 'Jazz Night',
+      } as MediaSource
+    },
+    {
+      id: 11,
+      title: "Amptive Live Session",
+      location: "Amptive",
+      country: "Global",
+      status: "Live Now",
+      price: 0,
+      date: "2025-07-17T20:00:00",
+      media: {
+        type: 'image' as const,
+        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
+        alt: 'Amptive Live Session',
+      } as MediaSource
+    }
+  ];
+
+  // Initialize filtered events with all events
+  useEffect(() => {
+    setFilteredEvents(events);
+  }, []);
+
+  // Filter events based on filters
+  const applyFilters = () => {
+    let result = [...events];
+    
+    // Filter by country
+    if (filters.country) {
+      result = result.filter(event => 
+        event.country.toLowerCase().includes(filters.country.toLowerCase())
+      );
+    }
+    
+    // Filter by price range
+    if (filters.priceRange.min || filters.priceRange.max) {
+      const minPrice = filters.priceRange.min ? parseFloat(filters.priceRange.min) : 0;
+      const maxPrice = filters.priceRange.max ? parseFloat(filters.priceRange.max) : Infinity;
+      
+      result = result.filter(event => {
+        const eventPrice = Array.isArray(event.price) 
+          ? Math.min(...event.price.map(p => p.price))
+          : event.price;
+        return eventPrice >= minPrice && eventPrice <= maxPrice;
+      });
+    }
+    
+    // Filter by date range
+    if (filters.dateRange.start || filters.dateRange.end) {
+      const startDate = filters.dateRange.start ? new Date(filters.dateRange.start) : null;
+      const endDate = filters.dateRange.end ? new Date(filters.dateRange.end) : null;
+      
+      if (startDate) {
+        startDate.setHours(0, 0, 0, 0);
+      }
+      if (endDate) {
+        endDate.setHours(23, 59, 59, 999);
+      }
+      
+      result = result.filter(event => {
+        const eventDate = new Date(event.date);
+        if (startDate && endDate) {
+          return eventDate >= startDate && eventDate <= endDate;
+        } else if (startDate) {
+          return eventDate >= startDate;
+        } else if (endDate) {
+          return eventDate <= endDate;
+        }
+        return true;
+      });
+    }
+    
+    setFilteredEvents(result);
+    setIsFilterOpen(false);
+  };
+
+  const handleFilterChange = (field: 'country' | 'priceRange' | 'dateRange', value: any) => {
+    if (field === 'priceRange' || field === 'dateRange') {
+      setFilters(prev => ({
+        ...prev,
+        [field]: {
+          ...prev[field],
+          ...value
+        }
+      }));
+    } else {
+      setFilters(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      country: userCountry,
+      priceRange: { min: '', max: '' },
+      dateRange: { start: '', end: '' },
+    });
+    setFilteredEvents(events);
+  };
+
+  // Close filter when clicking outside
+  const filterRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+        setIsFilterOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const toggleFilter = () => {
+    setIsFilterOpen(!isFilterOpen);
+  };
   // State for carousel
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<'shows' | 'events'>('shows');
   const [progressBars, setProgressBars] = useState<number[]>(Array(SLIDES.length).fill(0));
   const sliderRef = useRef<HTMLDivElement>(null);
   const progressInterval = useRef<NodeJS.Timeout>();
@@ -291,6 +652,89 @@ const Homepage: React.FC = () => {
     goToSlide((currentSlide - 1 + SLIDES.length) % SLIDES.length);
   };
   
+  const cardsContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(true);
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+  
+  // Define colors for each card with matching border colors
+  const cardColors = [
+    'bg-purple-50 border-purple-100',
+    'bg-orange-50 border-orange-100',
+    'bg-blue-50 border-blue-100',
+    'bg-indigo-50 border-indigo-100',
+    'bg-green-50 border-green-100',
+    'bg-pink-50 border-pink-100',
+    'bg-yellow-50 border-yellow-100',
+    'bg-teal-50 border-teal-100',
+    'bg-cyan-50 border-cyan-100',
+    'bg-amber-50 border-amber-100'
+  ];
+
+  const checkScroll = () => {
+    const container = cardsContainerRef.current;
+    if (!container) return;
+    
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    setShowLeftArrow(scrollLeft > 0);
+    setShowRightArrow(scrollLeft < scrollWidth - clientWidth - 1);
+    
+    // Find which card is most visible on the left
+    const cards = container.querySelectorAll('.community-card');
+    let mostVisibleIndex = 0;
+    let maxVisibleArea = 0;
+    const containerRect = container.getBoundingClientRect();
+    
+    cards.forEach((card, index) => {
+      const rect = card.getBoundingClientRect();
+      
+      // Calculate visible area
+      const visibleLeft = Math.max(rect.left, containerRect.left);
+      const visibleRight = Math.min(rect.right, containerRect.right);
+      const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+      
+      // If this card has more visible area than the current max, update
+      if (visibleWidth > maxVisibleArea) {
+        maxVisibleArea = visibleWidth;
+        mostVisibleIndex = index;
+      }
+    });
+    
+    setActiveCardIndex(mostVisibleIndex);
+  };
+
+  const scrollCards = (direction: 'left' | 'right') => {
+    if (!cardsContainerRef.current) return;
+    
+    const scrollAmount = direction === 'left' ? -300 : 300;
+    cardsContainerRef.current.scrollBy({
+      left: scrollAmount,
+      behavior: 'smooth'
+    });
+  };
+
+  useEffect(() => {
+    const container = cardsContainerRef.current;
+    const handleResize = () => {
+      checkScroll();
+    };
+    
+    if (container) {
+      container.addEventListener('scroll', checkScroll);
+      window.addEventListener('resize', handleResize);
+      // Initial check with a small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        checkScroll();
+      }, 100);
+      
+      return () => {
+        container.removeEventListener('scroll', checkScroll);
+        window.removeEventListener('resize', handleResize);
+        clearTimeout(timer);
+      };
+    }
+  }, []);
+
   // Toggle pause state
   const togglePause = () => {
     setIsPaused(prev => !prev);
@@ -453,329 +897,590 @@ const Homepage: React.FC = () => {
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-2xl font-bold text-black">Upcoming Events</h2>
+          <div className="relative" ref={filterRef}>
+            <button 
+              onClick={toggleFilter}
+              className="flex items-center space-x-1 text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
+              </svg>
+              <span className="text-sm font-medium">Filter</span>
+            </button>
+            
+
+
+            {/* Upcoming Events Filter Panel */}
+            {isFilterOpen && (
+              <div className="fixed inset-0 z-50 flex justify-end backdrop-blur-sm" onClick={() => setIsFilterOpen(false)}>
+                <div 
+                  className="h-full w-full md:w-[380px] md:h-[95vh] bg-white flex flex-col overflow-y-auto md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-4px_0_15px_rgba(0,0,0,0.1)]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header with search and close button */}
+                  <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                    <form className="relative flex-1 mr-2">
+                      <input 
+                        type="text" 
+                        className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent" 
+                        placeholder="Search for events..." 
+                      />
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        width="24" 
+                        height="24" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        className="lucide lucide-search absolute left-3 top-2.5 w-4 h-4 text-gray-400"
+                      >
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.3-4.3"></path>
+                      </svg>
+                    </form>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsFilterOpen(false);
+                      }}
+                      className="p-2 text-gray-500 hover:text-gray-700" 
+                      aria-label="Close menu"
+                    >
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        width="24" 
+                        height="24" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        className="lucide lucide-x w-6 h-6"
+                      >
+                        <path d="M18 6 6 18"></path>
+                        <path d="m6 6 12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="py-4 bg-white px-4 space-y-4">
+                    <h3 className="text-lg font-semibold mb-3">Country</h3>
+                    <div className="relative">
+                      <div className="relative group">
+                        <div className="relative">
+                          <select
+                            value={filters.country}
+                            onChange={(e) => handleFilterChange('country', e.target.value)}
+                            className="w-full pl-4 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-lg appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer shadow-sm hover:border-gray-300"
+                          >
+                            <option value="" className="text-gray-700">Select a country</option>
+                            <option value="Amptive" className="text-gray-700">Amptive App</option>
+                            <option value="Nigeria" className="text-gray-700">Nigeria</option>
+                            <option value="United States" className="text-gray-700">United States</option>
+                            <option value="United Kingdom" className="text-gray-700">United Kingdom</option>
+                            <option value="Canada" className="text-gray-700">Canada</option>
+                            <option value="Ghana" className="text-gray-700">Ghana</option>
+                            <option value="South Africa" className="text-gray-700">South Africa</option>
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Price Range Filter */}
+                    <div className="border-t border-gray-100 pt-4">
+                      <h3 className="text-lg font-semibold mb-3">Price Range</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Min</label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <span className="text-gray-500">₦</span>
+                            </div>
+                            <input
+                              type="number"
+                              placeholder="Min"
+                              value={filters.priceRange.min}
+                              onChange={(e) => handleFilterChange('priceRange', { min: e.target.value })}
+                              className="pl-8 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Max</label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <span className="text-gray-500">₦</span>
+                            </div>
+                            <input
+                              type="number"
+                              placeholder="Max"
+                              value={filters.priceRange.max}
+                              onChange={(e) => handleFilterChange('priceRange', { max: e.target.value })}
+                              className="pl-8 w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Date Range Filter */}
+                    <div className="border-t border-gray-100 pt-4">
+                      <h3 className="text-lg font-semibold mb-3">Date</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                          <div className="relative">
+                            <div className="relative w-full">
+                              <input
+                                type="date"
+                                value={filters.dateRange.start}
+                                onChange={(e) => handleFilterChange('dateRange', { start: e.target.value })}
+                                className="w-full pl-4 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-text shadow-sm hover:border-gray-300 [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                              />
+                              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                <Calendar className="w-4 h-4 text-gray-500" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                          <div className="relative">
+                            <div className="relative w-full">
+                              <input
+                                type="date"
+                                value={filters.dateRange.end}
+                                onChange={(e) => handleFilterChange('dateRange', { end: e.target.value })}
+                                min={filters.dateRange.start}
+                                className="w-full pl-4 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-text shadow-sm hover:border-gray-300 [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                              />
+                              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                <Calendar className="w-4 h-4 text-gray-500" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer with action buttons */}
+                  <div className="p-4 space-y-3 border-t border-gray-100">
+                    <button 
+                      onClick={clearFilters}
+                      className="w-full px-4 py-2.5 text-center text-base font-medium text-gray-800 hover:bg-gray-50 rounded-full border border-gray-200"
+                    >
+                      Clear All
+                    </button>
+                    <button 
+                      onClick={applyFilters}
+                      className="w-full px-4 py-2.5 text-center text-base font-bold text-white bg-black hover:bg-gray-800 rounded-full"
+                    >
+                      Show Results
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         
-        {/* Events Grid - 2 rows max on desktop/tablet, horizontal scroll on mobile */}
+        {/* Events Grid - Horizontal scroll on desktop, single row */}
         <div className="relative">
-          {/* Desktop/Tablet Grid (2 rows, 5 cards per row) */}
-          <div className="hidden sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 max-h-[900px] overflow-hidden">
-          {/* Example Event Card 1 - Video */}
-          <EventCard
-            title="Karaoke Traffic Vibes"
-            location="Lekki Phase 1, Lagos"
-            status="Upcoming"
-            price={[
-              { type: 'Regular', price: 5000 },
-              { type: 'VIP', price: 10000 },
-              { type: 'VVIP', price: 20000 }
-            ]}
-            date="2025-07-12T20:00:00"
-            media={{
-              type: 'image',
-              src: karaImage,
-              alt: 'Karaoke Traffic Vibes'
-            }}
-          />
-          
-          {/* Example Event Card 2 - GIF */}
-          <EventCard
-            title="Clinton Flames"
-            location="Victoria Island, Lagos"
-            status="Upcoming"
-            price={10000}
-            date="2025-07-13T19:30:00"
-            media={{
-              type: 'image',
-              src: 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp',
-              alt: 'Clinton Flames'
-            }}
-          />
-          
-          {/* Example Event Card 3 - Local Image */}
-          <EventCard
-            title="1analog Girl"
-            location="Ikeja, Lagos"
-            status="Live Now"
-            price={0}
-            date="2025-07-07T22:00:00"
-            media={{
-              type: 'gif',
-              src: promoGif,
-              alt: '1analog Girl',
-              autoplay: true,
-              loop: true
-            }}
-          />
-          
-          {/* Example Event Card 4 - Remote Image */}
-          <EventCard
-            title="Reekado Banks Live In Abuja"
-            location="Garki, Abuja"
-            status="Registration Open"
-            price={[
-              { type: 'Early Bird', price: 2000 },
-              { type: 'Regular', price: 5000 },
-              { type: 'VIP', price: 10000 }
-            ]}
-            date="2025-07-20T21:00:00"
-            media={{
-              type: 'image',
-              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp',
-              alt: 'Reekado Banks Live In Abuja'
-            }}
-          />
-          
-          {/* Example Event Card 5 - Another Video */}
-          <EventCard
-            title="House Party/pool Party"
-            location="Ikoyi, Lagos"
-            status="Live Now"
-            price={10000}
-            date="2025-07-07T23:30:00"
-            media={{
-              type: 'image',
-              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751906823/yflortvspnhc5idiol9t.webp',
-              alt: 'House Party/pool Party'
-            }}
-          />
-          
-          {/* Second Row - New Events */}
-          <EventCard
-            title="Afrobeat Night Live"
-            location="Yaba, Lagos"
-            status="Upcoming"
-            price={[
-              { type: 'Early Bird', price: 3000 },
-              { type: 'Regular', price: 5000 },
-              { type: 'VIP', price: 8000 }
-            ]}
-            date="2025-07-25T21:00:00"
-            media={{
-              type: 'image',
-              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752002405/mgoz620c4yjyeb0xa6hd.webp',
-              alt: 'Afrobeat Night Live',
-            }}
-          />
-          
-          <EventCard
-            title="Tech Conference 2025"
-            location="Maitama, Abuja"
-            status="Registration Open"
-            price={15000}
-            date="2025-08-05T09:00:00"
-            media={{
-              type: 'image',
-              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751984779/nlhtme0suacdfjyypc8s.webp',
-              alt: 'Tech Conference 2025',
-            }}
-          />
-          
-          <EventCard
-            title="Art Exhibition"
-            location="Wuse, Abuja"
-            status="Upcoming"
-            price={0}
-            date="2025-07-30T10:00:00"
-            media={{
-              type: 'image',
-              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961673/yzh40wdpkykt96kogcam.webp',
-              alt: 'Art Exhibition',
-            }}
-          />
-          
-          <EventCard
-            title="Food Festival"
-            location="GRA, Port Harcourt"
-            status="Live Now"
-            price={[
-              { type: 'Tasting Pass', price: 5000 },
-              { type: 'VIP Experience', price: 15000 }
-            ]}
-            date="2025-07-10T12:00:00"
-            media={{
-              type: 'image',
-              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961662/ltctlgwlgfma1hzlfs1q.webp',
-              alt: 'Food Festival',
-            }}
-          />
-          
-          <EventCard
-            title="Jazz Night"
-            location="GRA, Ilorin"
-            status="Upcoming"
-            price={[
-              { type: 'Standard', price: 7000 },
-              { type: 'VIP', price: 12000 }
-            ]}
-            date="2025-08-15T20:00:00"
-            media={{
-              type: 'image',
-              src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
-              alt: 'Jazz Night',
-            }}
-          />
-          
-          {/* Third row removed as per user request */}
+          {/* Desktop/Tablet - Single row with horizontal scroll */}
+          <div className="hidden sm:block">
+            <div className="relative">
+              {/* Left padding gradient */}
+              <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
+              
+              {/* Scrollable content */}
+              <div className="overflow-x-auto pb-6">
+                <div className="flex space-x-6 w-max min-w-full pl-4 pr-4">
+                {filteredEvents.length > 0 ? (
+                  filteredEvents.map(event => (
+                    <div key={event.id} className="w-72 flex-shrink-0">
+                      <EventCard
+                        title={event.title}
+                        location={event.location}
+                        status={event.status}
+                        price={event.price}
+                        date={event.date}
+                        media={event.media}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <div className="w-full flex flex-col items-center justify-center py-12 col-span-full">
+                    <div className="bg-gray-100 p-6 rounded-full mb-4">
+                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No events found</h3>
+                    <p className="text-gray-500 text-center max-w-md">Try adjusting your filters or check back later for new events.</p>
+                    <button 
+                      onClick={clearFilters}
+                      className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Right padding gradient */}
+            <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
           </div>
-          
-          {/* Show More Button for Desktop/Tablet */}
-          <div className="mt-10 w-full hidden sm:block">
-            <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200" style={{ paddingLeft: '2rem', paddingRight: '2rem' }}>
-              View more events
-            </button>
+            
+            {/* Show More Button for Desktop */}
+            <div className="mt-10 w-full px-6">
+              <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
+                View more events
+              </button>
+            </div>
           </div>
           
           {/* Mobile Layout */}
           <div className="sm:hidden">
-            {/* Horizontal Scrollable Cards */}
-            <div className="-mx-4 px-4 overflow-x-auto pb-4">
-              <div className="flex space-x-4 w-max">
-                {[
-                  /* First 10 events */
-                  {
-                    title: "Karaoke Traffic Vibes",
-                    location: "Lekki Phase 1, Lagos",
-                    status: "Upcoming",
-                    price: [
-                      { type: 'Regular', price: 5000 },
-                      { type: 'VIP', price: 10000 },
-                      { type: 'VVIP', price: 20000 }
-                    ],
-                    date: "2025-07-12T20:00:00",
-                    media: {
-                      type: 'image',
-                      src: karaImage,
-                      alt: 'Karaoke Traffic Vibes'
-                    }
-                  },
-                  {
-                    title: "Clinton Flames",
-                    location: "Victoria Island, Lagos",
-                    status: "Upcoming",
-                    price: 10000,
-                    date: "2025-07-13T19:30:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp',
-                      alt: 'Clinton Flames'
-                    }
-                  },
-                  {
-                    title: "1analog Girl",
-                    location: "Ikeja, Lagos",
-                    status: "Live Now",
-                    price: 0,
-                    date: "2025-07-07T22:00:00",
-                    media: {
-                      type: 'gif',
-                      src: promoGif,
-                      alt: '1analog Girl',
-                      autoplay: true,
-                      loop: true
-                    }
-                  },
-                  {
-                    title: "Reekado Banks Live In Abuja",
-                    location: "Garki, Abuja",
-                    status: "Registration Open",
-                    price: [
-                      { type: 'Early Bird', price: 2000 },
-                      { type: 'Regular', price: 5000 },
-                      { type: 'VIP', price: 10000 }
-                    ],
-                    date: "2025-07-20T21:00:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp',
-                      alt: 'Reekado Banks Live In Abuja'
-                    }
-                  },
-                  {
-                    title: "House Party/pool Party",
-                    location: "Ikoyi, Lagos",
-                    status: "Live Now",
-                    price: 10000,
-                    date: "2025-07-07T23:30:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751906823/yflortvspnhc5idiol9t.webp',
-                      alt: 'House Party/pool Party'
-                    }
-                  },
-                  {
-                    title: "Afrobeat Night Live",
-                    location: "Yaba, Lagos",
-                    status: "Upcoming",
-                    price: [
-                      { type: 'Early Bird', price: 3000 },
-                      { type: 'Regular', price: 5000 },
-                      { type: 'VIP', price: 8000 }
-                    ],
-                    date: "2025-07-25T21:00:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752002405/mgoz620c4yjyeb0xa6hd.webp',
-                      alt: 'Afrobeat Night Live'
-                    }
-                  },
-                  {
-                    title: "Tech Conference 2025",
-                    location: "Maitama, Abuja",
-                    status: "Registration Open",
-                    price: 15000,
-                    date: "2025-08-05T09:00:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751984779/nlhtme0suacdfjyypc8s.webp',
-                      alt: 'Tech Conference 2025'
-                    }
-                  },
-                  {
-                    title: "Art Exhibition",
-                    location: "Wuse, Abuja",
-                    status: "Upcoming",
-                    price: 0,
-                    date: "2025-07-30T10:00:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961673/yzh40wdpkykt96kogcam.webp',
-                      alt: 'Art Exhibition'
-                    }
-                  },
-                  {
-                    title: "Food Festival",
-                    location: "GRA, Port Harcourt",
-                    status: "Live Now",
-                    price: [
-                      { type: 'Tasting Pass', price: 5000 },
-                      { type: 'VIP Experience', price: 15000 }
-                    ],
-                    date: "2025-07-10T12:00:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961662/ltctlgwlgfma1hzlfs1q.webp',
-                      alt: 'Food Festival'
-                    }
-                  },
-                  {
-                    title: "Jazz Night",
-                    location: "GRA, Ilorin",
-                    status: "Upcoming",
-                    price: [
-                      { type: 'Standard', price: 7000 },
-                      { type: 'VIP', price: 12000 }
-                    ],
-                    date: "2025-08-15T20:00:00",
-                    media: {
-                      type: 'image',
-                      src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
-                      alt: 'Jazz Night'
-                    }
-                  }
-                ].map((event, index) => (
-                  <div key={index} className="w-64 flex-shrink-0">
+            {filteredEvents.length > 0 ? (
+              <>
+                {/* Horizontal Scrollable Cards */}
+                <div className="-mx-4 px-4 overflow-x-auto pb-4">
+                  <div className="flex space-x-4 w-max">
+                    {filteredEvents.map((event, index) => (
+                      <div key={index} className="w-64 flex-shrink-0">
+                        <EventCard
+                          title={event.title}
+                          location={event.location}
+                          status={event.status}
+                          price={event.price}
+                          date={event.date}
+                          media={event.media}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Show More Button for Mobile */}
+                <div className="mt-6 w-full px-4">
+                  <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
+                    View more events
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="p-6 text-center">
+                <div className="bg-gray-100 p-6 rounded-full inline-flex mb-4">
+                  <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">No events found</h3>
+                <p className="text-gray-500 mb-4">Try adjusting your filters or check back later for new events.</p>
+                <button 
+                  onClick={clearFilters}
+                  className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+                >
+                  Clear all filters
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Top Events Section */}
+      <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl px-6 py-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-black">Top Events</h2>
+          <div className="relative">
+            <button 
+              onClick={() => setIsTopEventsFilterOpen(!isTopEventsFilterOpen)}
+              className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <span>Filter</span>
+            </button>
+            
+            {/* Top Events Filter Panel */}
+            {isTopEventsFilterOpen && (
+              <div className="fixed inset-0 z-50 flex justify-end backdrop-blur-sm" onClick={() => setIsTopEventsFilterOpen(false)}>
+                <div 
+                  className="h-full w-full md:w-[380px] md:h-[95vh] bg-white flex flex-col overflow-y-auto md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-4px_0_15px_rgba(0,0,0,0.1)]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header with search and close button */}
+                  <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                    <form className="relative flex-1 mr-2">
+                      <input 
+                        type="text" 
+                        className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent" 
+                        placeholder="Search for events..." 
+                      />
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        width="24" 
+                        height="24" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        className="lucide lucide-search absolute left-3 top-2.5 w-4 h-4 text-gray-400"
+                      >
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.3-4.3"></path>
+                      </svg>
+                    </form>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsTopEventsFilterOpen(false);
+                      }}
+                      className="p-2 text-gray-500 hover:text-gray-700" 
+                      aria-label="Close menu"
+                    >
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        width="24" 
+                        height="24" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        className="lucide lucide-x w-6 h-6"
+                      >
+                        <path d="M18 6 6 18"></path>
+                        <path d="m6 6 12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="py-4 bg-white px-4 space-y-4">
+                    <h3 className="text-lg font-semibold mb-3">Country</h3>
+                    <div className="relative">
+                      <div className="relative group">
+                        <div className="relative">
+                          <select
+                            value={filters.country}
+                            onChange={(e) => handleFilterChange('country', e.target.value)}
+                            className="w-full pl-4 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-lg appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer shadow-sm hover:border-gray-300"
+                          >
+                            <option value="" className="text-gray-700">Select a country</option>
+                            <option value="Amptive" className="text-gray-700">Amptive App</option>
+                            <option value="Nigeria" className="text-gray-700">Nigeria</option>
+                            <option value="United States" className="text-gray-700">United States</option>
+                            <option value="United Kingdom" className="text-gray-700">United Kingdom</option>
+                            <option value="Canada" className="text-gray-700">Canada</option>
+                            <option value="Ghana" className="text-gray-700">Ghana</option>
+                            <option value="South Africa" className="text-gray-700">South Africa</option>
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Price Range Filter */}
+                    <div className="border-t border-gray-100 pt-4">
+                      <h3 className="text-lg font-semibold mb-3">Price Range</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Min</label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <span className="text-gray-500 text-sm">₦</span>
+                            </div>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={filters.priceRange.min}
+                              onChange={(e) => handleFilterChange('priceRange', { ...filters.priceRange, min: e.target.value })}
+                              className="pl-8 w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Max</label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <span className="text-gray-500 text-sm">₦</span>
+                            </div>
+                            <input
+                              type="number"
+                              placeholder="Any"
+                              value={filters.priceRange.max}
+                              onChange={(e) => handleFilterChange('priceRange', { ...filters.priceRange, max: e.target.value })}
+                              className="pl-8 w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Date Range Filter */}
+                    <div className="border-t border-gray-100 pt-4">
+                      <h3 className="text-lg font-semibold mb-3">Date</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                          <div className="relative">
+                            <input
+                              type="date"
+                              value={filters.dateRange.start}
+                              onChange={(e) => handleFilterChange('dateRange', { ...filters.dateRange, start: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                          <div className="relative">
+                            <input
+                              type="date"
+                              value={filters.dateRange.end}
+                              onChange={(e) => handleFilterChange('dateRange', { ...filters.dateRange, end: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Footer with action buttons */}
+                  <div className="p-4 space-y-3 border-t border-gray-100 mt-auto">
+                    <button 
+                      onClick={() => {
+                        // Clear all filters logic here
+                        setFilters({
+                          country: '',
+                          priceRange: { min: '', max: '' },
+                          dateRange: { start: '', end: '' },
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 text-center text-base font-medium text-gray-800 hover:bg-gray-50 rounded-full border border-gray-200"
+                    >
+                      Clear All
+                    </button>
+                    <button 
+                      onClick={() => {
+                        // Apply filters logic here
+                        setIsTopEventsFilterOpen(false);
+                      }}
+                      className="w-full px-4 py-2.5 text-center text-base font-bold text-white bg-black hover:bg-gray-800 rounded-full"
+                    >
+                      Show Results
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Desktop Table Layout */}
+        <div className="hidden sm:block overflow-x-auto">
+          <div className="min-w-full">
+            {/* Table Header */}
+            <div className="grid grid-cols-[40px,minmax(300px,2fr),minmax(180px,1.5fr),minmax(100px,1fr),minmax(120px,1fr),minmax(100px,1fr)] gap-8 text-sm font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+              <div className="w-8 text-center">#</div>
+              <div>Event</div>
+              <div>Location</div>
+              <div>Price</div>
+              <div>Status</div>
+              <div>Date</div>
+            </div>
+            
+            {/* Table Rows */}
+            <div className="space-y-3">
+              {events.slice(0, showAllTopEvents ? events.length : 6).map((event, index) => (
+                <div key={event.id} className="grid grid-cols-[40px,minmax(300px,2fr),minmax(180px,1.5fr),minmax(100px,1fr),minmax(120px,1fr),minmax(100px,1fr)] gap-8 items-center px-4 py-4 hover:bg-gray-50 rounded-lg">
+                  <div className="w-8 text-center text-gray-500 font-medium">{index + 1}</div>
+                  <div className="flex items-center space-x-3">
+                    {event.media && (event.media.type === 'image' || event.media.type === 'gif') && (
+                      <img 
+                        src={event.media.src} 
+                        alt={event.media.alt || event.title} 
+                        className="w-10 h-10 rounded-md object-cover"
+                      />
+                    )}
+                    <span className="font-medium text-gray-900 truncate">{event.title}</span>
+                  </div>
+                  <div className="text-gray-600 truncate" title={event.location}>{event.location}</div>
+                  <div className="font-medium">
+                    {Array.isArray(event.price) 
+                      ? `₦${Math.min(...event.price.map(p => p.price)).toLocaleString()}+` 
+                      : event.price === 0 ? 'Free' : `₦${event.price.toLocaleString()}`}
+                  </div>
+                  <div>
+                    <div className="inline-block">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        event.status === 'Live Now' ? 'bg-gray-100 text-gray-800' :
+                        (event.status === 'Upcoming' || event.status === 'Registration Open') ? 'bg-green-100 text-green-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {event.status === 'Live Now' ? 'Sold out' : 'Ticket on sale'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {new Date(event.date).toLocaleDateString('en-US', { 
+                      month: 'short', 
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* Show More Button */}
+            {events.length > 6 && (
+              <div className="mt-10 w-full hidden sm:block">
+                <button 
+                  onClick={() => setShowAllTopEvents(!showAllTopEvents)}
+                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200"
+                  style={{ paddingLeft: '2rem', paddingRight: '2rem' }}
+                >
+                  {showAllTopEvents ? 'Show less' : 'View more events'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Mobile Layout */}
+        <div className="sm:hidden">
+          <div className="-mx-4 px-4 overflow-x-auto pb-4">
+            <div className="flex space-x-4 w-max">
+              {events
+                .slice(0, showAllTopEvents ? events.length : 5)
+                .map((event) => (
+                  <div key={event.id} className="w-64 flex-shrink-0">
                     <EventCard
                       title={event.title}
+                      location={event.location}
                       status={event.status}
                       price={event.price}
                       date={event.date}
@@ -783,22 +1488,857 @@ const Homepage: React.FC = () => {
                     />
                   </div>
                 ))}
-              </div>
             </div>
+          </div>
+          
+          <div className="mt-6 w-full px-4">
+            <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
+              View more events
+            </button>
+          </div>
+        </div>
+      </div>
+
+
+
+      {/* Browse by Community Section */}
+      <div className={`w-[95vw] mx-auto my-12 border rounded-2xl p-8 min-h-[400px] flex flex-col justify-center relative transition-colors duration-500 ${cardColors[activeCardIndex]}`}>
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Title Section */}
+          <div className="w-full lg:w-1/5 flex flex-col items-start gap-4 px-4">
+            <h2 className="text-[28px] lg:text-[32px] font-bold text-black leading-tight">
+              Browse by<br />
+              Communities
+            </h2>
+            <button className="px-6 py-2 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
+              Explore Communities
+            </button>
+          </div>
+          
+          {/* Community Cards */}
+          <div className="flex-1 w-full overflow-hidden relative lg:pr-4">
+            {/* Left Fade Effect */}
+            <div className={`absolute left-0 top-0 bottom-0 w-12 md:w-20 bg-gradient-to-r ${cardColors[activeCardIndex].replace('bg-', 'from-')} to-transparent z-10 pointer-events-none transition-all duration-300 ${showLeftArrow ? 'opacity-100' : 'opacity-0'}`}></div>
             
-            {/* Show More Button for Mobile - Now outside the scrollable area */}
-            <div className="mt-6 w-full px-4">
-              <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
-                View more events
+            {/* Navigation Arrows */}
+            {showLeftArrow && (
+              <button 
+                className="absolute left-0 md:left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-gray-100 transition-all duration-300"
+                onClick={() => scrollCards('left')}
+              >
+                <ChevronLeft className="w-6 h-6" />
               </button>
+            )}
+            {showRightArrow && (
+              <button 
+                className="absolute right-0 md:right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-gray-100 transition-all duration-300"
+                onClick={() => scrollCards('right')}
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+            
+            {/* Right Fade Effect */}
+            <div className={`absolute right-0 top-0 bottom-0 w-12 md:w-20 bg-gradient-to-l ${cardColors[activeCardIndex].replace('bg-', 'from-')} to-transparent z-10 pointer-events-none transition-all duration-300 ${showRightArrow ? 'opacity-100' : 'opacity-0'}`}></div>
+            
+            {/* Cards Container */}
+            <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 hide-scrollbar px-4" ref={cardsContainerRef} style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {[
+                { 
+                  title: "Music",
+                  image: communityMusicImage
+                },
+                { 
+                  title: "Food & Drink",
+                  image: communityFoodImage
+                },
+                { 
+                  title: "Art & Culture",
+                  image: communityArtImage
+                },
+                { 
+                  title: "Technology",
+                  image: communityTechImage
+                },
+                { 
+                  title: "Sports",
+                  image: communitySportsImage
+                },
+                { 
+                  title: "Fashion",
+                  image: communityFashionImage
+                },
+                { 
+                  title: "Gaming",
+                  image: communityGamingImage
+                },
+                { 
+                  title: "Health & Wellness",
+                  image: communityHealthImage
+                },
+                { 
+                  title: "Education",
+                  image: communityEducationImage
+                },
+                { 
+                  title: "Travel",
+                  image: communityTravelImage
+                }
+              ].map((community, index) => (
+                <div 
+                  key={index}
+                  className="community-card flex-shrink-0 w-[280px] h-[200px] bg-white rounded-xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+                  data-index={index}
+                >
+                  <img 
+                    src={community.image} 
+                    alt={community.title}
+                    className="w-full h-full object-cover rounded-xl"
+                  />
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Rest of the homepage content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        {/* Add your homepage sections here */}
+      {/* Latest Events Section */}
+      <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
+        <div className="flex justify-between items-center mb-6 px-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Latest Events</h2>
+          <button 
+            className="flex items-center space-x-1 text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
+            </svg>
+            <span className="text-sm font-medium">Filter</span>
+          </button>
+        </div>
+        
+        <div className="-mx-4 px-4 overflow-x-auto pb-4">
+          <div className="flex space-x-4 md:space-x-8 w-max">
+            {/* Card 1 */}
+            <div className="w-64 flex-shrink-0">
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
+                <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
+                  <img src="/src/assets/kara.png" alt="Karaoke Traffic Vibes" className="w-full h-full object-cover rounded-lg" />
+                </div>
+                <div className="p-3">
+                  <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
+                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
+                    </svg>
+                    <span>July 12, 2025</span>
+                  </div>
+                  <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 line-clamp-2">Karaoke Traffic Vibes</h3>
+                  <div className="flex flex-col mb-2">
+                    <span className="text-xs text-gray-500">Location</span>
+                    <span className="font-medium text-sm text-gray-600">Lekki Phase 1, Lagos</span>
+                  </div>
+                  <div className="mt-1.5 w-full">
+                    <div className="bg-blue-50 rounded-full py-1 px-3 text-center w-full">
+                      <span className="font-bold text-xs text-blue-800">From ₦5,000</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2 */}
+            <div className="w-64 flex-shrink-0">
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
+                <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
+                  <img 
+                    src="https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp" 
+                    alt="Clinton Flames" 
+                    className="w-full h-full object-cover rounded-lg" 
+                  />
+                </div>
+                <div className="p-3">
+                  <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
+                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
+                    </svg>
+                    <span>July 13, 2025</span>
+                  </div>
+                  <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 line-clamp-2">Clinton Flames</h3>
+                  <div className="flex flex-col mb-2">
+                    <span className="text-xs text-gray-500">Location</span>
+                    <span className="font-medium text-sm text-gray-600">Victoria Island, Lagos</span>
+                  </div>
+                  <div className="mt-1.5 w-full">
+                    <div className="bg-blue-50 rounded-full py-1 px-3 text-center w-full">
+                      <span className="font-bold text-xs text-blue-800">₦10,000</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3 */}
+            <div className="w-64 flex-shrink-0">
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
+                <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
+                  <img 
+                    src="/src/assets/GIF promo (1mouth analog) v2.gif" 
+                    alt="1analog Girl" 
+                    className="w-full h-full object-cover rounded-lg" 
+                  />
+                </div>
+                <div className="p-3">
+                  <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
+                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
+                    </svg>
+                    <span>July 7, 2025</span>
+                  </div>
+                  <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 line-clamp-2">1analog Girl</h3>
+                  <div className="flex flex-col mb-2">
+                    <span className="text-xs text-gray-500">Location</span>
+                    <span className="font-medium text-sm text-gray-600">Ikeja, Lagos</span>
+                  </div>
+                  <div className="mt-1.5 w-full">
+                    <div className="bg-blue-50 rounded-full py-1 px-3 text-center w-full">
+                      <span className="font-bold text-xs text-blue-800">Free</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4 */}
+            <div className="w-64 flex-shrink-0">
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
+                <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
+                  <img 
+                    src="https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp" 
+                    alt="Reekado Banks Live In Abuja" 
+                    className="w-full h-full object-cover rounded-lg" 
+                  />
+                </div>
+                <div className="p-3">
+                  <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
+                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
+                    </svg>
+                    <span>Sunday</span>
+                  </div>
+                  <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 line-clamp-2">Reekado Banks Live In Abuja</h3>
+                  <div className="flex flex-col mb-2">
+                    <span className="text-xs text-gray-500">Location</span>
+                    <span className="font-medium text-sm text-gray-600">Garki, Abuja</span>
+                  </div>
+                  <div className="mt-1.5 w-full">
+                    <div className="bg-blue-50 rounded-full py-1 px-3 text-center w-full">
+                      <span className="font-bold text-xs text-blue-800">From ₦2,000</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 5 */}
+            <div className="w-64 flex-shrink-0">
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
+                <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
+                  <img 
+                    src="https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp" 
+                    alt="Tech Conference" 
+                    className="w-full h-full object-cover rounded-lg" 
+                  />
+                </div>
+                <div className="p-3">
+                  <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
+                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
+                    </svg>
+                    <span>July 7, 2025</span>
+                  </div>
+                  <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 line-clamp-2">House Party/Pool Party</h3>
+                  <div className="flex flex-col mb-2">
+                    <span className="text-xs text-gray-500">Location</span>
+                    <span className="font-medium text-sm text-gray-600">Ikoyi, Lagos</span>
+                  </div>
+                  <div className="mt-1.5 w-full">
+                    <div className="bg-blue-50 rounded-full py-1 px-3 text-center w-full">
+                      <span className="font-bold text-xs text-blue-800">₦10,000</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* View More Button */}
+        <div className="mt-8">
+          <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200" style={{ paddingLeft: '2rem', paddingRight: '2rem' }}>
+            View more events
+          </button>
+        </div>
+      </div>
+
+      {/* Trending on Amptive Section */}
+      <div className="w-[95vw] mx-auto my-12 bg-gray-100 border border-gray-200 rounded-2xl p-6">
+        <div className="mb-6 px-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">Trending on Amptive</h2>
+          
+          {/* Tabs */}
+          <div className="flex border-b border-gray-200 w-full">
+            <button
+              onClick={() => setActiveTab('shows')}
+              className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+                activeTab === 'shows' 
+                  ? 'text-black font-semibold' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Shows
+              {activeTab === 'shows' && (
+                <span className="absolute bottom-0 left-0 w-full h-[3px] bg-black rounded-t-sm"></span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('events')}
+              className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+                activeTab === 'events' 
+                  ? 'text-black font-semibold' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Events
+              {activeTab === 'events' && (
+                <span className="absolute bottom-0 left-0 w-full h-[3px] bg-black rounded-t-sm"></span>
+              )}
+            </button>
+          </div>
+        </div>
+        
+        <div className="-mx-4 px-4 overflow-x-auto pb-4">
+          <div className="flex space-x-4 md:space-x-8 w-max">
+            {activeTab === 'shows' ? (
+              // Shows Content
+              <>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 71.png" 
+                      alt="Trending Show 1" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 71.png" 
+                      alt="Trending Show 2" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 71.png" 
+                      alt="Trending Show 3" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 71.png" 
+                      alt="Trending Show 4" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              // Events Content
+              <>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 75.png" 
+                      alt="Trending Event 1" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 75.png" 
+                      alt="Trending Event 2" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 75.png" 
+                      alt="Trending Event 3" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+                <div className="flex-shrink-0 w-auto">
+                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
+                    <img 
+                      src="/src/assets/Frame 75.png" 
+                      alt="Trending Event 4" 
+                      className="h-[280px] md:h-[360px] w-auto object-cover"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Generate Poster Section */}
+      <div className="w-[95vw] mx-auto my-12 bg-[#299AFC1A] border border-gray-200 rounded-2xl py-12 px-8">
+        <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-center">
+          {/* Left Column - Title and Description */}
+          <div className="w-full lg:w-[20%] text-left lg:flex lg:flex-col lg:justify-center lg:h-full lg:my-auto">
+            <h2 className="text-[32px] md:text-[40px] font-bold text-gray-900 mb-6 leading-tight">
+              <span className="lg:hidden">
+                <span className="block">Generate a poster</span>
+                <span className="block">for Show or event</span>
+              </span>
+              <span className="hidden lg:block">
+                Generate a <br />
+                poster for <br />
+                Show or <br />
+                event
+              </span>
+            </h2>
+            <a 
+              href="/generate"
+              className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 w-max"
+              style={{
+                backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                color: 'rgb(139, 92, 246)',
+                border: '1px solid rgba(168, 85, 247, 0.2)'
+              }}
+            >
+              <span className="relative z-10 flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.91l1.036.258a.75.75 0 0 1 0 1.456l-1.036.258c-.94.236-1.674.97-1.91 1.91l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.91-1.91l-1.036-.258a.75.75 0 0 1 0-1.456l1.036-.258a2.625 2.625 0 0 0 1.91-1.91l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clipRule="evenodd" />
+                </svg>
+                <span className="hidden sm:inline">Generate with AI</span>
+                <span className="sm:hidden">Generate</span>
+              </span>
+            </a>
+          </div>
+          
+          {/* Right Column - Cards with Infinite Scroll */}
+          <div className="w-full md:w-full lg:w-[80%] overflow-hidden pb-4 relative group">
+            <style>{`
+              @keyframes scroll {
+                0% { transform: translateX(0); }
+                100% { transform: translateX(calc(-100% / 2)); }
+              }
+              .scroll-container {
+                width: 100%;
+                overflow: hidden;
+                position: relative;
+              }
+              .scroll-track {
+                display: flex;
+                width: 200%;
+                animation: scroll 30s linear infinite;
+              }
+              .scroll-track:hover {
+                animation-play-state: paused;
+              }
+              .card-item {
+                flex: 0 0 auto;
+                width: 14rem;
+                height: 24rem;
+                border-radius: 0.75rem;
+                padding: 1rem;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                transition: transform 0.3s ease;
+                margin-right: 1rem;
+              }
+              .card-item:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+              }
+              .card-item img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                border-radius: 0.5rem;
+              }
+              @media (max-width: 768px) {
+                .card-item {
+                  width: 12rem;
+                  height: 20rem;
+                }
+              }
+            `}</style>
+            <div className="scroll-container">
+              <div className="scroll-track">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => {
+                  const colors = ['#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6'];
+                  const images = [
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
+                  ];
+                  
+                  return (
+                    <div 
+                      key={`card-${i}`}
+                      className="card-item"
+                      style={{ 
+                        backgroundColor: colors[i % 10],
+                      }}
+                    >
+                      <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
+                        <img 
+                          src={images[i % 10]}
+                          alt={`Event ${i + 1}`}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                      <p className="text-base font-bold text-white mb-1">
+                        Prompt:
+                      </p>
+                      <p className="text-[13px] font-medium leading-5 text-white/90 line-clamp-4">
+                        A modern, minimal event ticket design with a dark theme and soft gradients. The layout features a bold, rounded event title.
+                      </p>
+                    </div>
+                  );
+                })}
+                
+                {/* Duplicate set for seamless looping */}
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => {
+                  const colors = ['#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6'];
+                  const images = [
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
+                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
+                  ];
+                  
+                  return (
+                    <div 
+                      key={`duplicate-${i}`}
+                      className="card-item"
+                      style={{ 
+                        backgroundColor: colors[i % 10],
+                      }}
+                    >
+                      <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
+                        <img 
+                          src={images[i % 10]}
+                          alt={`Event ${i + 1}`}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                      <p className="text-base font-bold text-white mb-1">
+                        Prompt:
+                      </p>
+                      <p className="text-[13px] font-medium leading-5 text-white/90 line-clamp-4">
+                        A modern, minimal event ticket design with a dark theme and soft gradients. The layout features a bold, rounded event title.
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Blog Section */}
+      <div className="w-[95vw] mx-auto my-12 bg-orange-50 border border-orange-100 rounded-2xl pt-6 pb-12 px-8">
+        <div className="flex justify-between items-center">
+          <h2 className="text-[24px] font-bold text-gray-900">Blog</h2>
+          <a href="/blog" className="flex items-center text-gray-900 hover:text-gray-700 font-medium">
+            View all posts
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1 text-gray-900" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </a>
+        </div>
+        <div className="border-b border-gray-200 mt-4 mb-6"></div>
+        
+        <div className="flex flex-col lg:flex-row justify-between gap-8">
+          {/* First Column - Original size */}
+          <div className="space-y-8 pt-2">
+            {/* First Blog Post */}
+            <div className="group w-full max-w-[700px] flex flex-col gap-6">
+              <a href="/blog/how-to-host-successful-virtual-events" className="block w-full overflow-hidden lg:max-w-[800px] lg:mx-auto" style={{ aspectRatio: '16/9' }}>
+                <img 
+                  src="/src/assets/Overview (1).png" 
+                  alt="Event overview"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </a>
+              <div className="w-full">
+                <span className="text-[15px] font-medium text-green-600 uppercase">EVENTS</span>
+                <a href="/blog/how-to-host-successful-virtual-events" className="block mt-2">
+                  <h3 className="text-[24px] lg:text-[40px] leading-[30px] lg:leading-[44px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">How to Host Successful Virtual Events</h3>
+                  <p className="hidden lg:block text-gray-600 text-[18px] font-medium mt-3 leading-relaxed">
+                    Learn the essential strategies and tools needed to create engaging and successful virtual events.
+                  </p>
+                </a>
+              </div>
+            </div>
+          </div>
+          
+          {/* Mobile-only divider between first and second posts */}
+          <div className="block sm:hidden w-full border-t border-gray-200 my-4"></div>
+          
+          {/* Second Column - Aligned to right edge */}
+          <div className="lg:ml-auto space-y-8">
+            {/* Second Blog Post */}
+            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
+              <a href="/blog/event-marketing-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+                <img 
+                  src="/src/assets/Overview.png" 
+                  alt="Marketing insights"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </a>
+              <div className="flex-1 py-2">
+                <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
+                <a href="/blog/event-marketing-strategies" className="block mt-1">
+                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Top 5 Event Marketing Strategies for 2024</h3>
+                </a>
+              </div>
+            </div>
+            
+            <div className="border-t border-gray-200 my-6"></div>
+            
+            {/* Third Blog Post */}
+            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
+              <a href="/blog/audio-quality-tips" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+                <img 
+                  src="/src/assets/Overview (2).png" 
+                  alt="Amptive platform features"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </a>
+              <div className="flex-1 py-2">
+                <span className="text-[15px] font-medium text-blue-600 uppercase">AMPTIVE</span>
+                <a href="/blog/audio-quality-tips" className="block mt-1">
+                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Essential Tips for Perfect Audio Quality</h3>
+                </a>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 my-6"></div>
+            
+            {/* Fourth Blog Post */}
+            {/* Fourth Blog Post */}
+            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
+              <a href="/blog/future-of-live-audio" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+                <img 
+                  src="/src/assets/Overview.png" 
+                  alt="Audio insights"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </a>
+              <div className="flex-1 py-2">
+                <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
+                <a href="/blog/future-of-live-audio" className="block mt-1">
+                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">The Future of Live Audio Experiences</h3>
+                </a>
+              </div>
+            </div>
+            
+            <div className="border-t border-gray-200 my-6"></div>
+            
+            {/* Fifth Blog Post */}
+            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
+              <a href="/blog/engaging-audience" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+                <img 
+                  src="/src/assets/Overview.png" 
+                  alt="Audience engagement insights"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </a>
+              <div className="flex-1 py-2">
+                <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
+                <a href="/blog/engaging-audience" className="block mt-1">
+                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">How to Keep Your Audience Engaged</h3>
+                </a>
+              </div>
+            </div>
+            
+            <div className="border-t border-gray-200 my-6"></div>
+            
+            {/* Sixth Blog Post */}
+            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
+              <a href="/blog/monetization-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+                <img 
+                  src="/src/assets/Overview (2).png" 
+                  alt="Amptive monetization"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+              </a>
+              <div className="flex-1 py-2">
+                <span className="text-[15px] font-medium text-blue-600 uppercase">AMPTIVE</span>
+                <a href="/blog/monetization-strategies" className="block mt-1">
+                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Monetization Strategies for Creators</h3>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Toast Notifications */}
+      <Toaster 
+        position="top-center"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#ffffff',
+            color: '#1f2937',
+            padding: '14px 20px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+            fontSize: '14px',
+            marginTop: '20px',
+            border: '1px solid #e5e7eb',
+            animation: 'slideIn 0.3s ease-out forwards',
+          },
+          success: {
+            iconTheme: {
+              primary: '#10B981',
+              secondary: '#ffffff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#EF4444',
+              secondary: '#ffffff',
+            },
+          },
+          loading: {
+            iconTheme: {
+              primary: '#3B82F6',
+              secondary: '#ffffff',
+            },
+          },
+        }}
+      />
+      
+      {/* Newsletter Signup Section */}
+      <div className="w-[95vw] mx-auto my-12 relative">
+        <style jsx global>{`
+          @keyframes slideIn {
+            from {
+              transform: translateY(-100%);
+              opacity: 0;
+            }
+            to {
+              transform: translateY(0);
+              opacity: 1;
+            }
+          }
+          .toast {
+            animation: slideIn 0.3s ease-out forwards !important;
+          }
+        `}</style>
+        <div className="absolute inset-0 overflow-hidden rounded-xl">
+          <GeometricPattern />
+        </div>
+        <div className="relative flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 p-10 rounded-xl min-h-[240px] bg-blue-100/90 backdrop-blur-sm">
+          {/* Left Column - Text */}
+          <div className="w-full lg:w-1/2 text-left">
+            <h3 className="text-[32px] font-semibold text-gray-900">Never miss out</h3>
+            <p className="text-[32px] font-semibold text-gray-900/60 -mt-1">Get the latest updates</p>
+          </div>
+          
+          {/* Right Column - Email Form */}
+          <div className="w-full lg:w-1/2">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const form = e.target as HTMLFormElement;
+              const email = (form.elements.namedItem('email') as HTMLInputElement).value;
+              
+              // Basic email validation
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!emailRegex.test(email)) {
+                toast.error('Please enter a valid email address');
+                return;
+              }
+              
+              // Show loading state
+              const loadingToast = toast.loading('Subscribing...');
+              
+              // Simulate API call
+              setTimeout(() => {
+                // Here you would typically send the email to your server
+                console.log('Submitting email:', email);
+                
+                // On success
+                toast.dismiss(loadingToast);
+                toast.success('Thanks for subscribing!');
+                form.reset();
+                
+                // In a real app, you would handle errors like this:
+                // .catch(error => {
+                //   toast.dismiss(loadingToast);
+                //   toast.error('Failed to subscribe. Please try again.');
+                // });
+              }, 1000);
+            }} className="w-full">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  placeholder="Enter your email"
+                  className="flex-1 max-w-md pl-6 pr-4 py-4 bg-black/5 border border-transparent rounded-full hover:border-black/40 focus:border-black/60 focus:outline-none placeholder-gray-500 text-sm transition-all"
+                />
+                <button 
+                  type="submit"
+                  className="px-6 py-3 bg-black text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors whitespace-nowrap"
+                >
+                  Send me updates
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-3 max-w-md">
+                Stay updated on the latest events, exclusive shows, and community happenings. Unsubscribe anytime with a single click.
+              </p>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );
