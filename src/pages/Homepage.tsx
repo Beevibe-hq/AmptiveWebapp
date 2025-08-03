@@ -204,19 +204,19 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
             {/* QR Code - Desktop Only - First Slide */}
             {isFirstSlide && (
               <div className="hidden md:block">
-                <div className="flex items-center gap-4 mb-8 p-4 bg-black/10 rounded-lg">
-                  <div>
-                    <div className="bg-white p-1.5 rounded flex items-center justify-center" style={{ width: '85px', height: '85px' }}>
+                <div className="flex items-center gap-2 mb-8 p-2 bg-black/10 rounded-lg">
+                  <div className="flex-shrink-0">
+                    <div className="bg-white p-1 rounded flex items-center justify-center" style={{ width: '80px', height: '80px' }}>
                       <img 
-                        src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=undefined" 
-                        alt="QR Code" 
-                        width="80" 
-                        height="80"
-                        className="w-20 h-20"
+                        src="https://api.qrserver.com/v1/create-qr-code/?size=72x72&data=https://www.amptiveapp.com/downloads" 
+                        alt="QR Code"
+                        width="72"
+                        height="72"
+                        className="w-[72px] h-[72px]"
                       />
                     </div>
                   </div>
-                  <div>
+                  <div className="ml-1">
                     <div className="text-white text-base font-normal">Get the app</div>
                     <div className="text-white/70 text-sm mb-2">Scan the code with your smart phone camera to download the free app</div>
                   </div>
@@ -302,6 +302,7 @@ const Homepage: React.FC = () => {
   const [showAllTopEvents, setShowAllTopEvents] = useState(false);
   const [filters, setFilters] = useState({
     country: 'Loading...',
+    status: 'ALL',
     priceRange: { min: '', max: '' },
     dateRange: { start: '', end: '' },
   });
@@ -518,6 +519,13 @@ const Homepage: React.FC = () => {
   const applyFilters = () => {
     let result = [...events];
     
+    // Filter by status
+    if (filters.status && filters.status !== 'ALL') {
+      result = result.filter(event => 
+        event.status.toLowerCase().includes('sale')
+      );
+    }
+    
     // Filter by country
     if (filters.country) {
       result = result.filter(event => 
@@ -567,7 +575,7 @@ const Homepage: React.FC = () => {
     setIsFilterOpen(false);
   };
 
-  const handleFilterChange = (field: 'country' | 'priceRange' | 'dateRange', value: any) => {
+  const handleFilterChange = (field: 'country' | 'status' | 'priceRange' | 'dateRange', value: any) => {
     if (field === 'priceRange' || field === 'dateRange') {
       setFilters(prev => ({
         ...prev,
@@ -588,6 +596,7 @@ const Homepage: React.FC = () => {
   const clearFilters = () => {
     setFilters({
       country: userCountry,
+      status: 'ALL',
       priceRange: { min: '', max: '' },
       dateRange: { start: '', end: '' },
     });
@@ -1032,6 +1041,27 @@ const Homepage: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Status Filter */}
+                    <div className="border-t border-gray-100 pt-4">
+                      <h3 className="text-lg font-semibold mb-3">Status</h3>
+                      <div className="inline-flex p-1 bg-gray-100 rounded-full">
+                        {['ALL', 'Ticket on sale'].map((status) => (
+                          <button
+                            key={status}
+                            type="button"
+                            onClick={() => handleFilterChange('status', status)}
+                            className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
+                              filters.status === status
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            {status}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Date Range Filter */}
                     <div className="border-t border-gray-100 pt-4">
                       <h3 className="text-lg font-semibold mb-3">Date</h3>
@@ -1204,199 +1234,7 @@ const Homepage: React.FC = () => {
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl px-6 py-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-black">Top Events</h2>
-          <div className="relative">
-            <button 
-              onClick={() => setIsTopEventsFilterOpen(!isTopEventsFilterOpen)}
-              className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              <span>Filter</span>
-            </button>
-            
-            {/* Top Events Filter Panel */}
-            {isTopEventsFilterOpen && (
-              <div className="fixed inset-0 z-50 flex justify-end backdrop-blur-sm" onClick={() => setIsTopEventsFilterOpen(false)}>
-                <div 
-                  className="h-full w-full md:w-[380px] md:h-[95vh] bg-white flex flex-col overflow-y-auto md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-4px_0_15px_rgba(0,0,0,0.1)]"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Header with search and close button */}
-                  <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                    <form className="relative flex-1 mr-2">
-                      <input 
-                        type="text" 
-                        className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent" 
-                        placeholder="Search for events..." 
-                      />
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        width="24" 
-                        height="24" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
-                        className="lucide lucide-search absolute left-3 top-2.5 w-4 h-4 text-gray-400"
-                      >
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <path d="m21 21-4.3-4.3"></path>
-                      </svg>
-                    </form>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsTopEventsFilterOpen(false);
-                      }}
-                      className="p-2 text-gray-500 hover:text-gray-700" 
-                      aria-label="Close menu"
-                    >
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        width="24" 
-                        height="24" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
-                        className="lucide lucide-x w-6 h-6"
-                      >
-                        <path d="M18 6 6 18"></path>
-                        <path d="m6 6 12 12"></path>
-                      </svg>
-                    </button>
-                  </div>
-
-                  <div className="py-4 bg-white px-4 space-y-4">
-                    <h3 className="text-lg font-semibold mb-3">Country</h3>
-                    <div className="relative">
-                      <div className="relative group">
-                        <div className="relative">
-                          <select
-                            value={filters.country}
-                            onChange={(e) => handleFilterChange('country', e.target.value)}
-                            className="w-full pl-4 pr-10 py-3 text-sm bg-white border border-gray-200 rounded-lg appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 cursor-pointer shadow-sm hover:border-gray-300"
-                          >
-                            <option value="" className="text-gray-700">Select a country</option>
-                            <option value="Amptive" className="text-gray-700">Amptive App</option>
-                            <option value="Nigeria" className="text-gray-700">Nigeria</option>
-                            <option value="United States" className="text-gray-700">United States</option>
-                            <option value="United Kingdom" className="text-gray-700">United Kingdom</option>
-                            <option value="Canada" className="text-gray-700">Canada</option>
-                            <option value="Ghana" className="text-gray-700">Ghana</option>
-                            <option value="South Africa" className="text-gray-700">South Africa</option>
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                            </svg>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Price Range Filter */}
-                    <div className="border-t border-gray-100 pt-4">
-                      <h3 className="text-lg font-semibold mb-3">Price Range</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Min</label>
-                          <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <span className="text-gray-500 text-sm">₦</span>
-                            </div>
-                            <input
-                              type="number"
-                              placeholder="0"
-                              value={filters.priceRange.min}
-                              onChange={(e) => handleFilterChange('priceRange', { ...filters.priceRange, min: e.target.value })}
-                              className="pl-8 w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Max</label>
-                          <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <span className="text-gray-500 text-sm">₦</span>
-                            </div>
-                            <input
-                              type="number"
-                              placeholder="Any"
-                              value={filters.priceRange.max}
-                              onChange={(e) => handleFilterChange('priceRange', { ...filters.priceRange, max: e.target.value })}
-                              className="pl-8 w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Date Range Filter */}
-                    <div className="border-t border-gray-100 pt-4">
-                      <h3 className="text-lg font-semibold mb-3">Date</h3>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
-                          <div className="relative">
-                            <input
-                              type="date"
-                              value={filters.dateRange.start}
-                              onChange={(e) => handleFilterChange('dateRange', { ...filters.dateRange, start: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
-                          <div className="relative">
-                            <input
-                              type="date"
-                              value={filters.dateRange.end}
-                              onChange={(e) => handleFilterChange('dateRange', { ...filters.dateRange, end: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* Footer with action buttons */}
-                  <div className="p-4 space-y-3 border-t border-gray-100 mt-auto">
-                    <button 
-                      onClick={() => {
-                        // Clear all filters logic here
-                        setFilters({
-                          country: '',
-                          priceRange: { min: '', max: '' },
-                          dateRange: { start: '', end: '' },
-                        });
-                      }}
-                      className="w-full px-4 py-2.5 text-center text-base font-medium text-gray-800 hover:bg-gray-50 rounded-full border border-gray-200"
-                    >
-                      Clear All
-                    </button>
-                    <button 
-                      onClick={() => {
-                        // Apply filters logic here
-                        setIsTopEventsFilterOpen(false);
-                      }}
-                      className="w-full px-4 py-2.5 text-center text-base font-bold text-white bg-black hover:bg-gray-800 rounded-full"
-                    >
-                      Show Results
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Filter button and modal removed as per user request */}
         </div>
         
         {/* Desktop Table Layout */}
