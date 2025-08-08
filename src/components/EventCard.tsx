@@ -178,13 +178,19 @@ const EventCard: React.FC<EventCardProps> = ({
   location: propLocation,
   price: propPrice,
   media,
-  date
+  date,
+  status
 }) => {
   // Use the provided location or get a random one if not provided
   const [location] = React.useState(propLocation || getRandomLocation());
   
   // Format the price or show 'Free' if price is 0 or not provided
   const priceDisplay = React.useMemo(() => {
+    // Handle sold out status - always show 'Sold Out' regardless of price
+    if (status === 'Sold Out') {
+      return 'Sold Out';
+    }
+    
     // Handle no price or free event
     if (propPrice === undefined || propPrice === 0) {
       return 'Free';
@@ -199,7 +205,7 @@ const EventCard: React.FC<EventCardProps> = ({
     
     // Handle single price
     return formatPrice(propPrice as number);
-  }, [propPrice]);
+  }, [propPrice, status]);
   return (
     <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
       {/* Media Thumbnail */}
@@ -234,8 +240,16 @@ const EventCard: React.FC<EventCardProps> = ({
         
         {/* Price */}
         <div className="mt-1.5 w-full">
-          <div className="bg-blue-50 rounded-full py-1 px-3 text-center w-full">
-            <span className="font-bold text-xs text-blue-800">
+          <div className={`rounded-full py-1 px-3 text-center w-full ${
+            status === 'Sold Out' 
+              ? 'bg-gray-100' 
+              : 'bg-blue-50'
+          }`}>
+            <span className={`font-bold text-xs ${
+              status === 'Sold Out'
+                ? 'text-gray-600'
+                : 'text-blue-800'
+            }`}>
               {priceDisplay}
             </span>
           </div>

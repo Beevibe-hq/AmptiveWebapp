@@ -3,6 +3,66 @@ import toast, { Toaster } from 'react-hot-toast';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Calendar } from 'lucide-react';
+
+
+// Type definition for Trending Card
+interface TrendingCardProps {
+  id: number;
+  title: string;
+  description: string;
+  image: string;
+  gradient: string;
+  avatars: string[];
+  type: 'shows' | 'events';
+}
+
+// Trending Card Component
+const TrendingCard: React.FC<TrendingCardProps> = ({ 
+  title, 
+  description, 
+  image, 
+  gradient, 
+  avatars,
+  type 
+}) => (
+  <div 
+    className="flex-shrink-0 w-[280px] sm:w-auto rounded-xl border border-gray-200 hover:shadow-md transition-shadow overflow-hidden relative"
+    style={{ background: gradient }}
+  >
+    <div className="p-4 flex flex-col h-full relative z-10">
+      <div className="flex justify-between items-center mb-3">
+        <img 
+          src={image}
+          alt={title}
+          className="w-12 h-12 rounded-md object-cover"
+        />
+        <button 
+          className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-900 text-xs font-medium rounded-full transition-colors whitespace-nowrap"
+          type="button"
+        >
+          {type === 'shows' ? 'Subscribe' : 'Get Tickets'}
+        </button>
+      </div>
+      <h3 className="text-sm font-semibold text-white mb-2">{title}</h3>
+      <p className="text-gray-200 text-xs mb-3 line-clamp-2">
+        {description}
+      </p>
+      <div className="mt-auto">
+        <div className="flex -space-x-2">
+          {avatars.map((avatar, index) => (
+            <img 
+              key={index}
+              src={avatar}
+              alt={`Host ${index + 1}`}
+              className="w-6 h-6 rounded-full border-2 border-white object-cover"
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+import weCanDoHardThingsImage from '../assets/we-can-do-hard-things.jpeg';
 import EventCard, { MediaSource } from '../components/EventCard';
 import GeometricPattern from '../components/GeometricPattern';
 
@@ -18,6 +78,12 @@ interface EventType {
 }
 
 import karaImage from '../assets/kara.png';
+import glennonDoyleImage from '../assets/Glennon Doyle.jpeg';
+import jazzNightsImage from '../assets/i-said-what-i-said.jpg';
+import stillProcessingImage from '../assets/still processing.jpg';
+import configImage from '../assets/config.jpeg';
+import liquidiumImage from '../assets/liquidium.jpg';
+import honestBunchImage from '../assets/honnest bunch.jpeg';
 import communityMusicImage from '../assets/Community card 1.png';
 import communityFoodImage from '../assets/Community card 4.png';
 import communityArtImage from '../assets/Community card 2.png';
@@ -297,7 +363,6 @@ const Homepage: React.FC = () => {
 
   // State for filter dropdowns
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isTopEventsFilterOpen, setIsTopEventsFilterOpen] = useState(false);
   const [userCountry, setUserCountry] = useState('Loading...');
   const [showAllTopEvents, setShowAllTopEvents] = useState(false);
   const [filters, setFilters] = useState({
@@ -306,6 +371,9 @@ const Homepage: React.FC = () => {
     priceRange: { min: '', max: '' },
     dateRange: { start: '', end: '' },
   });
+  
+  // State for active tab in Trending section
+  const [activeTab, setActiveTab] = useState<'shows' | 'events'>('shows');
   const [filteredEvents, setFilteredEvents] = useState<EventType[]>([]);
 
   // Get user's country on component mount
@@ -331,6 +399,79 @@ const Homepage: React.FC = () => {
 
     fetchUserCountry();
   }, []);
+
+
+  // Data for Trending section
+  const trendingData: { [key: string]: any[] } = {
+    shows: [
+      {
+        id: 1,
+        title: "We Can Do Hard Things",
+        description: "Life is freaking hard. We are hard. Let's get through it together. Join Glennon Doyle and her sister Amanda as they discuss hard things and how to survive them.",
+        image: weCanDoHardThingsImage,
+        gradient: 'linear-gradient(135deg, #8B3A3A 0%, #CD5C5C 50%, #D2691E 100%)',
+        avatars: [glennonDoyleImage, 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3']
+      },
+      {
+        id: 2,
+        title: "I Said What I Said",
+        description: "Unfiltered conversations about life, love, and everything in between. No topic is off limits.",
+        image: jazzNightsImage,
+        gradient: 'linear-gradient(135deg, #4C1D1D 0%, #7F1D1D 50%, #B91C1C 100%)',
+        avatars: ['https://i.pravatar.cc/150?img=32', 'https://i.pravatar.cc/150?img=33']
+      },
+      {
+        id: 3,
+        title: "Still Processing",
+        description: "Join the conversation about culture, technology, and everything in between with hosts Jenna Wortham and Wesley Morris.",
+        image: stillProcessingImage,
+        gradient: 'linear-gradient(135deg, #4A2D5A 0%, #6A3F7A 50%, #8A5E9B 100%)',
+        avatars: ['https://i.pravatar.cc/150?img=34', 'https://i.pravatar.cc/150?img=35']
+      },
+      {
+        id: 4,
+        title: "The Honest Bunch",
+        description: "A group of friends having honest conversations about life, relationships, and personal growth.",
+        image: honestBunchImage,
+        gradient: 'linear-gradient(135deg, #556B2F 0%, #6B8E23 100%)',
+        avatars: ['https://i.pravatar.cc/150?img=36', 'https://i.pravatar.cc/150?img=37', 'https://i.pravatar.cc/150?img=38']
+      }
+    ],
+    events: [
+      {
+        id: 5,
+        title: "Figma Config 2025",
+        description: "The biggest tech conference of the year featuring industry leaders and innovative startups.",
+        image: configImage,
+        gradient: 'linear-gradient(135deg, #825B90 0%, #7E41B9 100%)',
+        avatars: [configImage]
+      },
+      {
+        id: 6,
+        title: "Liquidium Festival",
+        description: "A weekend of amazing music, food, and good vibes with your favorite artists.",
+        image: liquidiumImage,
+        gradient: 'linear-gradient(to bottom, #1A4D00 0%, #37A400 100%)',
+        avatars: ['https://i.pravatar.cc/150?img=8', 'https://i.pravatar.cc/150?img=9']
+      },
+      {
+        id: 7,
+        title: "Food & Wine Expo",
+        description: "Experience the finest culinary delights and wines from around the world.",
+        image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
+        gradient: 'linear-gradient(135deg, #B91C1C 0%, #F87171 100%)',
+        avatars: ['https://i.pravatar.cc/150?img=10', 'https://i.pravatar.cc/150?img=11', 'https://i.pravatar.cc/150?img=12']
+      },
+      {
+        id: 8,
+        title: "Startup Pitch Night",
+        description: "Witness innovative startups pitch their ideas to a panel of investors.",
+        image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
+        gradient: 'linear-gradient(135deg, #047857 0%, #10B981 100%)',
+        avatars: ['https://i.pravatar.cc/150?img=13', 'https://i.pravatar.cc/150?img=14']
+      }
+    ]
+  };
 
   // Sample events data
   const events = [
@@ -371,8 +512,8 @@ const Homepage: React.FC = () => {
       title: "1analog Girl",
       location: "Ikeja, Lagos",
       country: "Nigeria",
-      status: "Live Now",
-      price: 0,
+      status: "Sold Out",
+      price: 0, // Price is 0 for sold out events
       date: "2025-07-07T22:00:00",
       media: {
         type: 'gif' as const,
@@ -405,8 +546,8 @@ const Homepage: React.FC = () => {
       title: "House Party/pool Party",
       location: "Ikoyi, Lagos",
       country: "Nigeria",
-      status: "Live Now",
-      price: 10000,
+      status: "Sold Out",
+      price: 0, // Price is 0 for sold out events
       date: "2025-07-07T23:30:00",
       media: {
         type: 'image' as const,
@@ -437,8 +578,8 @@ const Homepage: React.FC = () => {
       title: "Tech Conference 2025",
       location: "Maitama, Abuja",
       country: "Nigeria",
-      status: "Registration Open",
-      price: 15000,
+      status: "Sold Out",
+      price: 0, // Price is 0 for sold out events
       date: "2025-08-05T09:00:00",
       media: {
         type: 'image' as const,
@@ -520,11 +661,11 @@ const Homepage: React.FC = () => {
     let result = [...events];
     
     // Filter by status
-    if (filters.status && filters.status !== 'ALL') {
-      result = result.filter(event => 
-        event.status.toLowerCase().includes('sale')
-      );
+    if (filters.status === 'Ticket on sale') {
+      // Show only events that are not sold out
+      result = result.filter(event => event.status !== 'Sold Out');
     }
+    // If status is 'ALL', show all events including sold out
     
     // Filter by country
     if (filters.country) {
@@ -625,8 +766,6 @@ const Homepage: React.FC = () => {
   // State for carousel
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-
-  const [activeTab, setActiveTab] = useState<'shows' | 'events'>('shows');
   const [progressBars, setProgressBars] = useState<number[]>(Array(SLIDES.length).fill(0));
   const sliderRef = useRef<HTMLDivElement>(null);
   const progressInterval = useRef<NodeJS.Timeout>();
@@ -1274,11 +1413,9 @@ const Homepage: React.FC = () => {
                   <div>
                     <div className="inline-block">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        event.status === 'Live Now' ? 'bg-gray-100 text-gray-800' :
-                        (event.status === 'Upcoming' || event.status === 'Registration Open') ? 'bg-green-100 text-green-800' :
-                        'bg-gray-100 text-gray-800'
+                        event.status === 'Sold Out' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800'
                       }`}>
-                        {event.status === 'Live Now' ? 'Sold out' : 'Ticket on sale'}
+                        {event.status === 'Sold Out' ? 'Sold out' : 'Ticket on sale'}
                       </span>
                     </div>
                   </div>
@@ -1440,8 +1577,48 @@ const Homepage: React.FC = () => {
         </div>
       </div>
 
-      {/* Latest Events Section */}
+      {/* Trending on Amptive Section */}
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Trending on Amptive App</h2>
+          <div className="flex space-x-1 bg-gray-100 p-0.5 rounded-full w-fit">
+            <button
+              onClick={() => setActiveTab('shows')}
+              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+                activeTab === 'shows' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Shows
+            </button>
+            <button
+              onClick={() => setActiveTab('events')}
+              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+                activeTab === 'events' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Events
+            </button>
+          </div>
+        </div>
+        
+        <div className="flex flex-nowrap gap-4 overflow-x-auto pb-4 -mx-4 px-4 sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:gap-4 sm:overflow-visible sm:mx-0 sm:px-0">
+          {trendingData[activeTab].map((item) => (
+            <TrendingCard
+              key={item.id}
+              id={item.id}
+              title={item.title}
+              description={item.description}
+              image={item.image}
+              gradient={item.gradient}
+              avatars={item.avatars}
+              type={activeTab}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Latest Events Section - Hidden */}
+      <div className="hidden w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-6 px-3">
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Latest Events</h2>
           <button 
@@ -1617,128 +1794,7 @@ const Homepage: React.FC = () => {
         </div>
       </div>
 
-      {/* Trending on Amptive Section */}
-      <div className="w-[95vw] mx-auto my-12 bg-gray-100 border border-gray-200 rounded-2xl p-6">
-        <div className="mb-6 px-3">
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">Trending on Amptive</h2>
-          
-          {/* Tabs */}
-          <div className="flex border-b border-gray-200 w-full">
-            <button
-              onClick={() => setActiveTab('shows')}
-              className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-                activeTab === 'shows' 
-                  ? 'text-black font-semibold' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Shows
-              {activeTab === 'shows' && (
-                <span className="absolute bottom-0 left-0 w-full h-[3px] bg-black rounded-t-sm"></span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('events')}
-              className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-                activeTab === 'events' 
-                  ? 'text-black font-semibold' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Events
-              {activeTab === 'events' && (
-                <span className="absolute bottom-0 left-0 w-full h-[3px] bg-black rounded-t-sm"></span>
-              )}
-            </button>
-          </div>
-        </div>
-        
-        <div className="-mx-4 px-4 overflow-x-auto pb-4">
-          <div className="flex space-x-4 md:space-x-8 w-max">
-            {activeTab === 'shows' ? (
-              // Shows Content
-              <>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 71.png" 
-                      alt="Trending Show 1" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 71.png" 
-                      alt="Trending Show 2" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 71.png" 
-                      alt="Trending Show 3" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 71.png" 
-                      alt="Trending Show 4" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-              </>
-            ) : (
-              // Events Content
-              <>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 75.png" 
-                      alt="Trending Event 1" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 75.png" 
-                      alt="Trending Event 2" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 75.png" 
-                      alt="Trending Event 3" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-                <div className="flex-shrink-0 w-auto">
-                  <div className="rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow hover:outline-none">
-                    <img 
-                      src="/src/assets/Frame 75.png" 
-                      alt="Trending Event 4" 
-                      className="h-[280px] md:h-[360px] w-auto object-cover"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+
 
       {/* Generate Poster Section */}
       <div className="w-[95vw] mx-auto my-12 bg-[#299AFC1A] border border-gray-200 rounded-2xl py-12 px-8">
