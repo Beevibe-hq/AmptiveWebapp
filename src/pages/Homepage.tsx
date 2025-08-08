@@ -62,7 +62,8 @@ const TrendingCard: React.FC<TrendingCardProps> = ({
     </div>
   </div>
 );
-import weCanDoHardThingsImage from '../assets/we-can-do-hard-things.jpeg';
+// Images moved to public directory for Netlify
+const weCanDoHardThingsImage = '/images/we-can-do-hard-things.jpeg';
 import EventCard, { MediaSource } from '../components/EventCard';
 import GeometricPattern from '../components/GeometricPattern';
 
@@ -77,17 +78,14 @@ interface EventType {
   media: MediaSource;
 }
 
-import karaImage from '../assets/kara.png';
-import glennonDoyleImage from '../assets/Glennon Doyle.jpeg';
-import jazzNightsImage from '../assets/i-said-what-i-said.jpg';
-import stillProcessingImage from '../assets/still processing.jpg';
-import configImage from '../assets/config.jpeg';
-import liquidiumImage from '../assets/liquidium.jpg';
-import honestBunchImage from '../assets/honnest bunch.jpeg';
-import communityMusicImage from '../assets/Community card 1.png';
-import communityFoodImage from '../assets/Community card 4.png';
-import communityArtImage from '../assets/Community card 2.png';
-
+// Update image paths to use public directory
+const karaImage = '/images/kara.png';
+const glennonDoyleImage = '/images/Glennon Doyle.jpeg';
+const jazzNightsImage = '/images/i-said-what-i-said.jpg';
+const stillProcessingImage = '/images/still processing.jpg';
+const configImage = '/images/config.jpeg';
+const liquidiumImage = '/images/liquidium.jpg';
+const honestBunchImage = '/images/honnest bunch.jpeg';
 const techConferenceCardStyles = `
   .tech-conference-card p {
     color: white !important;
@@ -97,13 +95,17 @@ const techConferenceCardStyles = `
   }
 `;
 
-import communityTechImage from '../assets/Community card 5.png';
-import communitySportsImage from '../assets/Community card 6 (1).png';
-import communityFashionImage from '../assets/Community card 8.png';
-import communityGamingImage from '../assets/Community card 9.png';
-import communityHealthImage from '../assets/Community card 10.png';
-import communityEducationImage from '../assets/Community card 11.png';
-import communityTravelImage from '../assets/Community card 16.png';
+// Community section images
+const communityMusicImage = '/images/Community card 1.png';
+const communityFoodImage = '/images/Community card 2.png';
+const communityArtImage = '/images/Community card 4.png';
+const communityTechImage = '/images/Community card 5.png';
+const communitySportsImage = '/images/Community card 6 (1).png';
+const communityFashionImage = '/images/Community card 8.png';
+const communityGamingImage = '/images/Community card 9.png';
+const communityHealthImage = '/images/Community card 7.png';
+const communityEducationImage = '/images/Community card 10.png';
+const communityTravelImage = '/images/Community card 11.png';
 
 interface HeroSlideProps {
   title: string;
@@ -408,15 +410,15 @@ const Homepage: React.FC = () => {
         id: 1,
         title: "We Can Do Hard Things",
         description: "Life is freaking hard. We are hard. Let's get through it together. Join Glennon Doyle and her sister Amanda as they discuss hard things and how to survive them.",
-        image: weCanDoHardThingsImage,
+        image: '/images/we-can-do-hard-things.jpeg',
         gradient: 'linear-gradient(135deg, #8B3A3A 0%, #CD5C5C 50%, #D2691E 100%)',
-        avatars: [glennonDoyleImage, 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3']
+        avatars: ['/images/glennon-doyle.jpeg', 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3']
       },
       {
         id: 2,
         title: "I Said What I Said",
         description: "Unfiltered conversations about life, love, and everything in between. No topic is off limits.",
-        image: jazzNightsImage,
+        image: '/images/i-said-what-i-said.jpg',
         gradient: 'linear-gradient(135deg, #4C1D1D 0%, #7F1D1D 50%, #B91C1C 100%)',
         avatars: ['https://i.pravatar.cc/150?img=32', 'https://i.pravatar.cc/150?img=33']
       },
@@ -424,7 +426,7 @@ const Homepage: React.FC = () => {
         id: 3,
         title: "Still Processing",
         description: "Join the conversation about culture, technology, and everything in between with hosts Jenna Wortham and Wesley Morris.",
-        image: stillProcessingImage,
+        image: '/images/still processing.jpg',
         gradient: 'linear-gradient(135deg, #4A2D5A 0%, #6A3F7A 50%, #8A5E9B 100%)',
         avatars: ['https://i.pravatar.cc/150?img=34', 'https://i.pravatar.cc/150?img=35']
       },
@@ -432,7 +434,7 @@ const Homepage: React.FC = () => {
         id: 4,
         title: "The Honest Bunch",
         description: "A group of friends having honest conversations about life, relationships, and personal growth.",
-        image: honestBunchImage,
+        image: '/images/honnest bunch.jpeg',
         gradient: 'linear-gradient(135deg, #556B2F 0%, #6B8E23 100%)',
         avatars: ['https://i.pravatar.cc/150?img=36', 'https://i.pravatar.cc/150?img=37', 'https://i.pravatar.cc/150?img=38']
       }
@@ -442,15 +444,15 @@ const Homepage: React.FC = () => {
         id: 5,
         title: "Figma Config 2025",
         description: "The biggest tech conference of the year featuring industry leaders and innovative startups.",
-        image: configImage,
+        image: '/images/config.jpeg',
         gradient: 'linear-gradient(135deg, #825B90 0%, #7E41B9 100%)',
-        avatars: [configImage]
+        avatars: ['/images/config.jpg']
       },
       {
         id: 6,
         title: "Liquidium Festival",
         description: "A weekend of amazing music, food, and good vibes with your favorite artists.",
-        image: liquidiumImage,
+        image: '/images/liquidium.jpg',
         gradient: 'linear-gradient(to bottom, #1A4D00 0%, #37A400 100%)',
         avatars: ['https://i.pravatar.cc/150?img=8', 'https://i.pravatar.cc/150?img=9']
       },
@@ -1637,7 +1639,7 @@ const Homepage: React.FC = () => {
             <div className="w-64 flex-shrink-0">
               <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
                 <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
-                  <img src="/src/assets/kara.png" alt="Karaoke Traffic Vibes" className="w-full h-full object-cover rounded-lg" />
+                  <img src="/images/kara.png" alt="Karaoke Traffic Vibes" className="w-full h-full object-cover rounded-lg" />
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
@@ -1696,7 +1698,7 @@ const Homepage: React.FC = () => {
               <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
                 <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
                   <img 
-                    src="/src/assets/GIF promo (1mouth analog) v2.gif" 
+                    src="/images/1mouth-analog-v2.gif" 
                     alt="1analog Girl" 
                     className="w-full h-full object-cover rounded-lg" 
                   />
@@ -2151,9 +2153,9 @@ const Homepage: React.FC = () => {
         }}
       />
       
-      {/* Newsletter Signup Section */}
-      <div className="w-[95vw] mx-auto my-12 relative">
-        <style jsx global>{`
+      {/* Global styles for toast notifications */}
+      <style dangerouslySetInnerHTML={{
+        __html: `
           @keyframes slideIn {
             from {
               transform: translateY(-100%);
@@ -2167,7 +2169,11 @@ const Homepage: React.FC = () => {
           .toast {
             animation: slideIn 0.3s ease-out forwards !important;
           }
-        `}</style>
+        `
+      }} />
+      
+      {/* Newsletter Signup Section */}
+      <div className="w-[95vw] mx-auto my-12 relative">
         <div className="absolute inset-0 overflow-hidden rounded-xl">
           <GeometricPattern />
         </div>

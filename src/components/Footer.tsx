@@ -11,7 +11,7 @@ const Footer = () => {
           <div className="flex items-start lg:col-span-4 min-h-0 lg:min-h-[240px] pb-6 md:pb-0">
             <div className="flex items-center">
               <img 
-                src="/src/assets/amptive_logotype.svg" 
+                src="/amptive_logotype.svg" 
                 alt="Amptive Logo" 
                 className="h-16 w-auto invert-[100%]"
               />

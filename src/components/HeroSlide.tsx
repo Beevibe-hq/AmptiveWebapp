@@ -27,7 +27,7 @@ export const HeroSlide: React.FC<HeroSlideProps> = ({
         <div 
           className="absolute inset-0 w-full h-full"
           style={{
-            backgroundImage: 'url("src/assets/OC 12.png")',
+            backgroundImage: 'url("/images/hero/OC 12.png")',
             backgroundSize: 'cover',
             backgroundPosition: 'center center',
             backgroundRepeat: 'no-repeat'
