@@ -3,6 +3,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Calendar } from 'lucide-react';
+import QRCodeGenerator from '../components/QRCodeGenerator';
 
 
 // Type definition for Trending Card
@@ -134,13 +135,45 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
   textColor = '',
   className = '',
   isFirstSlide = false,
-  isSecondSlide = false
+  isSecondSlide = false,
+  onSwipeLeft,
+  onSwipeRight
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [touchStart, setTouchStart] = useState(0);
+  const [touchEnd, setTouchEnd] = useState(0);
+
+  const minSwipeDistance = 50; // Minimum distance to consider it a swipe
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(0); // Reset touch end position
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe && onSwipeRight) {
+      onSwipeRight();
+    } else if (isRightSwipe && onSwipeLeft) {
+      onSwipeLeft();
+    }
+  };
   
   return (
     <div 
       className={`relative rounded-2xl w-[95vw] max-w-[95vw] md:w-[92vw] md:max-w-[92vw] lg:w-[95vw] lg:max-w-[95vw] flex items-start justify-center overflow-hidden bg-gray-100 mt-20 mx-auto py-0 md:py-16 lg:py-20 xl:py-24 ${className}`}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
     >
       {/* Background - Image for all slides */}
       <div className="absolute inset-0 w-full h-full">
@@ -148,7 +181,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
           <div 
             className="absolute inset-0 w-full h-full"
             style={{
-              backgroundImage: `url(${new URL('../assets/OC 11.png', import.meta.url).href})`,
+              backgroundImage: 'url(/images/OC%2011.webp)',
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               backgroundRepeat: 'no-repeat'
@@ -160,7 +193,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               <div 
                 className="absolute inset-0 w-full h-full"
                 style={{
-                  backgroundImage: `url(${new URL(`../assets/${backgroundImage}`, import.meta.url).href})`,
+                  backgroundImage: `url(${backgroundImage})`,
                   backgroundSize: 'cover',
                   backgroundPosition: 'center',
                   backgroundRepeat: 'no-repeat'
@@ -275,13 +308,11 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 <div className="flex items-center gap-2 mb-8 p-2 bg-black/10 rounded-lg">
                   <div className="flex-shrink-0">
                     <div className="bg-white p-1 rounded flex items-center justify-center" style={{ width: '80px', height: '80px' }}>
-                      <img 
-                        src="https://api.qrserver.com/v1/create-qr-code/?size=72x72&data=https://www.amptiveapp.com/downloads" 
-                        alt="QR Code"
-                        width="72"
-                        height="72"
-                        className="w-[72px] h-[72px]"
-                      />
+                      <QRCodeGenerator 
+                      value="https://www.amptiveapp.com/downloads" 
+                      size={72}
+                      className="w-[72px] h-[72px]"
+                    />
                     </div>
                   </div>
                   <div className="ml-1">
@@ -337,7 +368,7 @@ const SLIDES = [
     ctaText: "Create event",
     ctaLink: "/events",
     videoSrc: new URL('../assets/The_camera_focus_202507041156.mp4', import.meta.url).href,
-    backgroundImage: 'OC 12.png',
+    backgroundImage: '/images/OC%2012.webp',
     shadowColor: 'rgba(0, 0, 0, 0.6)',
     isSecondSlide: true
   },
@@ -966,6 +997,8 @@ const Homepage: React.FC = () => {
                 backgroundImage={slide.backgroundImage}
                 isFirstSlide={slide.isFirstSlide}
                 isSecondSlide={slide.isSecondSlide}
+                onSwipeLeft={prevSlide}
+                onSwipeRight={nextSlide}
               />
             </div>
           ))}
