@@ -230,7 +230,7 @@ const EventCard: React.FC<EventCardProps> = ({
         )}
         
         {/* Title */}
-        <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 line-clamp-2">{title}</h3>
+        <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{title}</h3>
         
         {/* Location */}
         <div className="flex flex-col mb-2">

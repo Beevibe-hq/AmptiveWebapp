@@ -44,7 +44,7 @@ const TrendingCard: React.FC<TrendingCardProps> = ({
           {type === 'shows' ? 'Subscribe' : 'Get Tickets'}
         </button>
       </div>
-      <h3 className="text-sm font-semibold text-white mb-2">{title}</h3>
+      <h3 className="text-sm font-semibold text-white mb-2 whitespace-nowrap overflow-hidden text-ellipsis">{title}</h3>
       <p className="text-gray-200 text-xs mb-3 line-clamp-2">
         {description}
       </p>
@@ -801,7 +801,8 @@ const Homepage: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [progressBars, setProgressBars] = useState<number[]>(Array(SLIDES.length).fill(0));
   const sliderRef = useRef<HTMLDivElement>(null);
-  const progressInterval = useRef<NodeJS.Timeout>();
+  const progressInterval = useRef<NodeJS.Timeout | null>(null);
+  const resumeTimeout = useRef<NodeJS.Timeout | null>(null);
   
   // Handle slide change
   const goToSlide = (index: number) => {
@@ -918,23 +919,55 @@ const Homepage: React.FC = () => {
 
   // Toggle pause state
   const togglePause = () => {
-    setIsPaused(prev => !prev);
+    const newPausedState = !isPaused;
+    setIsPaused(newPausedState);
+    
+    // Clear any pending resume timeout when manually toggling pause/play
+    if (resumeTimeout.current) {
+      clearTimeout(resumeTimeout.current);
+      resumeTimeout.current = null;
+    }
+    
+    // If pausing, don't schedule auto-resume
+    if (newPausedState) return;
+    
+    // If unpausing, schedule the next auto-slide
+    scheduleAutoResume();
+  };
+  
+  // Schedule auto-resume of the slider
+  const scheduleAutoResume = () => {
+    // Clear any existing timeout
+    if (resumeTimeout.current) {
+      clearTimeout(resumeTimeout.current);
+      resumeTimeout.current = null;
+    }
+    
+    // Set a new timeout to resume auto-sliding after 5 seconds of inactivity
+    resumeTimeout.current = setTimeout(() => {
+      if (isPaused) {
+        setIsPaused(false);
+      }
+    }, 5000); // 5 seconds delay before resuming
   };
   
   // Auto-advance slides with smooth progress
   useEffect(() => {
+    // Clear any existing interval
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+      progressInterval.current = null;
+    }
+    
     if (isPaused) {
-      if (progressInterval.current) {
-        clearInterval(progressInterval.current);
-      }
       return;
     }
     
-    // Update progress every 100ms for smooth animation (20s total = 100%)
+    // Update progress every 50ms for smoother animation (10s total = 100%)
     progressInterval.current = setInterval(() => {
       setProgressBars(prev => {
         const newProgress = [...prev];
-        const currentProgress = newProgress[currentSlide] + (100 / 200); // 0.5% every 100ms = 100% in 20s
+        const currentProgress = newProgress[currentSlide] + (100 / 200); // 1% every 50ms = 100% in 10s
         
         if (currentProgress >= 100) {
           // Move to next slide when current progress reaches 100%
@@ -947,7 +980,7 @@ const Homepage: React.FC = () => {
         newProgress[currentSlide] = currentProgress;
         return newProgress;
       });
-    }, 100);
+    }, 50);
     
     return () => {
       if (progressInterval.current) {
@@ -955,6 +988,21 @@ const Homepage: React.FC = () => {
       }
     };
   }, [isPaused, currentSlide]);
+  
+  // Handle slide change with smooth transition
+  useEffect(() => {
+    if (sliderRef.current) {
+      // Force reflow to ensure smooth transition
+      sliderRef.current.style.transition = 'transform 500ms ease-in-out';
+    }
+    
+    // Cleanup function
+    return () => {
+      if (sliderRef.current) {
+        sliderRef.current.style.transition = 'none';
+      }
+    };
+  }, [currentSlide]);
 
   return (
     <div className="relative">
@@ -982,36 +1030,30 @@ const Homepage: React.FC = () => {
         </button>
         <div 
           ref={sliderRef}
-          className="flex transition-transform duration-500 ease-in-out overflow-x-auto snap-x snap-mandatory"
+          className="flex transition-transform duration-500 ease-in-out"
           style={{ 
             transform: `translateX(-${currentSlide * 100}%)`,
-            scrollBehavior: 'smooth',
-            WebkitOverflowScrolling: 'touch',
-            msOverflowStyle: 'none',
-            scrollbarWidth: 'none',
             cursor: 'grab'
-          }}
-          onScroll={(e) => {
-            // Pause auto-scroll when user manually scrolls
-            if (!isPaused) {
-              setIsPaused(true);
-            }
-            
-            // Calculate current slide based on scroll position
-            const container = e.currentTarget;
-            const scrollPosition = container.scrollLeft;
-            const slideWidth = container.offsetWidth;
-            const currentSlideIndex = Math.round(scrollPosition / slideWidth);
-            
-            if (currentSlideIndex !== currentSlide) {
-              setCurrentSlide(currentSlideIndex);
-            }
           }}
           onMouseDown={() => {
             // Pause auto-scroll when user starts dragging
-            if (!isPaused) {
-              setIsPaused(true);
-            }
+            setIsPaused(true);
+            // Schedule auto-resume after interaction
+            scheduleAutoResume();
+          }}
+          onTouchStart={() => {
+            // Pause auto-scroll when user starts swiping
+            setIsPaused(true);
+            // Schedule auto-resume after interaction
+            scheduleAutoResume();
+          }}
+          onTouchEnd={() => {
+            // Reset the auto-resume timer on touch end
+            scheduleAutoResume();
+          }}
+          onMouseUp={() => {
+            // Reset the auto-resume timer on mouse up
+            scheduleAutoResume();
           }}
         >
           {SLIDES.map((slide, index) => (
@@ -1406,7 +1448,7 @@ const Homepage: React.FC = () => {
                 </div>
                 
                 {/* Show More Button for Mobile */}
-                <div className="mt-6 w-full px-4">
+                <div className="mt-2 w-full px-4">
                   <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
                     View more events
                   </button>
@@ -1511,7 +1553,7 @@ const Homepage: React.FC = () => {
         
         {/* Mobile Layout */}
         <div className="sm:hidden">
-          <div className="-mx-2 px-4 overflow-x-auto pb-4">
+          <div className="-mx-2 px-4 overflow-x-auto pb-2">
             <div className="flex space-x-3 w-max">
               {events
                 .slice(0, showAllTopEvents ? events.length : 6)
@@ -1530,7 +1572,7 @@ const Homepage: React.FC = () => {
             </div>
           </div>
           
-          <div className="mt-6 w-full px-4">
+          <div className="mt-4 w-full px-4">
             <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
               View more events
             </button>
