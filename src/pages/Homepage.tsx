@@ -2141,7 +2141,7 @@ const Homepage: React.FC = () => {
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/audio-quality-tips" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img 
-                  src="/src/assets/Overview (2).png" 
+                  src="/images/Overview (2).png" 
                   alt="Amptive platform features"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2202,7 +2202,7 @@ const Homepage: React.FC = () => {
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/monetization-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img 
-                  src="/src/assets/Overview (2).png" 
+                  src="/images/Overview (2).png" 
                   alt="Amptive monetization"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
