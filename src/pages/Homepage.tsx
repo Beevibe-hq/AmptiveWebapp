@@ -550,7 +550,7 @@ const Homepage: React.FC = () => {
       date: "2025-07-07T22:00:00",
       media: {
         type: 'gif' as const,
-        src: 'http://localhost:3000/src/assets/GIF%20promo%20(1mouth%20analog)%20v2.gif',
+        src: '/images/GIF promo (1mouth analog) v2.gif',
         alt: '1analog Girl',
         autoplay: true,
         loop: true
