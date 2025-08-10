@@ -930,11 +930,11 @@ const Homepage: React.FC = () => {
       return;
     }
     
-    // Update progress every 100ms for smooth animation (30s total = 100%)
+    // Update progress every 100ms for smooth animation (20s total = 100%)
     progressInterval.current = setInterval(() => {
       setProgressBars(prev => {
         const newProgress = [...prev];
-        const currentProgress = newProgress[currentSlide] + (100 / 300); // 0.33% every 100ms = 100% in 30s
+        const currentProgress = newProgress[currentSlide] + (100 / 200); // 0.5% every 100ms = 100% in 20s
         
         if (currentProgress >= 100) {
           // Move to next slide when current progress reaches 100%
@@ -982,8 +982,37 @@ const Homepage: React.FC = () => {
         </button>
         <div 
           ref={sliderRef}
-          className="flex transition-transform duration-500 ease-in-out"
-          style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+          className="flex transition-transform duration-500 ease-in-out overflow-x-auto snap-x snap-mandatory"
+          style={{ 
+            transform: `translateX(-${currentSlide * 100}%)`,
+            scrollBehavior: 'smooth',
+            WebkitOverflowScrolling: 'touch',
+            msOverflowStyle: 'none',
+            scrollbarWidth: 'none',
+            cursor: 'grab'
+          }}
+          onScroll={(e) => {
+            // Pause auto-scroll when user manually scrolls
+            if (!isPaused) {
+              setIsPaused(true);
+            }
+            
+            // Calculate current slide based on scroll position
+            const container = e.currentTarget;
+            const scrollPosition = container.scrollLeft;
+            const slideWidth = container.offsetWidth;
+            const currentSlideIndex = Math.round(scrollPosition / slideWidth);
+            
+            if (currentSlideIndex !== currentSlide) {
+              setCurrentSlide(currentSlideIndex);
+            }
+          }}
+          onMouseDown={() => {
+            // Pause auto-scroll when user starts dragging
+            if (!isPaused) {
+              setIsPaused(true);
+            }
+          }}
         >
           {SLIDES.map((slide, index) => (
             <div key={index} className="w-full flex-shrink-0">
@@ -1079,7 +1108,7 @@ const Homepage: React.FC = () => {
       {/* Upcoming Events Section */}
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-8">
-          <h2 className="text-2xl font-bold text-black">Upcoming Events</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-black">Upcoming Events</h2>
           <div className="relative" ref={filterRef}>
             <button 
               onClick={toggleFilter}
@@ -1359,10 +1388,10 @@ const Homepage: React.FC = () => {
             {filteredEvents.length > 0 ? (
               <>
                 {/* Horizontal Scrollable Cards */}
-                <div className="-mx-4 px-4 overflow-x-auto pb-4">
-                  <div className="flex space-x-4 w-max">
+                <div className="-mx-2 px-4 overflow-x-auto pb-4">
+                  <div className="flex space-x-3 w-max">
                     {filteredEvents.map((event, index) => (
-                      <div key={index} className="w-64 flex-shrink-0">
+                      <div key={index} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
                         <EventCard
                           title={event.title}
                           location={event.location}
@@ -1407,7 +1436,7 @@ const Homepage: React.FC = () => {
       {/* Top Events Section */}
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl px-6 py-6">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-black">Top Events</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-black">Top Events</h2>
           {/* Filter button and modal removed as per user request */}
         </div>
         
@@ -1482,12 +1511,12 @@ const Homepage: React.FC = () => {
         
         {/* Mobile Layout */}
         <div className="sm:hidden">
-          <div className="-mx-4 px-4 overflow-x-auto pb-4">
-            <div className="flex space-x-4 w-max">
+          <div className="-mx-2 px-4 overflow-x-auto pb-4">
+            <div className="flex space-x-3 w-max">
               {events
-                .slice(0, showAllTopEvents ? events.length : 5)
+                .slice(0, showAllTopEvents ? events.length : 6)
                 .map((event) => (
-                  <div key={event.id} className="w-64 flex-shrink-0">
+                  <div key={event.id} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
                     <EventCard
                       title={event.title}
                       location={event.location}
@@ -1512,7 +1541,7 @@ const Homepage: React.FC = () => {
 
 
       {/* Browse by Community Section */}
-      <div className={`w-[95vw] mx-auto my-12 border rounded-2xl p-8 min-h-[400px] flex flex-col justify-center relative transition-colors duration-500 ${cardColors[activeCardIndex]}`}>
+      <div className={`w-[95vw] mx-auto my-12 border rounded-2xl px-6 py-8 min-h-[400px] flex flex-col justify-center relative transition-colors duration-500 ${cardColors[activeCardIndex]}`}>
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Title Section */}
           <div className="w-full lg:w-1/5 flex flex-col items-start gap-4 px-4">
@@ -1615,7 +1644,7 @@ const Homepage: React.FC = () => {
       {/* Trending on Amptive Section */}
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Trending on Amptive App</h2>
+          <h2 className="text-xl md:text-3xl font-bold text-gray-900">Trending on Amptive App</h2>
           <div className="flex space-x-1 bg-gray-100 p-0.5 rounded-full w-fit">
             <button
               onClick={() => setActiveTab('shows')}
@@ -1861,8 +1890,7 @@ const Homepage: React.FC = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
                   <path fillRule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.91l1.036.258a.75.75 0 0 1 0 1.456l-1.036.258c-.94.236-1.674.97-1.91 1.91l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.91-1.91l-1.036-.258a.75.75 0 0 1 0-1.456l1.036-.258a2.625 2.625 0 0 0 1.91-1.91l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clipRule="evenodd" />
                 </svg>
-                <span className="hidden sm:inline">Generate with AI</span>
-                <span className="sm:hidden">Generate</span>
+                <span>Generate with AI</span>
               </span>
             </a>
           </div>
@@ -2007,7 +2035,7 @@ const Homepage: React.FC = () => {
       {/* Blog Section */}
       <div className="w-[95vw] mx-auto my-12 bg-orange-50 border border-orange-100 rounded-2xl pt-6 pb-12 px-8">
         <div className="flex justify-between items-center">
-          <h2 className="text-[24px] font-bold text-gray-900">Blog</h2>
+          <h2 className="text-xl md:text-[24px] font-bold text-gray-900">Blog</h2>
           <a href="/blog" className="flex items-center text-gray-900 hover:text-gray-700 font-medium">
             View all posts
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1 text-gray-900" viewBox="0 0 20 20" fill="currentColor">
@@ -2024,7 +2052,7 @@ const Homepage: React.FC = () => {
             <div className="group w-full max-w-[700px] flex flex-col gap-6">
               <a href="/blog/how-to-host-successful-virtual-events" className="block w-full overflow-hidden lg:max-w-[800px] lg:mx-auto" style={{ aspectRatio: '16/9' }}>
                 <img 
-                  src="/src/assets/Overview (1).png" 
+                  src="/images/Overview (1).png" 
                   alt="Event overview"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2051,7 +2079,7 @@ const Homepage: React.FC = () => {
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/event-marketing-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img 
-                  src="/src/assets/Overview.png" 
+                  src="/images/Overview.png" 
                   alt="Marketing insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2092,7 +2120,7 @@ const Homepage: React.FC = () => {
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/future-of-live-audio" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img 
-                  src="/src/assets/Overview.png" 
+                  src="/images/Overview.png" 
                   alt="Audio insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2112,7 +2140,7 @@ const Homepage: React.FC = () => {
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/engaging-audience" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img 
-                  src="/src/assets/Overview.png" 
+                  src="/images/Overview.png" 
                   alt="Audience engagement insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
