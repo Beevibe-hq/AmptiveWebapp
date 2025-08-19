@@ -68,10 +68,16 @@ const Navbar = () => {
     return location.pathname === path;
   };
 
+  const isAIChatPage = location.pathname === '/ai-chat' || location.pathname === '/ai-chat/';
+
   return (
     <nav 
       className={`fixed top-0 w-full z-50 ${
-        isScrolled ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100' : 'bg-white'
+        isAIChatPage 
+          ? 'bg-transparent backdrop-blur-0 shadow-none border-none' 
+          : isScrolled 
+            ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100' 
+            : 'bg-white'
       }`}
     >
       <div className="px-4 sm:px-6 lg:px-8">
@@ -211,7 +217,7 @@ const Navbar = () => {
               className="hidden lg:block xl:hidden"
             >
               <Link
-                to="/generate"
+                to="/ai-chat"
                 className="group relative flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-colors duration-200"
                 style={{
                   backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -247,7 +253,7 @@ const Navbar = () => {
               className="hidden xl:block"
             >
               <Link
-                to="/generate"
+                to="/ai-chat"
                 className="group relative flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-colors duration-200"
                 style={{
                   backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -292,7 +298,7 @@ const Navbar = () => {
               className="lg:hidden mr-2"
             >
               <Link
-                to="/generate"
+                to="/ai-chat"
                 className="group relative flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors duration-200"
                 style={{
                   backgroundColor: 'rgba(168, 85, 247, 0.1)',
