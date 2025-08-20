@@ -10,6 +10,7 @@ import Shop from './pages/Shop';
 import Community from './pages/Community';
 import AITool from './pages/AITool';
 import NewChat from './pages/NewChat';
+import ChatMode from './pages/ChatMode';
 import Help from './pages/Help';
 import Download from './pages/Download';
 
@@ -26,7 +27,7 @@ function App() {
 // MainLayout component that includes Navbar and conditionally renders Footer
 function MainLayout() {
   const location = useLocation();
-  const hideFooter = location.pathname === '/ai-chat';
+  const hideFooter = location.pathname === '/ai-chat' || location.pathname === '/chat-mode';
 
   return (
     <div className="min-h-screen font-inter">
@@ -41,6 +42,7 @@ function MainLayout() {
         <Route path="/community" element={<Community />} />
         <Route path="/ai-tool" element={<AITool />} />
         <Route path="/ai-chat" element={<NewChat />} />
+        <Route path="/chat-mode" element={<ChatMode />} />
         <Route path="/help" element={<Help />} />
         <Route path="/download" element={<Download />} />
       </Routes>

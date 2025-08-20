@@ -68,7 +68,7 @@ const Navbar = () => {
     return location.pathname === path;
   };
 
-  const isAIChatPage = location.pathname === '/ai-chat' || location.pathname === '/ai-chat/';
+  const isAIChatPage = location.pathname === '/ai-chat' || location.pathname === '/ai-chat/' || location.pathname === '/chat-mode' || location.pathname === '/chat-mode/';
 
   return (
     <nav 

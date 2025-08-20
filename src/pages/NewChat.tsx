@@ -73,6 +73,19 @@ interface Message {
 
 const NewChat = () => {
   const [input, setInput] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // Reset height to get the correct scrollHeight
+      textarea.style.height = 'auto';
+      // Set the height to scrollHeight, but not more than 160px
+      const newHeight = Math.min(textarea.scrollHeight, 160);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, [input]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -140,9 +153,18 @@ const NewChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (input.trim() && !isLoading) {
+        handleSubmit(e as unknown as React.FormEvent);
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
     // Add user message
     const userMessage: Message = {
@@ -270,10 +292,21 @@ const NewChat = () => {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="Ask me to create a cover image for your event..."
+                    maxLength={5000}
                     className="flex w-full rounded-md px-2 py-2 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none text-[16px] leading-snug placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap md:text-base focus-visible:ring-offset-0 max-h-[200px] bg-transparent focus:bg-transparent flex-1"
-                    style={{ minHeight: '80px', height: '80px' }}
+                    ref={textareaRef}
+                    style={{ 
+                      minHeight: '80px',
+                      maxHeight: '160px',
+                      height: '80px',
+                      overflowY: 'auto',
+                      resize: 'none',
+                      scrollbarWidth: 'thin',
+                      scrollbarColor: '#e5e7eb transparent'
+                    }}
                     onFocus={() => setIsInputFocused(true)}
                     onBlur={() => setIsInputFocused(false)}
+                    onKeyDown={handleKeyDown}
                     disabled={isLoading}
                   />
                 </div>
@@ -352,7 +385,11 @@ const NewChat = () => {
                     <button
                       type="submit"
                       disabled={!input.trim() || isLoading}
-                      className={`flex h-8 w-8 items-center justify-center rounded-full bg-black text-white transition-opacity duration-150 ease-out ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full transition-opacity duration-150 ease-out ${
+                      !input.trim() || isLoading
+                        ? 'bg-gray-300 cursor-not-allowed'
+                        : 'bg-black text-white cursor-pointer'
+                    }`}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 -960 960 960" className="h-5 w-5" fill="currentColor">
                         <path d="M442.39-616.87 309.78-487.26q-11.82 11.83-27.78 11.33t-27.78-12.33q-11.83-11.83-11.83-27.78 0-15.96 11.83-27.79l198.43-199q11.83-11.82 28.35-11.82t28.35 11.82l198.43 199q11.83 11.83 11.83 27.79 0 15.95-11.83 27.78-11.82 11.83-27.78 11.83t-27.78-11.83L521.61-618.87v348.83q0 16.95-11.33 28.28-11.32 11.33-28.28 11.33t-28.28-11.33q-11.33-11.33-11.33-28.28v-348.83z"/>
