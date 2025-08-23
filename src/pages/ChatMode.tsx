@@ -1,19 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Image as ImageIcon, Zap, Loader2, Image as ImageIcon2, Copy, Check, ThumbsUp, ThumbsDown, RotateCw, Download, File as FileIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { Plus, Image as ImageIcon, Zap, Copy, Check, ThumbsUp, ThumbsDown, RotateCw, Download } from 'lucide-react';
+import { toast, Toaster } from 'sonner';
 import {
   Root as DropdownMenu,
   Trigger as DropdownMenuTrigger,
   Portal as DropdownMenuPortal,
   Content as DropdownMenuContent,
-  Item as DropdownMenuItem,
-  Label as DropdownMenuLabel,
-  Group as DropdownMenuGroup,
-  Separator as DropdownMenuSeparator,
-  Sub as DropdownMenuSub,
-  SubTrigger as DropdownMenuSubTrigger,
-  SubContent as DropdownMenuSubContent
+  Item as DropdownMenuItem
 } from '@radix-ui/react-dropdown-menu';
+import { useLocation } from 'react-router-dom';
 
 interface FileAttachment {
   type: 'image' | 'file';
@@ -33,7 +28,6 @@ interface Message {
   isLoading?: boolean;
   attachments?: FileAttachment[];
 }
-
 
 // Action tray component for AI messages
 const MessageActions = ({ 
@@ -206,7 +200,7 @@ const ImageMessage = ({ imageUrl }: { imageUrl: string }) => {
       {!error && (
         <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
           <div className="flex items-center">
-            <ImageIcon2 className="h-3 w-3 mr-1" />
+            <ImageIcon className="h-3 w-3 mr-1" />
             AI Generated
           </div>
         </div>
@@ -276,7 +270,27 @@ const useTypingAnimation = (phrases: string[], typingSpeed = 100, deletingSpeed 
   return { text: displayText, showCursor };
 };
 
+interface LocationState {
+  initialMessage: Message;
+}
+
 const ChatMode = () => {
+  const location = useLocation();
+  const [initialMessage, setInitialMessage] = useState<Message | null>(null);
+  
+  // Get initial message from session storage on component mount
+  useEffect(() => {
+    const savedMessage = sessionStorage.getItem('initialMessage');
+    if (savedMessage) {
+      try {
+        const parsedMessage = JSON.parse(savedMessage);
+        setInitialMessage(parsedMessage);
+        console.log('Retrieved initial message from session storage:', parsedMessage);
+      } catch (error) {
+        console.error('Error parsing initial message:', error);
+      }
+    }
+  }, []);
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -300,6 +314,96 @@ const ChatMode = () => {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isFileUploading, setIsFileUploading] = useState(false);
   const fileUploadRef = useRef<HTMLDivElement>(null);
+  const hasProcessedInitialMessage = useRef(false);
+
+  // Handle initial message when component mounts
+  useEffect(() => {
+    console.log('useEffect triggered with initialMessage:', initialMessage);
+    if (initialMessage && !hasProcessedInitialMessage.current) {
+      console.log('Processing initial message:', initialMessage);
+      hasProcessedInitialMessage.current = true;
+      
+      // Clear the initial message from session storage
+      sessionStorage.removeItem('initialMessage');
+      
+      // First, add the user's message to the messages array
+      setMessages([initialMessage]);
+      
+      // Check if this is an image generation request
+      const isImageRequest = initialMessage.type === 'image_loading';
+      
+      if (isImageRequest) {
+        // Handle image generation
+        const messageId = (Date.now() + 1).toString();
+        
+        // Add loading message
+        const loadingMessage = {
+          id: messageId,
+          content: 'Creating your image...',
+          sender: 'ai' as const,
+          type: 'image_loading' as const,
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, loadingMessage]);
+        
+        // Generate the image
+        const generateAndSetImage = async () => {
+          try {
+            const imageUrl = await generateImage(initialMessage.content);
+            
+            // Update the loading message with the actual image
+            setMessages(prev => 
+              prev.map(msg => 
+                msg.id === messageId 
+                  ? {
+                      ...msg,
+                      type: 'image' as const,
+                      imageUrl,
+                      content: initialMessage.content
+                    }
+                  : msg
+              )
+            );
+          } catch (error) {
+            console.error('Error generating image:', error);
+            // Update with error state
+            setMessages(prev => 
+              prev.map(msg => 
+                msg.id === messageId 
+                  ? {
+                      ...msg,
+                      content: 'Sorry, I encountered an error generating your image. Please try again.',
+                      type: 'text' as const
+                    }
+                  : msg
+              )
+            );
+          }
+        };
+        
+        generateAndSetImage();
+      } else {
+        // Handle regular text response
+        const aiResponse = getAIResponse(initialMessage.content);
+        
+        // Add a small delay to simulate AI thinking time
+        const timer = setTimeout(() => {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              content: aiResponse,
+              sender: 'ai',
+              timestamp: new Date()
+            }
+          ]);
+        }, 1000);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [initialMessage]);
   
   const toastOptions = {
     style: { 
@@ -854,7 +958,7 @@ What would you like to focus on?`
                           className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100"
                           onSelect={() => fileInputRef.current?.click()}
                         >
-                          <ImageIcon className="h-4 w-4 text-gray-700" />
+                          <ImageIcon className="h-4 w-4 text-gray-500" />
                           <span>Add photo and file</span>
                         </DropdownMenuItem>
                         
@@ -930,6 +1034,7 @@ What would you like to focus on?`
 const ChatModeWithToaster = () => {
   return (
     <>
+      <Toaster position="top-center" />
       <ChatMode />
     </>
   );
