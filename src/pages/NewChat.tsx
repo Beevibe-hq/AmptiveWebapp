@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { TypingPlaceholder } from '../components/TypingPlaceholder';
 import { useNavigate } from 'react-router-dom';
 
 interface Message {
@@ -13,6 +14,7 @@ const NewChat = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [input, setInput] = useState('');
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea
@@ -143,19 +145,24 @@ const NewChat = () => {
                 onSubmit={handleSubmit} 
                 className="group flex flex-col gap-2 p-3 w-full rounded-3xl border border-gray-200 bg-white text-base shadow-lg transition-all duration-150 ease-in-out focus-within:border-gray-300 hover:border-gray-300 focus-within:hover:border-gray-400"
               >
-                <div className="relative flex flex-1 items-center">
+                <div className="w-full relative">
+                  <div className="absolute top-2 left-3 right-3 pointer-events-none break-words whitespace-normal">
+                    {!input && !isInputFocused && (
+                      <TypingPlaceholder isFocused={isInputFocused} />
+                    )}
+                  </div>
                   <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask me to create a cover image for your event..."
+                    placeholder=" " // Empty placeholder since we'll use our custom one
                     maxLength={5000}
-                    className="flex w-full rounded-md px-2 py-2 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none text-[16px] leading-snug placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap md:text-base focus-visible:ring-offset-0 max-h-[200px] bg-transparent focus:bg-transparent flex-1"
+                    className="w-full rounded-md px-2 py-2 focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none text-[16px] leading-normal md:leading-snug focus-visible:ring-offset-0 max-h-[160px] bg-transparent focus:bg-transparent whitespace-pre-wrap break-words overflow-y-auto relative"
+                    onFocus={() => setIsInputFocused(true)}
+                    onBlur={() => setIsInputFocused(false)}
                     ref={textareaRef}
                     style={{ 
                       minHeight: '80px',
-                      maxHeight: '160px',
-                      height: '80px',
-                      overflowY: 'auto',
+                      height: 'auto',
                       resize: 'none',
                       scrollbarWidth: 'thin',
                       scrollbarColor: '#e5e7eb transparent'
@@ -164,13 +171,37 @@ const NewChat = () => {
                     disabled={isLoading}
                   />
                 </div>
-                <div className="flex gap-2 flex-wrap items-center">
+                <div className="flex gap-2 flex-wrap items-center mt-2 w-full">
                   <button
                     type="button"
                     className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white shadow-sm hover:bg-gray-50 hover:border-gray-300 py-2 h-8 gap-1.5 rounded-full px-3 text-gray-500 hover:text-gray-700"
                   >
                     <Plus className="h-4 w-4 text-black" />
-                    <span className="hidden md:flex">Attach</span>
+                    <span className="hidden md:flex text-black">Attach</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white shadow-sm hover:bg-gray-50 hover:border-gray-300 py-2 h-8 gap-1.5 rounded-full px-3 text-gray-500 hover:text-gray-700"
+                  >
+                    <img 
+                      src="/images/images-outline.svg" 
+                      alt="Library" 
+                      className="h-4 w-4"
+                    />
+                    <span className="hidden md:flex text-black">Library</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white shadow-sm hover:bg-gray-50 hover:border-gray-300 py-2 h-8 gap-1.5 rounded-full px-3 text-gray-500 hover:text-gray-700"
+                  >
+                    <img 
+                      src="/images/chatbubbles-outline.svg" 
+                      alt="Chats" 
+                      className="h-4 w-4"
+                    />
+                    <span className="hidden md:flex text-black">Chats</span>
                   </button>
                   
                   <div className="ml-auto">
@@ -180,7 +211,7 @@ const NewChat = () => {
                       className={`flex h-8 w-8 items-center justify-center rounded-full transition-opacity duration-150 ease-out ${
                         !input.trim() || isLoading
                           ? 'bg-gray-300 cursor-not-allowed opacity-70'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-black text-white hover:bg-gray-800'
                       }`}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 -960 960 960" className="h-5 w-5" fill="currentColor">
