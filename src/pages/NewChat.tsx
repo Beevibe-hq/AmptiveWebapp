@@ -17,7 +17,7 @@ const NewChat = () => {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea
+  // Auto-resize textarea and handle scroll position
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -26,15 +26,28 @@ const NewChat = () => {
       // Set the height to scrollHeight, but not more than 160px
       const newHeight = Math.min(textarea.scrollHeight, 160);
       textarea.style.height = `${newHeight}px`;
+      
+      // On mobile, scroll to show the textarea when it's focused
+      if (isInputFocused && window.innerWidth < 768) {
+        setTimeout(() => {
+          textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
     }
-  }, [input]);
+  }, [input, isInputFocused]);
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize with empty messages and auto-scroll to bottom
+  // Initialize with empty messages and scroll to top
   useEffect(() => {
     setMessages([]);
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Scroll to top of the page on initial load
+    window.scrollTo(0, 0);
+    // Also ensure the main content container is scrolled to top
+    const mainContent = document.querySelector('main');
+    if (mainContent) {
+      mainContent.scrollTop = 0;
+    }
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
