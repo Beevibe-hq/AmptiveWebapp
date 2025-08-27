@@ -308,7 +308,7 @@ const ChatMode = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [typingMessage, setTypingMessage] = useState<{id: string; content: string; visibleChars: number} | null>(null);
-  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(true); // Default to true to focus on mount
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [placeholderText] = useState('Message AI...');
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -543,15 +543,47 @@ const ChatMode = () => {
   }, []);
 
   // Auto-scroll to bottom of messages
-  useEffect(() => {
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  };
+
+  // Focus the textarea on mount and when messages change
+  useEffect(() => {
+    if (isInputFocused && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isInputFocused, messages]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    scrollToBottom();
+    
+    // Refocus the input after new messages are added (unless user explicitly blurred it)
+    if (isInputFocused && textareaRef.current) {
+      const timer = setTimeout(() => {
+        if (document.activeElement !== textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, typingMessage]);
+
+  // Also scroll when typing indicator updates
+  useEffect(() => {
+    if (typingMessage) {
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [typingMessage?.visibleChars]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Prevent submission if input is empty, already loading, or an image is being generated
-      if (input.trim() && !isLoading && !messages.some(msg => msg.type === 'image_loading')) {
+      // Use the same submission logic as the form
+      if ((input.trim() || attachments.length > 0) && !isLoading) {
         handleSubmit(e as unknown as React.FormEvent);
       }
     }
@@ -582,8 +614,8 @@ const ChatMode = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Prevent submission if input is empty and no attachments, already loading, or an image is being generated
-    if ((!input.trim() && attachments.length === 0) || isLoading || messages.some(msg => msg.type === 'image_loading')) return;
+    // Prevent submission if input is empty and no attachments, or already loading
+    if ((!input.trim() && attachments.length === 0) || isLoading) return;
 
     const userInput = input.trim();
     
@@ -684,6 +716,7 @@ const ChatMode = () => {
                 }
               : msg
           ));
+          setIsLoading(false); // Reset loading state after image is generated
         } catch (error) {
           console.error('Error generating image:', error);
           // Update with error message if generation fails
@@ -697,6 +730,7 @@ const ChatMode = () => {
                 }
               : msg
           ));
+          setIsLoading(false); // Reset loading state on error
         }
       } else {
         // Regular text response
@@ -929,7 +963,12 @@ What would you like to focus on?`
                       scrollbarColor: '#e5e7eb transparent'
                     }}
                     onFocus={() => setIsInputFocused(true)}
-                    onBlur={() => setIsInputFocused(false)}
+                    onBlur={(e) => {
+                      // Only blur if the user explicitly clicks outside the chat interface
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        setIsInputFocused(false);
+                      }
+                    }}
                     onKeyDown={handleKeyDown}
                     disabled={isLoading || isFileUploading}
                   />
@@ -990,7 +1029,7 @@ What would you like to focus on?`
                   className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white shadow-sm hover:bg-gray-50 hover:border-gray-300 py-2 h-8 gap-1.5 rounded-full px-3 text-gray-800"
                 >
                   <img 
-                    src="/src/assets/images-outline.svg" 
+                    src="/images/images-outline.svg" 
                     alt="Library" 
                     className="h-4 w-4"
                   />
@@ -1001,7 +1040,7 @@ What would you like to focus on?`
                   className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white shadow-sm hover:bg-gray-50 hover:border-gray-300 py-2 h-8 gap-1.5 rounded-full px-3 text-gray-800 hover:text-gray-700"
                 >
                   <img 
-                    src="/src/assets/chatbubbles-outline.svg" 
+                    src="/images/chatbubbles-outline.svg" 
                     alt="Chats" 
                     className="h-4 w-4"
                   />
@@ -1010,11 +1049,11 @@ What would you like to focus on?`
                 <div className="ml-auto">
                   <button
                     type="submit"
-                    disabled={(attachments.length === 0 && !input.trim()) || isLoading}
+                    disabled={isLoading || (attachments.length === 0 && !input.trim())}
                     className={`flex h-8 w-8 items-center justify-center rounded-full transition-opacity duration-150 ease-out ${
-                      (attachments.length === 0 && !input.trim()) || isLoading
+                      isLoading || (attachments.length === 0 && !input.trim())
                         ? 'bg-gray-300 cursor-not-allowed'
-                        : 'bg-black text-white cursor-pointer'
+                        : 'bg-black text-white cursor-pointer hover:bg-gray-800'
                     }`}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 -960 960 960" className="h-5 w-5" fill="currentColor">
