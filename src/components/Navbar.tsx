@@ -100,18 +100,21 @@ const Navbar = () => {
               </Link>
               
               {/* Search Icon - Only shown on mobile when search box is hidden */}
-              <div className="sm:hidden">
-                <button 
-                  className="p-1.5 text-black hover:text-gray-800"
-                  onClick={() => {}}
-                  aria-label="Search"
-                >
-                  <Search className="h-5 w-5" strokeWidth={2.5} />
-                </button>
-              </div>
+              {!isAIChatPage && (
+                <div className="sm:hidden">
+                  <button 
+                    className="p-1.5 text-black hover:text-gray-800"
+                    onClick={() => {}}
+                    aria-label="Search"
+                  >
+                    <Search className="h-5 w-5" strokeWidth={2.5} />
+                  </button>
+                </div>
+              )}
             </motion.div>
             
             {/* Search Box - shown on medium screens and up with expand-on-focus animation */}
+            {!isAIChatPage && (
             <motion.div 
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -146,8 +149,10 @@ const Navbar = () => {
                 </motion.div>
               </div>
             </motion.div>
+            )}
 
             {/* Desktop Navigation - shown only on large (lg) and up */}
+            {!isAIChatPage && (
             <div className="hidden lg:flex items-center space-x-8">
               {links.map((link) => (
                 <div 
@@ -206,11 +211,54 @@ const Navbar = () => {
                 </div>
               ))}
             </div>
+            )}
           </div>
 
           {/* Right Section: Auth Buttons */}
           <div className="flex items-center space-x-4">
+            {/* New Chat Button - Only shown on chat pages */}
+            {isAIChatPage && (
+              <motion.div
+                whileHover={location.pathname !== '/ai-chat' && location.pathname !== '/ai-chat/' ? { scale: 1.03 } : {}}
+                whileTap={location.pathname !== '/ai-chat' && location.pathname !== '/ai-chat/' ? { scale: 0.98 } : {}}
+              >
+                {location.pathname === '/ai-chat' || location.pathname === '/ai-chat/' ? (
+                  <div className="text-gray-400 text-sm font-medium flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-default">
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      strokeWidth={1.5} 
+                      stroke="currentColor" 
+                      className="w-5 h-5"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z" />
+                    </svg>
+                    <span>New Chat</span>
+                  </div>
+                ) : (
+                  <Link
+                    to="/ai-chat"
+                    className="text-black hover:text-gray-800 text-sm font-medium flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors"
+                  >
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    strokeWidth={1.5} 
+                    stroke="currentColor" 
+                    className="w-5 h-5"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z" />
+                  </svg>
+                  <span>New Chat</span>
+                </Link>
+                )}
+              </motion.div>
+            )}
+            
             {/* Generate with AI Button - Medium - shown only on lg (1024px) and up */}
+            {!isAIChatPage && (
             <motion.div
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -245,8 +293,10 @@ const Navbar = () => {
                 />
               </Link>
             </motion.div>
+            )}
 
             {/* Generate with AI Button - Desktop - shown only on xl (1240px) and up */}
+            {!isAIChatPage && (
             <motion.div
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -281,68 +331,75 @@ const Navbar = () => {
                 />
               </Link>
             </motion.div>
+            )}
 
-            {/* Sign In button - shown until the main menu disappears */}
-            <div className="hidden xl:block">
-              <Link
-                to="/signin"
-                className="bg-black text-white px-4 py-2 rounded-full text-[15px] font-bold hover:bg-gray-800 transition-colors whitespace-nowrap"
-              >
-                Sign In
-              </Link>
-            </div>
-            {/* Generate with AI Button - Mobile/Tablet */}
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="lg:hidden mr-2"
-            >
-              <Link
-                to="/ai-chat"
-                className="group relative flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors duration-200"
-                style={{
-                  backgroundColor: 'rgba(168, 85, 247, 0.1)',
-                  color: '#8b5cf6',
-                  border: '1px solid rgba(168, 85, 247, 0.2)'
-                }}
-              >
-                <span className="relative z-10 flex items-center gap-1">
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    viewBox="0 0 24 24" 
-                    fill="currentColor" 
-                    className="w-3.5 h-3.5"
-                  >
-                    <path fillRule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.91l1.036.258a.75.75 0 0 1 0 1.456l-1.036.258c-.94.236-1.674.97-1.91 1.91l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.91-1.91l-1.036-.258a.75.75 0 0 1 0-1.456l1.036-.258a2.625 2.625 0 0 0 1.91-1.91l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clipRule="evenodd" />
-                  </svg>
-                  <span className="hidden sm:inline">Generate with AI</span>
-                  <span className="sm:hidden">Generate</span>
-                </span>
-              </Link>
-            </motion.div>
-            
-            {/* Mobile menu button - shown on medium and small screens */}
-            <div className="flex items-center lg:hidden ml-2">
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="inline-flex items-center justify-center p-2 text-gray-700 rounded-md hover:bg-gray-100 focus:outline-none"
-                aria-label="Open menu"
-              >
-                <svg
-                  className="w-6 h-6 text-black"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+            {/* Sign In button - hidden on chat pages */}
+            {!isAIChatPage && (
+              <div className="hidden xl:block">
+                <Link
+                  to="/signin"
+                  className="bg-black text-white px-4 py-2 rounded-full text-[15px] font-bold hover:bg-gray-800 transition-colors whitespace-nowrap"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-              </button>
-            </div>
+                  Sign In
+                </Link>
+              </div>
+            )}
+            {/* Generate with AI Button - Mobile/Tablet */}
+            {!isAIChatPage && (
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="lg:hidden mr-2"
+              >
+                <Link
+                  to="/ai-chat"
+                  className="group relative flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors duration-200"
+                  style={{
+                    backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                    color: '#8b5cf6',
+                    border: '1px solid rgba(168, 85, 247, 0.2)'
+                  }}
+                >
+                  <span className="relative z-10 flex items-center gap-1">
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      viewBox="0 0 24 24" 
+                      fill="currentColor" 
+                      className="w-3.5 h-3.5"
+                    >
+                      <path fillRule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.91l1.036.258a.75.75 0 0 1 0 1.456l-1.036.258c-.94.236-1.674.97-1.91 1.91l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.91-1.91l-1.036-.258a.75.75 0 0 1 0-1.456l1.036-.258a2.625 2.625 0 0 0 1.91-1.91l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clipRule="evenodd" />
+                    </svg>
+                    <span className="hidden sm:inline">Generate with AI</span>
+                    <span className="sm:hidden">Generate</span>
+                  </span>
+                </Link>
+              </motion.div>
+            )}
+            
+            {/* Mobile menu button - hidden on chat pages */}
+            {!isAIChatPage && (
+              <div className="flex items-center lg:hidden ml-2">
+                <button
+                  onClick={() => setIsMobileMenuOpen(true)}
+                  className="inline-flex items-center justify-center p-2 text-gray-700 rounded-md hover:bg-gray-100 focus:outline-none"
+                  aria-label="Open menu"
+                >
+                  <svg
+                    className="w-6 h-6 text-black"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
