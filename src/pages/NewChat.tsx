@@ -125,7 +125,7 @@ const NewChat = () => {
               <div className="text-lg font-medium mb-2">
                 Amptive AI
               </div>
-              <div className="text-3xl sm:text-4xl font-semibold leading-tight">
+              <div className="text-[24px] sm:text-4xl font-semibold leading-tight">
                 What should we create today?
               </div>
             </div>

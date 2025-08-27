@@ -352,19 +352,19 @@ const ChatMode = () => {
           try {
             const imageUrl = await generateImage(initialMessage.content);
             
-            // Update the loading message with the actual image
-            setMessages(prev => 
-              prev.map(msg => 
-                msg.id === messageId 
-                  ? {
-                      ...msg,
-                      type: 'image' as const,
-                      imageUrl,
-                      content: initialMessage.content
-                    }
-                  : msg
-              )
-            );
+            // Update the loading message with the generated image
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId 
+                ? { 
+                    ...msg, 
+                    type: 'image' as const, 
+                    content: initialMessage.content, 
+                    imageUrl, 
+                    isLoading: false,
+                    timestamp: new Date()
+                  }
+                : msg
+            ));
           } catch (error) {
             console.error('Error generating image:', error);
             // Update with error state
@@ -542,16 +542,32 @@ const ChatMode = () => {
     setMessages([]);
   }, []);
 
-  // Auto-scroll to bottom of messages
+  // Handle scroll position based on device type
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Check if mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      // On mobile, scroll to top when component mounts
+      window.scrollTo(0, 0);
+      const mainContent = document.querySelector('main');
+      if (mainContent) {
+        mainContent.scrollTop = 0;
+      }
+    } else {
+      // On desktop, scroll to bottom of messages
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Prevent submission if input is empty, already loading, or an image is being generated
-      if (input.trim() && !isLoading && !messages.some(msg => msg.type === 'image_loading')) {
+      // Only check the most recent message for loading state
+      const lastMessage = messages[messages.length - 1];
+      const isLastMessageLoading = lastMessage?.type === 'image_loading' && lastMessage?.isLoading;
+      
+      if (input.trim() && !isLoading && !isLastMessageLoading) {
         handleSubmit(e as unknown as React.FormEvent);
       }
     }
@@ -582,8 +598,12 @@ const ChatMode = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Prevent submission if input is empty and no attachments, already loading, or an image is being generated
-    if ((!input.trim() && attachments.length === 0) || isLoading || messages.some(msg => msg.type === 'image_loading')) return;
+    // Only check the most recent message for loading state
+    const lastMessage = messages[messages.length - 1];
+    const isLastMessageLoading = lastMessage?.type === 'image_loading' && lastMessage?.isLoading;
+    
+    // Prevent submission if input is empty and no attachments, or if already loading
+    if ((!input.trim() && attachments.length === 0) || isLoading || isLastMessageLoading) return;
 
     const userInput = input.trim();
     
@@ -990,7 +1010,7 @@ What would you like to focus on?`
                   className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white shadow-sm hover:bg-gray-50 hover:border-gray-300 py-2 h-8 gap-1.5 rounded-full px-3 text-gray-800"
                 >
                   <img 
-                    src="/src/assets/images-outline.svg" 
+                    src="/images/images-outline.svg" 
                     alt="Library" 
                     className="h-4 w-4"
                   />
@@ -1001,7 +1021,7 @@ What would you like to focus on?`
                   className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-300 disabled:pointer-events-none disabled:opacity-50 border border-gray-200 bg-white shadow-sm hover:bg-gray-50 hover:border-gray-300 py-2 h-8 gap-1.5 rounded-full px-3 text-gray-800 hover:text-gray-700"
                 >
                   <img 
-                    src="/src/assets/chatbubbles-outline.svg" 
+                    src="/images/chatbubbles-outline.svg" 
                     alt="Chats" 
                     className="h-4 w-4"
                   />
