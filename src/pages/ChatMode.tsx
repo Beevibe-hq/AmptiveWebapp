@@ -542,7 +542,6 @@ const ChatMode = () => {
     setMessages([]);
   }, []);
 
-<<<<<<< HEAD
   // Auto-scroll to bottom of messages
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -555,32 +554,7 @@ const ChatMode = () => {
     }
   }, [isInputFocused, messages]);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-    
-    // Refocus the input after new messages are added (unless user explicitly blurred it)
-    if (isInputFocused && textareaRef.current) {
-      const timer = setTimeout(() => {
-        if (document.activeElement !== textareaRef.current) {
-          textareaRef.current.focus();
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [messages, typingMessage]);
-
-  // Also scroll when typing indicator updates
-  useEffect(() => {
-    if (typingMessage) {
-      const timer = setTimeout(() => {
-        scrollToBottom();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [typingMessage?.visibleChars]);
-=======
-  // Handle scroll position based on device type
+  // Handle scroll position and input focus when messages change
   useEffect(() => {
     // Check if mobile device
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -594,24 +568,38 @@ const ChatMode = () => {
       }
     } else {
       // On desktop, scroll to bottom of messages
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom();
     }
-  }, [messages]);
->>>>>>> 6ad0502b5906428b538faeed2299c82417139fa8
+    
+    // Refocus the input after new messages are added (unless user explicitly blurred it)
+    if (isInputFocused && textareaRef.current) {
+      const timer = setTimeout(() => {
+        if (document.activeElement !== textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, typingMessage, isInputFocused]);
+
+  // Also scroll when typing indicator updates
+  useEffect(() => {
+    if (typingMessage) {
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [typingMessage?.visibleChars]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-<<<<<<< HEAD
-      // Use the same submission logic as the form
-      if ((input.trim() || attachments.length > 0) && !isLoading) {
-=======
-      // Only check the most recent message for loading state
+      // Check if we can submit based on input and loading states
       const lastMessage = messages[messages.length - 1];
       const isLastMessageLoading = lastMessage?.type === 'image_loading' && lastMessage?.isLoading;
       
-      if (input.trim() && !isLoading && !isLastMessageLoading) {
->>>>>>> 6ad0502b5906428b538faeed2299c82417139fa8
+      if ((input.trim() || attachments.length > 0) && !isLoading && !isLastMessageLoading) {
         handleSubmit(e as unknown as React.FormEvent);
       }
     }
@@ -642,17 +630,13 @@ const ChatMode = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-<<<<<<< HEAD
-    // Prevent submission if input is empty and no attachments, or already loading
-    if ((!input.trim() && attachments.length === 0) || isLoading) return;
-=======
-    // Only check the most recent message for loading state
+    
+    // Check the most recent message for loading state
     const lastMessage = messages[messages.length - 1];
     const isLastMessageLoading = lastMessage?.type === 'image_loading' && lastMessage?.isLoading;
     
     // Prevent submission if input is empty and no attachments, or if already loading
     if ((!input.trim() && attachments.length === 0) || isLoading || isLastMessageLoading) return;
->>>>>>> 6ad0502b5906428b538faeed2299c82417139fa8
 
     const userInput = input.trim();
     
