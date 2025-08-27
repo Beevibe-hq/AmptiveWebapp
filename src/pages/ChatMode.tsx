@@ -352,19 +352,19 @@ const ChatMode = () => {
           try {
             const imageUrl = await generateImage(initialMessage.content);
             
-            // Update the loading message with the actual image
-            setMessages(prev => 
-              prev.map(msg => 
-                msg.id === messageId 
-                  ? {
-                      ...msg,
-                      type: 'image' as const,
-                      imageUrl,
-                      content: initialMessage.content
-                    }
-                  : msg
-              )
-            );
+            // Update the loading message with the generated image
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId 
+                ? { 
+                    ...msg, 
+                    type: 'image' as const, 
+                    content: initialMessage.content, 
+                    imageUrl, 
+                    isLoading: false,
+                    timestamp: new Date()
+                  }
+                : msg
+            ));
           } catch (error) {
             console.error('Error generating image:', error);
             // Update with error state
@@ -542,6 +542,7 @@ const ChatMode = () => {
     setMessages([]);
   }, []);
 
+<<<<<<< HEAD
   // Auto-scroll to bottom of messages
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -578,12 +579,39 @@ const ChatMode = () => {
       return () => clearTimeout(timer);
     }
   }, [typingMessage?.visibleChars]);
+=======
+  // Handle scroll position based on device type
+  useEffect(() => {
+    // Check if mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      // On mobile, scroll to top when component mounts
+      window.scrollTo(0, 0);
+      const mainContent = document.querySelector('main');
+      if (mainContent) {
+        mainContent.scrollTop = 0;
+      }
+    } else {
+      // On desktop, scroll to bottom of messages
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+>>>>>>> 6ad0502b5906428b538faeed2299c82417139fa8
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+<<<<<<< HEAD
       // Use the same submission logic as the form
       if ((input.trim() || attachments.length > 0) && !isLoading) {
+=======
+      // Only check the most recent message for loading state
+      const lastMessage = messages[messages.length - 1];
+      const isLastMessageLoading = lastMessage?.type === 'image_loading' && lastMessage?.isLoading;
+      
+      if (input.trim() && !isLoading && !isLastMessageLoading) {
+>>>>>>> 6ad0502b5906428b538faeed2299c82417139fa8
         handleSubmit(e as unknown as React.FormEvent);
       }
     }
@@ -614,8 +642,17 @@ const ChatMode = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+<<<<<<< HEAD
     // Prevent submission if input is empty and no attachments, or already loading
     if ((!input.trim() && attachments.length === 0) || isLoading) return;
+=======
+    // Only check the most recent message for loading state
+    const lastMessage = messages[messages.length - 1];
+    const isLastMessageLoading = lastMessage?.type === 'image_loading' && lastMessage?.isLoading;
+    
+    // Prevent submission if input is empty and no attachments, or if already loading
+    if ((!input.trim() && attachments.length === 0) || isLoading || isLastMessageLoading) return;
+>>>>>>> 6ad0502b5906428b538faeed2299c82417139fa8
 
     const userInput = input.trim();
     
