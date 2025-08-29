@@ -901,9 +901,9 @@ What would you like to focus on?`
                     key={message.id}
                     className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-[85%] ${message.sender === 'user' ? 'flex items-center gap-2 bg-gray-100 text-gray-800' : ''} px-3 py-1.5 rounded-2xl`}>
-                      {message.sender === 'user' && <Avatar name={message.username} />}
-                      <div className="whitespace-pre-line">
+                    <div className={`max-w-[85%] ${message.sender === 'user' ? 'flex gap-2 bg-gray-100 text-gray-800' : ''} px-3 py-1.5 rounded-2xl`}>
+                      {message.sender === 'user' && <div className="self-start"><Avatar name={message.username} /></div>}
+                      <div className={`whitespace-pre-line ${message.sender === 'user' ? 'text-[15px]' : 'text-base leading-normal'}`}>
                         {message.type === 'image_loading' ? (
                           <div className="shimmer-text">Creating your image...</div>
                         ) : message.type === 'image' && message.imageUrl ? (
