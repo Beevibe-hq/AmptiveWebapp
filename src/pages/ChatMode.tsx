@@ -27,20 +27,27 @@ interface Message {
   imageUrl?: string;
   isLoading?: boolean;
   attachments?: FileAttachment[];
+  isRegenerated?: boolean;
 }
 
 // Action tray component for AI messages
+interface MessageActionsProps {
+  content: string;
+  messageId: string;
+  onRegenerate: (messageId: string) => Promise<void>;
+  isImage?: boolean;
+}
+
 const MessageActions = ({ 
   content,
+  messageId,
   onRegenerate,
   isImage = false
-}: { 
-  content: string,
-  onRegenerate: () => void,
-  isImage?: boolean
-}) => {
+}: MessageActionsProps) => {
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null);
+  const [showRegenerate, setShowRegenerate] = useState(true);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
@@ -86,6 +93,15 @@ const MessageActions = ({
     document.body.removeChild(link);
   };
 
+  useEffect(() => {
+    if (isRegenerating) {
+      const timer = setTimeout(() => setShowRegenerate(false), 100);
+      return () => clearTimeout(timer);
+    } else {
+      setShowRegenerate(true);
+    }
+  }, [isRegenerating]);
+
   return (
     <div className="flex items-center gap-2 mt-1 -mb-2 text-gray-400">
       {!isImage && (
@@ -123,13 +139,22 @@ const MessageActions = ({
         <ThumbsDown className="w-3.5 h-3.5" />
       </button>
       
-      <button 
-        onClick={onRegenerate}
-        className="p-1 rounded-full hover:bg-gray-100 hover:text-gray-600 transition-colors"
-        title={isImage ? "Generate new image" : "Regenerate response"}
-      >
-        <RotateCw className="w-3.5 h-3.5" />
-      </button>
+      {showRegenerate && !isRegenerating && (
+        <button 
+          onClick={async () => {
+            setIsRegenerating(true);
+            try {
+              await onRegenerate(messageId);
+            } finally {
+              setIsRegenerating(false);
+            }
+          }}
+          className="p-1 rounded-full hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          title={isImage ? "Generate new image" : "Regenerate response"}
+        >
+          <RotateCw className="w-3.5 h-3.5" />
+        </button>
+      )}
     </div>
   );
 };
@@ -628,6 +653,166 @@ const ChatMode = () => {
     }
   };
 
+  const generateAIResponse = async (userInput: string, attachments: FileAttachment[] = []) => {
+    // Check if user is requesting an image
+    const isImageRequest = /(create|generate|make).*(image|picture|photo|art)/i.test(userInput);
+    
+    if (isImageRequest) {
+      const messageId = (Date.now() + 1).toString();
+      
+      // Create the final message structure immediately with loading state
+      const loadingMessage = {
+        id: messageId,
+        content: 'Creating your image...',
+        sender: 'ai' as const,
+        type: 'image_loading' as const,
+        timestamp: new Date(),
+        imageUrl: ''
+      };
+      
+      // Add the loading message
+      setMessages(prev => [...prev, loadingMessage]);
+      
+      try {
+        // Generate the image
+        const imageUrl = await generateImage(userInput);
+        
+        // Update to show the final image
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? {
+                ...msg,
+                content: `Here's the image you requested: ${userInput}`,
+                type: 'image' as const,
+                imageUrl
+              }
+            : msg
+        ));
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error generating image:', error);
+        // Update with error message if generation fails
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? {
+                ...msg,
+                content: 'Sorry, I had trouble generating your image. Please try again.',
+                type: 'text',
+                imageUrl: undefined
+              }
+            : msg
+        ));
+        setIsLoading(false);
+      }
+    } else {
+      // Regular text response
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const responseText = getAIResponse(userInput);
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: responseText,
+        sender: 'ai',
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+      setTypingMessage({ id: aiMessage.id, content: responseText, visibleChars: 0 });
+      
+      // Simulate typing effect with faster animation
+      let visibleChars = 0;
+      const typingSpeed = 10;
+      const typingInterval = setInterval(() => {
+        visibleChars += 2;
+        if (visibleChars > responseText.length) {
+          visibleChars = responseText.length;
+        }
+        setTypingMessage(prev => prev ? { ...prev, visibleChars } : null);
+        
+        if (visibleChars >= responseText.length) {
+          clearInterval(typingInterval);
+          setTypingMessage(null);
+          setIsLoading(false);
+        }
+      }, typingSpeed);
+      
+      return () => clearInterval(typingInterval);
+    }
+  };
+
+  const regenerateResponse = async (messageId: string) => {
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex <= 0) return;
+    
+    const userMessage = messages[messageIndex - 1];
+    if (userMessage.sender !== 'user') return;
+    
+    // Store the original message content for regeneration
+    const originalContent = userMessage.content;
+    
+        // Add loading message with Amptive logo animation
+    const loadingMessageId = `loading-${Date.now()}`;
+    const loadingMessage: Message = {
+      id: loadingMessageId,
+      content: 'Regenerating response...',
+      sender: 'ai',
+      timestamp: new Date(),
+      type: 'text',
+      isLoading: true
+    };
+    
+    // Add loading message and force a re-render
+    setMessages(prev => [...prev, loadingMessage]);
+    
+    // Force a re-render to show the loading message
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Scroll to bottom to show loading message
+    const chatContainer = document.querySelector('.chat-container');
+    if (chatContainer) {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    try {
+      // Check if the original message was an image request
+      const isImageRequest = /(create|generate|make).*(image|picture|photo|art)/i.test(userMessage.content);
+      
+      if (isImageRequest) {
+        // For image requests, generate a new image
+        const imageUrl = await generateImage(originalContent);
+        const newMessage: Message = {
+          id: Date.now().toString(),
+          content: `(Regenerated image for: "${originalContent}")`,
+          sender: 'ai',
+          type: 'image',
+          imageUrl,
+          timestamp: new Date()
+        };
+        setMessages(prev => prev
+          .filter(msg => msg.id !== loadingMessageId)
+          .concat(newMessage)
+        );
+      } else {
+        // For text responses
+        const response = getAIResponse(originalContent);
+        const newMessage: Message = {
+          id: Date.now().toString(),
+          content: response,
+          sender: 'ai',
+          type: 'text',
+          timestamp: new Date()
+        };
+        setMessages(prev => prev
+          .filter(msg => msg.id !== loadingMessageId)
+          .concat(newMessage)
+        );
+      }
+    } catch (error) {
+      console.error('Error regenerating response:', error);
+      toast.error('Failed to regenerate response. Please try again.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -703,93 +888,10 @@ const ChatMode = () => {
     setIsLoading(true);
 
     try {
-      // Check if user is requesting an image
-      const isImageRequest = /(create|generate|make).*(image|picture|photo|art)/i.test(userInput);
-      
-      if (isImageRequest) {
-        const messageId = (Date.now() + 1).toString();
-        
-        // Create the final message structure immediately with loading state
-        const loadingMessage = {
-          id: messageId,
-          content: 'Creating your image...',
-          sender: 'ai' as const,
-          type: 'image_loading' as const,
-          timestamp: new Date(),
-          imageUrl: ''
-        };
-        
-        // Add the loading message
-        setMessages(prev => [...prev, loadingMessage]);
-        
-        try {
-          // Generate the image - this will trigger the ImageMessage component's loading state
-          const imageUrl = await generateImage(userInput);
-          
-          // Update to show the final image
-          setMessages(prev => prev.map(msg => 
-            msg.id === messageId 
-              ? {
-                  ...msg,
-                  content: `Here's the image you requested: ${userInput}`,
-                  type: 'image' as const,
-                  imageUrl
-                }
-              : msg
-          ));
-          setIsLoading(false); // Reset loading state after image is generated
-        } catch (error) {
-          console.error('Error generating image:', error);
-          // Update with error message if generation fails
-          setMessages(prev => prev.map(msg => 
-            msg.id === messageId 
-              ? {
-                  ...msg,
-                  content: 'Sorry, I had trouble generating your image. Please try again.',
-                  type: 'text',
-                  imageUrl: undefined
-                }
-              : msg
-          ));
-          setIsLoading(false); // Reset loading state on error
-        }
-      } else {
-        // Regular text response
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const responseText = getAIResponse(userInput);
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: responseText,
-          sender: 'ai',
-          timestamp: new Date(),
-        };
-        
-        setMessages(prev => [...prev, aiMessage]);
-        setTypingMessage({ id: aiMessage.id, content: responseText, visibleChars: 0 });
-        
-        // Simulate typing effect with faster animation
-        let visibleChars = 0;
-        const typingSpeed = 10;
-        const typingInterval = setInterval(() => {
-          visibleChars += 2;
-          if (visibleChars > responseText.length) {
-            visibleChars = responseText.length;
-          }
-          setTypingMessage(prev => prev ? { ...prev, visibleChars } : null);
-          
-          if (visibleChars >= responseText.length) {
-            clearInterval(typingInterval);
-            setTypingMessage(null);
-            setIsLoading(false);
-          }
-        }, typingSpeed);
-        
-        return () => clearInterval(typingInterval);
-      }
+      await generateAIResponse(userInput);
     } catch (error) {
-      console.error('Error processing request:', error);
-      // Show error message
+      console.error('Error generating response:', error);
+      toast.error('Failed to generate response. Please try again.');
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         content: 'Sorry, there was an error processing your request. Please try again.',
@@ -919,17 +1021,15 @@ What would you like to focus on?`
                           </>
                         )}
                         {message.sender === 'ai' && 
-                         message.type !== 'image_loading' && 
-                         (!typingMessage || typingMessage.id !== message.id) && (
+       message.type !== 'image_loading' && 
+       !message.isLoading &&
+       message.content !== 'Regenerating response...' &&
+       (!typingMessage || typingMessage.id !== message.id) && (
                           <MessageActions 
+                            messageId={message.id}
                             content={message.type === 'image' ? message.imageUrl || '' : message.content}
                             isImage={message.type === 'image'}
-                            onRegenerate={() => {
-                              const userMessage = messages.findLast(m => m.sender === 'user');
-                              if (userMessage) {
-                                handleSubmit(new Event('submit'), userMessage.content);
-                              }
-                            }}
+                            onRegenerate={regenerateResponse}
                           />
                         )}
                       </div>

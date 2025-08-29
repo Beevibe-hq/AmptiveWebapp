@@ -86,7 +86,7 @@ const Navbar = () => {
     >
       <div className="px-4 sm:px-6 lg:px-8">
         <motion.div 
-          className="flex justify-between items-center h-20 py-2"
+          className={`flex justify-between items-center ${isAIChatPage ? 'h-16 py-1.5' : 'h-20 py-2'}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
