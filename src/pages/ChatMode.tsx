@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Image as ImageIcon, Zap, Copy, Check, ThumbsUp, ThumbsDown, RotateCw, Download, Eye, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Image as ImageIcon, Zap, Copy, Check, ThumbsUp, ThumbsDown, RotateCw, Download, Eye, X, ArrowLeft } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import {
   Root as DropdownMenu,
@@ -8,7 +9,6 @@ import {
   Content as DropdownMenuContent,
   Item as DropdownMenuItem
 } from '@radix-ui/react-dropdown-menu';
-// useLocation is not currently used
 
 interface FileAttachment {
   type: 'image' | 'file';
@@ -412,11 +412,9 @@ const useTypingAnimation = (phrases: string[], typingSpeed = 100, deletingSpeed 
   return { text: displayText, showCursor };
 };
 
-interface LocationState {
-  initialMessage: Message;
-}
-
+// Main ChatMode component
 const ChatMode = () => {
+  const navigate = useNavigate();
   const [initialMessage, setInitialMessage] = useState<Message | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -435,6 +433,8 @@ const ChatMode = () => {
     }
   }, []);
   const [input, setInput] = useState('');
+  const [isImageMode, setIsImageMode] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea
@@ -1077,6 +1077,71 @@ const ChatMode = () => {
     // Prevent submission if input is empty and no attachments, or if already loading
     if ((!input.trim() && attachments.length === 0) || isLoading || isLastMessageLoading) return;
 
+    // Handle image generation mode
+    if (isImageMode) {
+      const messageId = Date.now().toString();
+      const loadingMessage: Message = {
+        id: messageId,
+        content: 'Creating your image...',
+        sender: 'ai',
+        type: 'image_loading',
+        timestamp: new Date(),
+        isLoading: true
+      };
+      
+      try {
+        // Add user message and loading state
+        setMessages(prev => [
+          ...prev, 
+          {
+            id: `user-${Date.now()}`,
+            content: input,
+            sender: 'user',
+            timestamp: new Date()
+          },
+          loadingMessage
+        ]);
+        
+        // Clear the input and exit image mode
+        setInput('');
+        setIsImageMode(false);
+        
+        // Generate the image
+        const imageUrl = await generateImage(input);
+        
+        // Update the loading message with the generated image
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { 
+                ...msg, 
+                type: 'image' as const, 
+                content: '',
+                imageUrl,
+                isLoading: false,
+                timestamp: new Date()
+              }
+            : msg
+        ));
+        
+      } catch (error) {
+        console.error('Error generating image:', error);
+        // Update with error state
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === messageId 
+              ? {
+                  ...msg,
+                  content: 'Sorry, I encountered an error generating your image. Please try again.',
+                  type: 'text' as const,
+                  isLoading: false
+                }
+              : msg
+          )
+        );
+      }
+      return; // Exit early since we handled image generation
+    }
+
     const userInput = input.trim();
     
     // Handle file uploads if any
@@ -1457,15 +1522,29 @@ const getAIResponse = (userInput: string): string => {
           <div className="max-w-3xl mx-auto w-full">
             <form 
               onSubmit={handleSubmit}
-              className="group flex flex-col gap-2 p-3 w-full rounded-3xl border border-gray-200 bg-white text-base shadow-lg transition-all duration-150 ease-in-out focus-within:border-gray-300 hover:border-gray-300 focus-within:hover:border-gray-400"
+              className={`group flex flex-col gap-2 p-3 w-full rounded-3xl ${isImageMode ? 'bg-white shadow-[0_0_0_1px_#f5f3ff,0_0_0_2px_#fdf2f8,0_0_8px_rgba(192,132,252,0.15)] hover:shadow-[0_0_0_2px_#ede9fe,0_0_0_3px_#fce7f3,0_0_12px_rgba(192,132,252,0.2)]' : 'border border-gray-200 bg-white hover:border-gray-300'} text-base transition-all duration-300 ease-in-out focus-within:border-gray-300 focus-within:hover:border-gray-400`}
             >
               <div className="relative flex flex-col w-full">
+                {isImageMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsImageMode(false);
+                      setInput('');
+                      textareaRef.current?.focus();
+                    }}
+                    className="absolute -top-14 left-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-black bg-white/80 hover:bg-white transition-colors mb-1.5 shadow-sm backdrop-blur-sm border border-gray-100"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    <span>Back to chat</span>
+                  </button>
+                )}
                 {renderFilePreviews()}
                 <div className="relative flex-1">
                   <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder={attachments.length > 0 ? 'Add a message (optional)' : 'Ask anything'}
+                    placeholder={isImageMode ? "Describe your Image" : attachments.length > 0 ? 'Add a message (optional)' : 'Ask anything'}
                     maxLength={5000}
                     className="flex w-full rounded-md px-2 py-2 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 resize-none text-[16px] leading-snug placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap md:text-base focus-visible:ring-offset-0 max-h-[200px] bg-transparent focus:bg-transparent flex-1"
                     ref={textareaRef}
@@ -1491,7 +1570,7 @@ const getAIResponse = (userInput: string): string => {
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap items-center">
-                <DropdownMenu>
+                <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
@@ -1517,12 +1596,31 @@ const getAIResponse = (userInput: string): string => {
                           <span>Add photo and file</span>
                         </DropdownMenuItem>
                         
-                        <DropdownMenuItem className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100">
+                        <DropdownMenuItem 
+                          className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            setInput('');
+                            setIsImageMode(true);
+                            setDropdownOpen(false); // Close the dropdown
+                            
+                            // Focus the input after a short delay
+                            setTimeout(() => {
+                              textareaRef.current?.focus();
+                            }, 100);
+                          }}
+                        >
                           <Zap className="h-4 w-4 text-gray-700" />
                           <span>Generate Image</span>
                         </DropdownMenuItem>
                         
-                        <DropdownMenuItem className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100">
+                        <DropdownMenuItem 
+                          className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            navigate('/ai-chat');
+                          }}
+                        >
                           <Plus className="h-4 w-4 text-gray-700" />
                           <span>New Chat</span>
                         </DropdownMenuItem>
@@ -1586,13 +1684,15 @@ const getAIResponse = (userInput: string): string => {
   );
 };
 
+// Wrapper component to include the Toaster
 const ChatModeWithToaster = () => {
   return (
     <>
-      <Toaster position="top-center" />
       <ChatMode />
+      <Toaster position="top-center" />
     </>
   );
 };
 
+export { ChatMode, ChatModeWithToaster };
 export default ChatModeWithToaster;
