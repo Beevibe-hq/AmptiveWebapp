@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Image as ImageIcon, Zap, Copy, Check, ThumbsUp, ThumbsDown, RotateCw, Download } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Plus, Image as ImageIcon, Zap, Copy, Check, ThumbsUp, ThumbsDown, RotateCw, Download, Eye, X } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import {
   Root as DropdownMenu,
@@ -8,7 +8,7 @@ import {
   Content as DropdownMenuContent,
   Item as DropdownMenuItem
 } from '@radix-ui/react-dropdown-menu';
-import { useLocation } from 'react-router-dom';
+// useLocation is not currently used
 
 interface FileAttachment {
   type: 'image' | 'file';
@@ -49,6 +49,118 @@ const MessageActions = ({
   const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null);
   const [showRegenerate, setShowRegenerate] = useState(true);
 
+  const handleDownload = async () => {
+    if (!isImage) return;
+    
+    try {
+      // Check if the content is a valid URL
+      if (!content || !content.startsWith('http')) {
+        throw new Error('Invalid image URL');
+      }
+      
+      // Create a temporary anchor element
+      const link = document.createElement('a');
+      
+      // For CORS support, we'll try to fetch the image first
+      const response = await fetch(content, { 
+        mode: 'cors',
+        cache: 'no-cache'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+      
+      // Convert the response to a blob
+      const blob = await response.blob();
+      
+      // Create a local URL for the blob
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      // Set up the download link
+      link.href = blobUrl;
+      link.download = `generated-image-${Date.now()}.jpg`;
+      link.target = '_blank';
+      
+      // Append to body, trigger click, and clean up
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+      }, 100);
+      
+      toast.success('Download started!', {
+        duration: 2000,
+        style: {
+          background: '#ffffff',
+          color: '#1f2937',
+          padding: '10px 16px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+          fontSize: '14px',
+          marginTop: '20px',
+          border: '1px solid #e5e7eb',
+          maxWidth: '280px',
+          width: 'fit-content',
+          minWidth: 'auto',
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px'
+        },
+        iconTheme: {
+          primary: '#10B981',
+          secondary: 'white',
+        }
+      });
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      
+      // Fallback method if CORS blocks the fetch
+      try {
+        const link = document.createElement('a');
+        link.href = content;
+        link.download = `generated-image-${Date.now()}.jpg`;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('Download started!', {
+        duration: 2000,
+        style: {
+          background: '#ffffff',
+          color: '#1f2937',
+          padding: '10px 16px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+          fontSize: '14px',
+          marginTop: '20px',
+          border: '1px solid #e5e7eb',
+          maxWidth: '280px',
+          width: 'fit-content',
+          minWidth: 'auto',
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px'
+        },
+        iconTheme: {
+          primary: '#10B981',
+          secondary: 'white',
+        }
+      });
+      } catch (fallbackError) {
+        console.error('Fallback download failed:', fallbackError);
+        toast.error('Failed to download image. Please try right-clicking and selecting "Save image as"');
+      }
+    }
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
     setCopied(true);
@@ -57,7 +169,6 @@ const MessageActions = ({
 
   const handleFeedback = (type: 'like' | 'dislike') => {
     setFeedback(type);
-    
     toast.success('Thanks for your feedback!', {
       duration: 3000,
       style: {
@@ -82,16 +193,6 @@ const MessageActions = ({
     });
   };
 
-  const handleDownload = () => {
-    if (!isImage) return;
-    
-    const link = document.createElement('a');
-    link.href = content;
-    link.download = `generated-image-${Date.now()}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   useEffect(() => {
     if (isRegenerating) {
@@ -160,15 +261,23 @@ const MessageActions = ({
 };
 
 // Image display component with better error handling and loading states
-const ImageMessage = ({ imageUrl }: { imageUrl: string }) => {
+const ImageMessage = ({ imageUrl, onClick }: { imageUrl: string; onClick: (url: string) => void }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('Image clicked, calling onClick with:', imageUrl);
+    onClick(imageUrl);
+  };
+
   return (
     <div className="relative group w-full max-w-md">
       <div 
-        className="relative overflow-hidden rounded-xl bg-gray-100 w-full"
+        className="relative overflow-hidden rounded-xl bg-gray-100 w-full cursor-pointer"
+        onClick={handleClick}
         style={{
           aspectRatio: '4/3',
           minHeight: '300px',
@@ -223,13 +332,20 @@ const ImageMessage = ({ imageUrl }: { imageUrl: string }) => {
         )}
       </div>
       {!error && (
-        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
+        <div 
+          className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick(imageUrl);
+          }}
+        >
           <div className="flex items-center">
-            <ImageIcon className="h-3 w-3 mr-1" />
-            AI Generated
+            <Eye className="h-3 w-3 mr-1" />
+            Click to view
           </div>
         </div>
       )}
+      
     </div>
   );
 };
@@ -300,8 +416,9 @@ interface LocationState {
 }
 
 const ChatMode = () => {
-  const location = useLocation();
   const [initialMessage, setInitialMessage] = useState<Message | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   
   // Get initial message from session storage on component mount
   useEffect(() => {
@@ -569,6 +686,12 @@ const ChatMode = () => {
 
   // Reference to the chat container
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Handle image click to open in new tab
+  const handleImageClick = (imageUrl: string) => {
+    console.log('Opening image in new tab:', imageUrl);
+    window.open(imageUrl, '_blank');
+  };
 
   // Auto-scroll to bottom of messages with improved mobile support
   const scrollToBottom = () => {
@@ -1083,6 +1206,7 @@ const getAIResponse = (userInput: string): string => {
 
   return (
     <div className="relative flex flex-col h-screen bg-white">
+      
       {/* Background Image */}
       {/* Background removed for white background */}
       
@@ -1104,7 +1228,10 @@ const getAIResponse = (userInput: string): string => {
                         {message.type === 'image_loading' ? (
                           <div className="shimmer-text">Creating your image...</div>
                         ) : message.type === 'image' && message.imageUrl ? (
-                          <ImageMessage imageUrl={message.imageUrl} />
+                          <ImageMessage 
+                            imageUrl={message.imageUrl || ''} 
+                            onClick={handleImageClick} 
+                          />
                         ) : (
                           <>
                             {(() => {
