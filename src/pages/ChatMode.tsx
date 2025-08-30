@@ -903,69 +903,132 @@ const ChatMode = () => {
     }
   };
 
-  // Enhanced AI response generator with more natural and contextual responses
-  const getAIResponse = (userInput: string): string => {
-    const input = userInput.toLowerCase().trim();
-    const responses = {
-      greeting: [
-        "Hello! How can I assist you with your event today?",
-        "Hi there! What kind of event are you planning?",
-        "Welcome back! How can I help with your event planning?"
-      ],
-      eventCreation: [
-        `I'd love to help you create an amazing event! Could you tell me what type of event you're planning? For example, is it a conference, workshop, or social gathering?`,
-        `Event planning is exciting! Let's get started. What's the main purpose of your event? This will help me provide the best guidance.`,
-        `I'm here to help bring your event to life! Could you share some details about the type of event you're organizing?`
-      ],
-      ticketing: [
-        `I can help you set up ticketing for your event. Would you like to know about different ticket types, pricing strategies, or how to manage ticket sales?`,
-        `Let's talk tickets! I can guide you through setting up different ticket tiers, early bird specials, and managing attendee registrations. What would you like to know?`,
-        `For ticketing, we can set up various options like VIP passes, group discounts, or early bird specials. What kind of pricing structure are you considering?`
-      ],
-      promotion: [
-        `Promoting your event effectively is key to its success! Have you considered which platforms you'd like to focus on? I can help with social media strategies, email campaigns, or influencer partnerships.`,
-        `Let's get the word out about your event! I can suggest promotion strategies based on your target audience. Are you focusing on digital marketing, traditional media, or a mix of both?`,
-        `Great question about promotion! I recommend starting with a multi-channel approach. Would you like me to outline a basic promotion timeline for your event?`
-      ],
-      generalHelp: [
-        `I'm here to help with all aspects of event planning! You can ask me about:
-• Creating and managing events
-• Ticketing and registration
-• Marketing and promotion
-• Analytics and reporting
-• Or anything else on your mind!`,
-        `I can assist with:
-✓ Event setup and management
-✓ Ticket sales and attendee tracking
-✓ Marketing strategies
-✓ Budget planning
-What would you like to focus on?`
-      ],
-      default: [
-        `I'd be happy to help! Could you tell me more about what you're trying to achieve with your event?`,
-        `That's an interesting question! Could you provide a bit more context so I can give you the best possible assistance?`,
-        `I'm here to help! Could you rephrase your question or let me know what specific aspect of event planning you'd like to discuss?`
-      ]
-    };
-
-    // Response selection logic
-    const getRandomResponse = (key: keyof typeof responses) => 
-      responses[key][Math.floor(Math.random() * responses[key].length)];
-
-    if (/^(hi|hello|hey|greetings)/i.test(input)) {
-      return getRandomResponse('greeting');
-    } else if (/(create|organize|plan|set up).*event|event.*(create|organize|plan)/i.test(input)) {
-      return getRandomResponse('eventCreation');
-    } else if (/(ticket|price|cost|fee|register|rsvp)/i.test(input)) {
-      return getRandomResponse('ticketing');
-    } else if (/(promote|market|advertise|audience|reach|social media)/i.test(input)) {
-      return getRandomResponse('promotion');
-    } else if (/(help|support|assist|how to)/i.test(input)) {
-      return getRandomResponse('generalHelp');
+  // Enhanced AI response generator with structured, clear, and actionable responses
+const getAIResponse = (userInput: string): string => {
+  const input = userInput.toLowerCase().trim();
+  
+  // Helper function to format responses consistently
+  const formatResponse = (title: string, content: string[], conclusion?: string): string => {
+    let response = `**${title}**\n\n`;
+    
+    // Add main content with proper formatting
+    content.forEach((item) => {
+      // Only add bullet points to items that are part of a list
+      const isListItem = /^\d+[.)]\s+/.test(item) || /^[-•*]\s+/.test(item);
+      const isBoldSection = item.startsWith('**');
+      const isAlreadyFormatted = isListItem || isBoldSection;
+      
+      if (isAlreadyFormatted) {
+        response += `${item}\n`;
+      } else {
+        // Don't add bullet points to regular text
+        response += `${item}\n`;
+      }
+    });
+    
+    // Add conclusion if provided
+    if (conclusion) {
+      response += `\n${conclusion}`;
     }
     
-    return getRandomResponse('default');
+    return response;
   };
+
+  const responses = {
+    greeting: [
+      formatResponse(
+        "Hello! 👋",
+        [
+          "I'm your AI event planning assistant. How can I help you today?\n",
+          "1. Plan a new event",
+          "2. Manage existing events",
+          "3. Get event marketing tips",
+          "4. Handle ticketing and registration"
+        ],
+        "Just let me know what you'd like to do!"
+      )
+    ],
+    eventCreation: [
+      formatResponse(
+        "Let's Create Your Event",
+        [
+          "I'd love to help you plan your event! To get started, I'll need a few details:",
+          "1. What type of event is this? (e.g., conference, workshop, social gathering)",
+          "2. When and where will it take place?",
+          "3. What's your estimated number of attendees?",
+          "4. Do you have a budget in mind?"
+        ],
+        "Once you share these details, I can help you with the next steps!"
+      )
+    ],
+    ticketing: [
+      formatResponse(
+        "Ticketing Strategy",
+        [
+          "Here's a comprehensive guide to setting up your event tickets:",
+          "\n**1. Ticket Types**\n   • Early Bird (limited availability, discounted)\n   • General Admission\n   • VIP (premium experience)\n   • Group Packages",
+          "\n**2. Pricing Strategy**\n   • Research competitor pricing\n   • Consider your costs\n   • Factor in platform fees\n   • Offer early bird discounts",
+          "\n**3. Sales Channels**\n   • Your event website\n   • Social media integration\n   • Partner websites\n   • Box office/on-site sales"
+        ],
+        "Would you like me to help you set up any of these ticket types?"
+      )
+    ],
+    promotion: [
+      formatResponse(
+        "Event Promotion Plan",
+        [
+          "**1. Pre-Event Marketing**\n   • Create event landing page (6-8 weeks before)\n   • Launch social media campaigns\n   • Send email invitations\n   • List on event directories",
+          "\n**2. Content Strategy**\n   • Speaker/Performer spotlights\n   • Behind-the-scenes content\n   • Countdown posts\n   • User-generated content",
+          "\n**3. Paid Promotion**\n   • Social media ads (Facebook/Instagram)\n   • Google Ads\n   • Influencer partnerships\n   • Email marketing"
+        ],
+        "Would you like me to help you create a detailed promotion timeline?"
+      )
+    ],
+    generalHelp: [
+      formatResponse(
+        "How Can I Assist You?",
+        [
+          "I can help with all aspects of event planning:",
+          "\n**Event Planning**\n   • Venue selection\n   • Budget management\n   • Vendor coordination\n   • Timeline creation",
+          "\n**Marketing & Promotion**\n   • Social media strategy\n   • Email campaigns\n   • Content creation\n   • Sponsorship proposals",
+          "\n**Attendee Management**\n   • Registration setup\n   • Ticketing\n   • Check-in processes\n   • Feedback collection"
+        ],
+        "What would you like to focus on first?"
+      )
+    ],
+    default: [
+      formatResponse(
+        "I'm Here to Help",
+        [
+          "I want to make sure I understand your needs. Could you provide more details about:",
+          "1. The type of event you're planning",
+          "2. Your specific questions or concerns",
+          "3. Any particular challenges you're facing"
+        ],
+        "The more details you share, better I can assist you!"
+      )
+    ]
+  };
+
+  // Response selection logic
+  const getRandomResponse = (key: keyof typeof responses) => 
+    responses[key][Math.floor(Math.random() * responses[key].length)];
+
+  // Intent detection with improved pattern matching
+  if (/^(hi|hello|hey|greetings?|good\s(morning|afternoon|evening))[!.]*\s*$/i.test(input)) {
+    return getRandomResponse('greeting');
+  } else if (/(create|organize|plan|set\s*up|new|start).*event|event.*(create|organize|plan|set\s*up)/i.test(input)) {
+    return getRandomResponse('eventCreation');
+  } else if (/(ticket|price|cost|fee|register|rsvp|admission|entry)/i.test(input)) {
+    return getRandomResponse('ticketing');
+  } else if (/(promote|market|advertise|audience|reach|social\s*media|publicize|sponsor)/i.test(input)) {
+    return getRandomResponse('promotion');
+  } else if (/(help|support|assist|how\s*to|what.*do|can you)/i.test(input)) {
+    return getRandomResponse('generalHelp');
+  }
+  
+  return getRandomResponse('default');
+};
 
   // FileIcon component
   const FileIcon = ({ className }: { className?: string }) => (
@@ -1012,9 +1075,25 @@ What would you like to focus on?`
                           <ImageMessage imageUrl={message.imageUrl} />
                         ) : (
                           <>
-                            {typingMessage?.id === message.id 
-                              ? message.content.substring(0, typingMessage.visibleChars)
-                              : message.content}
+                            {(() => {
+                              const content = typingMessage?.id === message.id
+                                ? message.content.substring(0, typingMessage.visibleChars)
+                                : message.content;
+                              
+                              // Split content by ** to identify bold sections
+                              const parts = content.split(/(\*\*.*?\*\*)/g);
+                              
+                              return parts.map((part, index) => {
+                                if (part.startsWith('**') && part.endsWith('**')) {
+                                  return (
+                                    <strong key={index} className="font-semibold">
+                                      {part.slice(2, -2)}
+                                    </strong>
+                                  );
+                                }
+                                return part;
+                              });
+                            })()}
                             {typingMessage?.id === message.id && (
                               <span className="inline-block w-1.5 h-4 bg-gray-400 ml-0.5 align-middle animate-pulse" />
                             )}
