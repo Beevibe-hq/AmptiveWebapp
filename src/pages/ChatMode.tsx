@@ -28,6 +28,7 @@ interface Message {
   isLoading?: boolean;
   attachments?: FileAttachment[];
   isRegenerated?: boolean;
+  className?: string;
 }
 
 // Action tray component for AI messages
@@ -468,17 +469,38 @@ const ChatMode = () => {
       // Clear the initial message from session storage
       sessionStorage.removeItem('initialMessage');
       
-      // First, add the user's message to the messages array
-      setMessages([initialMessage]);
-      
-      // Check if this is an image generation request
+      // Process any attachments in the initial message
+      const processedAttachments = initialMessage.attachments?.map(attachment => ({
+        type: attachment.type,
+        url: attachment.url,
+        name: attachment.name,
+        size: attachment.size
+      })) || [];
+
+      // Check if this is an image generation request or has file attachments
       const isImageRequest = initialMessage.type === 'image_loading';
+      const hasAttachments = processedAttachments.length > 0;
+      
+      // Only add the user's message to the messages array if it's not an image request
+      // For image requests, we'll add the loading message directly
+      if (!isImageRequest) {
+        setMessages([{
+          ...initialMessage,
+          attachments: processedAttachments
+        }]);
+      }
       
       if (isImageRequest) {
-        // Handle image generation
-        const messageId = (Date.now() + 1).toString();
+        const messageId = Date.now().toString();
         
-        // Add loading message
+        // First add the user's message
+        const userMessage = {
+          ...initialMessage,
+          type: 'text' as const, // Ensure it's a text message
+          timestamp: new Date()
+        };
+        
+        // Then add the loading message
         const loadingMessage = {
           id: messageId,
           content: 'Creating your image...',
@@ -487,21 +509,22 @@ const ChatMode = () => {
           timestamp: new Date()
         };
         
-        setMessages(prev => [...prev, loadingMessage]);
+        // Set both messages
+        setMessages([userMessage, loadingMessage]);
         
         // Generate the image
         const generateAndSetImage = async () => {
           try {
             const imageUrl = await generateImage(initialMessage.content);
             
-            // Update the loading message with the generated image
+            // Replace loading message with the generated image
             setMessages(prev => prev.map(msg => 
               msg.id === messageId 
                 ? { 
                     ...msg, 
                     type: 'image' as const, 
-                    content: initialMessage.content, 
-                    imageUrl, 
+                    content: '', // Empty content to remove the caption
+                    imageUrl,
                     isLoading: false,
                     timestamp: new Date()
                   }
@@ -526,23 +549,34 @@ const ChatMode = () => {
         
         generateAndSetImage();
       } else {
-        // Handle regular text response
-        const aiResponse = getAIResponse(initialMessage.content);
-        
-        // Add a small delay to simulate AI thinking time
-        const timer = setTimeout(() => {
-          setMessages(prev => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              content: aiResponse,
-              sender: 'ai',
-              timestamp: new Date()
-            }
-          ]);
-        }, 1000);
-        
-        return () => clearTimeout(timer);
+        // Handle regular text response or file attachments
+        if (hasAttachments) {
+          // If there are attachments, use the generateAIResponse function
+          // which will handle both text and file responses
+          generateAIResponse(initialMessage.content, processedAttachments)
+            .catch(error => {
+              console.error('Error generating response:', error);
+              toast.error('Failed to generate response. Please try again.');
+            });
+        } else {
+          // For plain text messages, use the simple response
+          const aiResponse = getAIResponse(initialMessage.content);
+          
+          // Add a small delay to simulate AI thinking time
+          const timer = setTimeout(() => {
+            setMessages(prev => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                content: aiResponse,
+                sender: 'ai',
+                timestamp: new Date()
+              }
+            ]);
+          }, 1000);
+          
+          return () => clearTimeout(timer);
+        }
       }
     }
   }, [initialMessage]);
@@ -809,24 +843,87 @@ const ChatMode = () => {
   };
 
   const generateAIResponse = async (userInput: string, attachments: FileAttachment[] = []) => {
+    // Check if user attached files
+    if (attachments && attachments.length > 0) {
+      // Show loading state
+      const loadingMessageId = `loading-${Date.now()}`;
+      
+      // Add loading message
+      setMessages(prev => [...prev, {
+        id: loadingMessageId,
+        content: 'Processing your files...',
+        sender: 'ai',
+        timestamp: new Date(),
+        isLoading: true
+      }]);
+      
+      // Force a re-render to show the loading message
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Process the files
+      const imageAttachments = attachments.filter(a => a.type === 'image');
+      const fileAttachments = attachments.filter(a => a.type === 'file');
+      
+      let responseText = "I've received ";
+      
+      // List image files
+      if (imageAttachments.length > 0) {
+        responseText += `${imageAttachments.length} image${imageAttachments.length > 1 ? 's' : ''}: `;
+        responseText += imageAttachments.map(img => `"${img.name}"`).join(', ');
+      }
+      
+      // Add separator if both image and file attachments exist
+      if (imageAttachments.length > 0 && fileAttachments.length > 0) {
+        responseText += ' and ';
+      }
+      
+      // List non-image files
+      if (fileAttachments.length > 0) {
+        responseText += `${fileAttachments.length} file${fileAttachments.length > 1 ? 's' : ''}: `;
+        responseText += fileAttachments.map(file => `"${file.name}"`).join(', ');
+      }
+      
+      responseText += ".\n";
+        
+      if (userInput.trim()) {
+        responseText += `You mentioned: "${userInput}"\n`;
+      }
+      
+      responseText += "How can I assist you with these files?";
+      
+      // Small delay to show loading state
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Replace loading message with the actual response
+      setMessages(prev => prev.map(msg => 
+        msg.id === loadingMessageId 
+          ? {
+              id: Date.now().toString(),
+              content: responseText,
+              sender: 'ai' as const,
+              timestamp: new Date(),
+              isLoading: false
+            }
+          : msg
+      ));
+      return;
+    }
+    
     // Check if user is requesting an image
     const isImageRequest = /(create|generate|make).*(image|picture|photo|art)/i.test(userInput);
     
     if (isImageRequest) {
       const messageId = (Date.now() + 1).toString();
       
-      // Create the final message structure immediately with loading state
-      const loadingMessage = {
+      // Create loading message
+      setMessages(prev => [...prev, {
         id: messageId,
-        content: 'Creating your image...',
+        content: '',
         sender: 'ai' as const,
         type: 'image_loading' as const,
         timestamp: new Date(),
-        imageUrl: ''
-      };
-      
-      // Add the loading message
-      setMessages(prev => [...prev, loadingMessage]);
+        isLoading: true
+      }]);
       
       try {
         // Generate the image
@@ -837,9 +934,10 @@ const ChatMode = () => {
           msg.id === messageId 
             ? {
                 ...msg,
-                content: `Here's the image you requested: ${userInput}`,
+                content: '',
                 type: 'image' as const,
-                imageUrl
+                imageUrl,
+                isLoading: false
               }
             : msg
         ));
@@ -937,11 +1035,12 @@ const ChatMode = () => {
         const imageUrl = await generateImage(originalContent);
         const newMessage: Message = {
           id: Date.now().toString(),
-          content: `(Regenerated image for: "${originalContent}")`,
+          content: 'Regenerated image',
           sender: 'ai',
           type: 'image',
           imageUrl,
-          timestamp: new Date()
+          timestamp: new Date(),
+          className: 'mb-4' // Add margin bottom using Tailwind class
         };
         setMessages(prev => prev
           .filter(msg => msg.id !== loadingMessageId)
@@ -1009,23 +1108,27 @@ const ChatMode = () => {
         // Add message with attachments
         const messageWithAttachments: Message = {
           id: Date.now().toString(),
-          content: userInput || 'Shared a file',
+          content: userInput || '', // Empty string if no message
           sender: 'user',
           username: 'User',
           timestamp: new Date(),
           attachments: uploadedFiles
         };
 
+        // Add user message with attachments
         setMessages(prev => [...prev, messageWithAttachments]);
         setInput('');
         setAttachments([]);
+        
+        // Generate AI response to the message with attachments
+        await generateAIResponse(userInput, uploadedFiles);
+        return;
       } catch (error) {
         console.error('Error uploading files:', error);
         toast.error('Failed to upload files. Please try again.');
       } finally {
         setIsFileUploading(false);
       }
-      return;
     }
     
     // Add user message
@@ -1222,18 +1325,15 @@ const getAIResponse = (userInput: string): string => {
                     key={message.id}
                     className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-[85%] ${message.sender === 'user' ? 'flex gap-2 bg-gray-100 text-gray-800' : ''} px-3 py-1.5 rounded-2xl`}>
+                    <div 
+                      className={`max-w-[85%] ${message.sender === 'user' ? 'flex gap-2 bg-gray-100 text-gray-800' : ''} ${message.className || ''} px-3 py-1.5 rounded-2xl`}
+                      style={message.sender === 'ai' && message.type === 'image' ? { marginBottom: '1.5rem' } : undefined}
+                    >
                       {message.sender === 'user' && <div className="self-start"><Avatar name={message.username} /></div>}
-                      <div className={`whitespace-pre-line ${message.sender === 'user' ? 'text-[15px]' : 'text-base leading-normal'}`}>
-                        {message.type === 'image_loading' ? (
-                          <div className="shimmer-text">Creating your image...</div>
-                        ) : message.type === 'image' && message.imageUrl ? (
-                          <ImageMessage 
-                            imageUrl={message.imageUrl || ''} 
-                            onClick={handleImageClick} 
-                          />
-                        ) : (
-                          <>
+                      <div className={`${message.sender === 'user' ? 'text-[15px]' : 'text-base leading-normal'} ${!message.attachments?.length ? 'min-h-0' : ''}`}>
+                        {/* Message content - only show for non-loading messages */}
+                        {message.content && message.type !== 'image_loading' && (
+                          <div className={`whitespace-pre-line ${message.attachments?.length ? 'mb-2' : ''}`}>
                             {(() => {
                               const content = typingMessage?.id === message.id
                                 ? message.content.substring(0, typingMessage.visibleChars)
@@ -1256,7 +1356,64 @@ const getAIResponse = (userInput: string): string => {
                             {typingMessage?.id === message.id && (
                               <span className="inline-block w-1.5 h-4 bg-gray-400 ml-0.5 align-middle animate-pulse" />
                             )}
-                          </>
+                          </div>
+                        )}
+
+                        {/* File attachments */}
+                        {message.attachments && message.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {message.attachments.map((file, index) => (
+                              <div key={index} className="relative group">
+                                {file.type === 'image' ? (
+                                  <div className="w-14 h-14 bg-gray-100 rounded-md overflow-hidden border border-gray-200">
+                                    <img 
+                                      src={file.url} 
+                                      alt={file.name} 
+                                      className="w-full h-full object-cover cursor-pointer"
+                                      onClick={() => window.open(file.url, '_blank')}
+                                    />
+                                  </div>
+                                ) : (
+                                  <a 
+                                    href={file.url} 
+                                    download={file.name}
+                                    className="block w-14 h-14 bg-gray-50 rounded-md border border-gray-200 overflow-hidden"
+                                  >
+                                    <div className="w-full h-full flex flex-col items-center justify-center p-1">
+                                      <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                      <span className="text-[8px] text-gray-500 text-center truncate w-full mt-1">
+                                        {file.name.split('.').pop()?.toUpperCase()}
+                                      </span>
+                                    </div>
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // For demo purposes, we'll just remove the attachment from the message
+                                    // In a real app, you'd want to handle this differently
+                                    console.log('Remove attachment', file.name);
+                                  }}
+                                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Loading state for image generation */}
+                        {message.type === 'image_loading' && (
+                          <div className="shimmer-text py-2">Creating your image...</div>
+                        )}
+                        {message.type === 'image' && message.imageUrl && (
+                          <ImageMessage 
+                            imageUrl={message.imageUrl} 
+                            onClick={handleImageClick} 
+                          />
                         )}
                         {message.sender === 'ai' && 
        message.type !== 'image_loading' && 
