@@ -567,9 +567,34 @@ const ChatMode = () => {
     setMessages([]);
   }, []);
 
-  // Auto-scroll to bottom of messages
+  // Reference to the chat container
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom of messages with improved mobile support
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!chatContainerRef.current) return;
+    
+    try {
+      const container = chatContainerRef.current;
+      // Smooth scroll with fallback for mobile
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
+      
+      // Additional scroll attempts to ensure it works on all devices
+      const scrollAttempts = [100, 300, 500];
+      
+      scrollAttempts.forEach((delay, index) => {
+        setTimeout(() => {
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }, delay);
+      });
+    } catch (error) {
+      console.error('Error scrolling to bottom:', error);
+    }
   };
 
   // Focus the textarea on mount and when messages change
@@ -581,30 +606,37 @@ const ChatMode = () => {
 
   // Handle scroll position and input focus when messages change
   useEffect(() => {
-    // Check if mobile device
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    // Scroll when messages change
+    scrollToBottom();
     
-    if (isMobile) {
-      // On mobile, scroll to top when component mounts
-      window.scrollTo(0, 0);
-      const mainContent = document.querySelector('main');
-      if (mainContent) {
-        mainContent.scrollTop = 0;
-      }
-    } else {
-      // On desktop, scroll to bottom of messages
+    // Set up a mutation observer to watch for changes in the chat container
+    const observer = new MutationObserver((mutations) => {
       scrollToBottom();
+    });
+    
+    if (chatContainerRef.current) {
+      observer.observe(chatContainerRef.current, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
     }
     
-    // Refocus the input after new messages are added (unless user explicitly blurred it)
+    // Refocus the input after new messages are added
     if (isInputFocused && textareaRef.current) {
-      const timer = setTimeout(() => {
+      const focusTimer = setTimeout(() => {
         if (document.activeElement !== textareaRef.current) {
           textareaRef.current.focus();
         }
       }, 100);
-      return () => clearTimeout(timer);
+      
+      return () => {
+        observer.disconnect();
+        clearTimeout(focusTimer);
+      };
     }
+    
+    return () => observer.disconnect();
   }, [messages, typingMessage, isInputFocused]);
 
   // Also scroll when typing indicator updates
@@ -1056,7 +1088,7 @@ const getAIResponse = (userInput: string): string => {
       
       {/* Content */}
       <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
-        <main className="flex-1 overflow-y-auto pt-20 pb-32 px-4 md:px-8">
+        <main ref={chatContainerRef} className="flex-1 overflow-y-auto pt-20 pb-32 px-4 md:px-8" style={{ WebkitOverflowScrolling: 'touch' }}>
           <div className="max-w-3xl mx-auto w-full pb-24">
             <div className="space-y-8">
               {/* Chat messages */}
