@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@supabase/ssr": "^0.7.0",
+    "@supabase/supabase-js": "^2.57.0",
     "@types/react-slick": "^0.23.13",
     "@types/three": "^0.178.0",
     "colorthief": "^2.6.0",

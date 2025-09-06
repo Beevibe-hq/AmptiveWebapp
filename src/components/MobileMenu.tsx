@@ -1,7 +1,9 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { getCurrentUser } from '@/lib/supabase/auth';
+import UserAvatar from './UserAvatar';
 
 type MenuLink = {
   name: string;
@@ -25,6 +27,25 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const userData = await getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      getUser();
+    }
+  }, [isOpen]);
 
   // Track scroll position and handle body scroll
   useEffect(() => {
@@ -195,21 +216,30 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
 
             {/* Auth Buttons */}
             <div className="p-4 pr-6 space-y-3">
-              <Link
-                to="/signin"
-                className="block w-full px-4 py-2.5 text-center text-base font-medium hover:bg-gray-50 rounded-full border border-gray-200"
-                style={{ color: 'rgb(22, 22, 26)' }}
-                onClick={onClose}
-              >
-                Sign In
-              </Link>
-              <Link
-                to="/download"
-                className="block w-full px-4 py-2.5 text-center text-base font-bold text-white bg-black hover:bg-gray-800 rounded-full"
-                onClick={onClose}
-              >
-                Download App
-              </Link>
+              {!loading && user && (
+                <div className="flex justify-center py-2">
+                  <UserAvatar user={user} />
+                </div>
+              )}
+              {!loading && !user && (
+                <>
+                  <Link
+                    to="/login"
+                    className="block w-full px-4 py-2.5 text-center text-base font-medium hover:bg-gray-50 rounded-full border border-gray-200"
+                    style={{ color: 'rgb(22, 22, 26)' }}
+                    onClick={onClose}
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    to="/download"
+                    className="block w-full px-4 py-2.5 text-center text-base font-bold text-white bg-black hover:bg-gray-800 rounded-full"
+                    onClick={onClose}
+                  >
+                    Download App
+                  </Link>
+                </>
+              )}
             </div>
           </motion.div>
         </div>

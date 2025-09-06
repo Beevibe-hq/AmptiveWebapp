@@ -1,4 +1,3 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -13,6 +12,7 @@ import NewChat from './pages/NewChat';
 import ChatMode from './pages/ChatMode';
 import Help from './pages/Help';
 import Download from './pages/Download';
+import LoginPage from './pages/Login';
 
 function App() {
   return (
@@ -34,18 +34,19 @@ function MainLayout() {
       <Navbar />
       <main className="bg-white">
         <Routes>
-        <Route path="/" element={<Homepage />} />
-        <Route path="/events" element={<Events />} />
-        <Route path="/events/:id" element={<EventDetail />} />
-        <Route path="/invest" element={<Invest />} />
-        <Route path="/shop" element={<Shop />} />
-        <Route path="/community" element={<Community />} />
-        <Route path="/ai-tool" element={<AITool />} />
-        <Route path="/ai-chat" element={<NewChat />} />
-        <Route path="/chat-mode" element={<ChatMode />} />
-        <Route path="/help" element={<Help />} />
-        <Route path="/download" element={<Download />} />
-      </Routes>
+          <Route path="/" element={<Homepage />} />
+          <Route path="/events" element={<Events />} />
+          <Route path="/events/:id" element={<EventDetail />} />
+          <Route path="/invest" element={<Invest />} />
+          <Route path="/shop" element={<Shop />} />
+          <Route path="/community" element={<Community />} />
+          <Route path="/ai-tool" element={<AITool />} />
+          <Route path="/ai-chat" element={<NewChat />} />
+          <Route path="/chat-mode" element={<ChatMode />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/download" element={<Download />} />
+          <Route path="/login" element={<LoginPage />} />
+        </Routes>
       </main>
       {!hideFooter && <Footer />}
     </div>

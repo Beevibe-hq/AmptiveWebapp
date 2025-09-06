@@ -5,6 +5,11 @@ import { motion } from 'framer-motion';
 import Logo from './Logo';
 import TextLogo from './TextLogo';
 import MobileMenu from './MobileMenu';
+import UserAvatar from './UserAvatar';
+import { getCurrentUser } from '@/lib/supabase/auth';
+import { createClient } from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 type MenuItem = {
   name: string;
@@ -28,6 +33,32 @@ const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkUser();
+
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -337,15 +368,19 @@ const Navbar = () => {
             </motion.div>
             )}
 
-            {/* Sign In button - hidden on chat pages */}
+            {/* User Avatar or Sign In button - hidden on chat pages */}
             {!isAIChatPage && (
-              <div className="hidden xl:block">
-                <Link
-                  to="/signin"
-                  className="bg-black text-white px-4 py-2 rounded-full text-[15px] font-bold hover:bg-gray-800 transition-colors whitespace-nowrap"
-                >
-                  Sign In
-                </Link>
+              <div className="hidden xl:flex items-center">
+                {user ? (
+                  <UserAvatar user={user} />
+                ) : (
+                  <Link
+                    to="/login"
+                    className="bg-black text-white px-4 py-2 rounded-full text-[15px] font-bold hover:bg-gray-800 transition-colors whitespace-nowrap"
+                  >
+                    Sign In
+                  </Link>
+                )}
               </div>
             )}
             {/* Generate with AI Button - Mobile/Tablet */}
