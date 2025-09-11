@@ -36,6 +36,48 @@ export default function CompleteProfilePage() {
   const [fullNameFocused, setFullNameFocused] = useState(false);
   const [dobFocused, setDobFocused] = useState(false);
 
+  // Detect native date input support (iOS Safari returns text)
+  const dateSupported = useMemo(() => {
+    if (typeof document === 'undefined') return true;
+    const input = document.createElement('input');
+    input.setAttribute('type', 'date');
+    input.value = 'x';
+    return input.value !== 'x';
+  }, []);
+
+  // Fallback DOB selects state
+  const [dobYear, setDobYear] = useState<string>('');
+  const [dobMonth, setDobMonth] = useState<string>('');
+  const [dobDay, setDobDay] = useState<string>('');
+
+  // Build select options
+  const years = useMemo(() => {
+    const ys: number[] = [];
+    const current = new Date().getFullYear();
+    for (let y = current; y >= current - 100; y--) ys.push(y);
+    return ys;
+  }, []);
+  const months = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), []);
+  const daysInMonth = useMemo(() => {
+    const y = parseInt(dobYear || '2000', 10);
+    const m = parseInt(dobMonth || '1', 10);
+    const last = new Date(y, m, 0).getDate();
+    return Array.from({ length: last }, (_, i) => i + 1);
+  }, [dobYear, dobMonth]);
+
+  // Compose dob ISO string when fallback selects change
+  useEffect(() => {
+    if (!dateSupported) {
+      if (dobYear && dobMonth && dobDay) {
+        const mm = String(dobMonth).padStart(2, '0');
+        const dd = String(dobDay).padStart(2, '0');
+        setDob(`${dobYear}-${mm}-${dd}`);
+      } else {
+        setDob('');
+      }
+    }
+  }, [dobYear, dobMonth, dobDay, dateSupported]);
+
   // Emoji-based default avatar (deterministic by username/email)
   const emojiSet = useMemo(
     () => ['😀','😎','🤠','🦄','🐼','🐸','🐯','🐵','🐧','🐰','🐨','🦊','🐙','🐳','🐝','🐢','🐞','🌸','🌼','🍀','🍉','🍓','🍍','⚡','⭐','🌙','☀️','🔥','🎧','🎨','🎯','🚀','🧠','💎','💜','💛','💚','💙','🧸'],
@@ -600,23 +642,61 @@ export default function CompleteProfilePage() {
           {step === 3 && (
             <div>
               <label className="block text-sm font-medium text-gray-700">Date of birth</label>
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', width: '100%', fontSize: '15px', lineHeight: '26px', position: 'relative', borderRadius: '10px',
-                  border: dobFocused ? '1px solid #000' : '1px solid rgba(15, 15, 15, 0.1)', background: 'transparent', cursor: 'text',
-                  paddingTop: '4px', paddingBottom: '4px', paddingInline: '10px', marginTop: '4px', marginBottom: '12px', height: '40px', boxSizing: 'border-box'
-                }}
-              >
-                <input
-                  type="date"
-                  aria-label="Date of birth"
-                  value={dob}
-                  onChange={(e) => setDob(e.target.value)}
-                  onFocus={() => setDobFocused(true)}
-                  onBlur={() => setDobFocused(false)}
-                  style={{ fontSize: 'inherit', lineHeight: 'inherit', border: 'none', background: 'none', width: '100%', display: 'block', resize: 'none', padding: 0, outline: 'none' }}
-                />
-              </div>
+              {dateSupported ? (
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', width: '100%', fontSize: '15px', lineHeight: '26px', position: 'relative', borderRadius: '10px',
+                    border: dobFocused ? '1px solid #000' : '1px solid rgba(15, 15, 15, 0.1)', background: 'transparent', cursor: 'text',
+                    paddingTop: '4px', paddingBottom: '4px', paddingInline: '10px', marginTop: '4px', marginBottom: '12px', height: '40px', boxSizing: 'border-box'
+                  }}
+                >
+                  <input
+                    type="date"
+                    aria-label="Date of birth"
+                    value={dob}
+                    onChange={(e) => setDob(e.target.value)}
+                    onFocus={() => setDobFocused(true)}
+                    onBlur={() => setDobFocused(false)}
+                    style={{ fontSize: 'inherit', lineHeight: 'inherit', border: 'none', background: 'none', width: '100%', display: 'block', resize: 'none', padding: 0, outline: 'none' }}
+                  />
+                </div>
+              ) : (
+                <div className="mt-1 grid grid-cols-3 gap-2">
+                  <select
+                    aria-label="Month"
+                    value={dobMonth}
+                    onChange={(e) => setDobMonth(e.target.value)}
+                    className="h-10 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                  >
+                    <option value="" disabled>MM</option>
+                    {months.map((m) => (
+                      <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Day"
+                    value={dobDay}
+                    onChange={(e) => setDobDay(e.target.value)}
+                    className="h-10 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                  >
+                    <option value="" disabled>DD</option>
+                    {daysInMonth.map((d) => (
+                      <option key={d} value={d}>{String(d).padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Year"
+                    value={dobYear}
+                    onChange={(e) => setDobYear(e.target.value)}
+                    className="h-10 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                  >
+                    <option value="" disabled>YYYY</option>
+                    {years.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           )}
 

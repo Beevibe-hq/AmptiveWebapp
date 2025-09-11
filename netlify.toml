@@ -28,7 +28,8 @@
     X-Content-Type-Options = "nosniff"
     X-XSS-Protection = "1; mode=block"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co https://amptiveweb-backend.onrender.com https://*.onrender.com http://localhost:*; frame-src 'self' https://*.supabase.co;"
+    # Allow blob: for image crop previews, workers; allow data: for inline images; expand connect-src to backend and Supabase
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co https://amptiveweb-backend.onrender.com https://*.onrender.com http://localhost:*; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.supabase.co; form-action 'self' https://*.supabase.co;"
 
 # Cache static assets
 [[headers]]
@@ -43,4 +44,4 @@
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, POST, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type, Authorization"
-    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://amptiveweb-backend.onrender.com https://*.onrender.com http://localhost:* https://*.supabase.co;"
+    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://amptiveweb-backend.onrender.com https://*.onrender.com http://localhost:* https://*.supabase.co; img-src 'self' data: blob: https:; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob:;"
