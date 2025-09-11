@@ -36,7 +36,7 @@ export default function CompleteProfilePage() {
   const [fullNameFocused, setFullNameFocused] = useState(false);
   const [dobFocused, setDobFocused] = useState(false);
 
-  // Detect native date input support (iOS Safari returns text)
+  // Detect native date input support (some iOS versions report support but UX is buggy)
   const dateSupported = useMemo(() => {
     if (typeof document === 'undefined') return true;
     const input = document.createElement('input');
@@ -44,6 +44,11 @@ export default function CompleteProfilePage() {
     input.value = 'x';
     return input.value !== 'x';
   }, []);
+  const isIOS = useMemo(() => {
+    if (typeof navigator === 'undefined') return false;
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1);
+  }, []);
+  const useFallbackDob = !dateSupported || isIOS;
 
   // Fallback DOB selects state
   const [dobYear, setDobYear] = useState<string>('');
@@ -642,7 +647,7 @@ export default function CompleteProfilePage() {
           {step === 3 && (
             <div>
               <label className="block text-sm font-medium text-gray-700">Date of birth</label>
-              {dateSupported ? (
+              {!useFallbackDob ? (
                 <div
                   style={{
                     display: 'flex', alignItems: 'center', width: '100%', fontSize: '15px', lineHeight: '26px', position: 'relative', borderRadius: '10px',
