@@ -8,6 +8,19 @@
   }
 }
 
+/* Prevent iOS Safari from zooming inputs on focus by ensuring >=16px font-size */
+@layer base {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  /* iOS-specific polish */
+  input[type="search"] {
+    -webkit-appearance: none;
+  }
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
