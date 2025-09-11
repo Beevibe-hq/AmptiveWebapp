@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail, signOut, getCurrentUser } from '@/lib/supabase/auth';
-import { toastError } from '@/lib/ui/toast';
+import { signUpWithEmail } from '@/lib/supabase/auth';
+import { stashSignup } from '@/lib/api/otp';
+import { toast } from 'sonner';
+import { checkEmailExists } from '@/lib/api/checkEmail';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -43,102 +45,116 @@ const socialIconStyle: React.CSSProperties = {
   justifyContent: 'center'
 };
 
-interface LoginFormProps {
+interface SignupFormProps {
   onSuccess?: () => void;
+  initialEmail?: string;
 }
 
-export default function LoginForm({ onSuccess }: LoginFormProps) {
+export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps) {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail ?? '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'email' | 'password'>('email');
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Step 1: advance from email to password
     if (step === 'email') {
       const normalizedEmail = email.trim().toLowerCase();
-      // Basic email validation
+      
+      // Validate email format
       const emailOk = /.+@.+\..+/.test(normalizedEmail);
       if (!emailOk) {
         setError('Please enter a valid email address.');
         return;
       }
-      setStep('password');
+      
+      // Check if email exists
+      setLoading(true);
+      try {
+        const { exists } = await checkEmailExists(normalizedEmail);
+        
+        if (exists) {
+          setError('This email is already registered. Please sign in instead.');
+          return;
+        }
+        
+        // If we get here, email is valid and not registered
+        setError(null);
+        setStep('password');
+      } catch (err) {
+        console.error('Email check failed:', err);
+        setError('Failed to check email. Please try again.');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
-    // Step 2: perform actual sign-in
+    // Don't submit if already loading
+    if (loading) return;
+    
     setLoading(true);
     try {
       const normalizedEmail = email.trim().toLowerCase();
-      if (!password) {
-        setError('Please enter your password.');
+      if (!password || password.length < 8) {
+        setError('Your password should be at least 8 characters.');
+        setLoading(false);
         return;
       }
-
-      // Sign in first to avoid extra round trips slowing login
-      const { data, error } = await signInWithEmail(normalizedEmail, password);
+      
+      console.log('Attempting to sign up with:', { email: normalizedEmail });
+      const { data, error } = await signUpWithEmail(normalizedEmail, password);
+      
       if (error) {
+        console.error('Signup error:', error);
         const msg = (error.message || '').toLowerCase();
-        if (msg.includes('invalid login credentials')) {
-          setError('Incorrect email or password.');
-        } else if (msg.includes('email not confirmed') || msg.includes('email not verified')) {
-          setError('Please verify your email before logging in.');
-        } else if (msg.includes('rate') || msg.includes('too many')) {
-          setError('Too many attempts. Please wait a moment and try again.');
+        if (msg.includes('already registered') || msg.includes('already in use')) {
+          setError('An account with this email already exists. Please sign in instead.');
+        } else if (msg.includes('password')) {
+          setError('Password is not strong enough. Please choose a stronger password.');
         } else {
-          setError('Login failed. Please try again.');
+          setError('Sign up failed. Please try again.');
         }
+        setLoading(false);
         return;
       }
+      
+      console.log('Signup response:', data);
 
-      // After sign-in, enforce OTP: first use fresh user from response (most reliable)
-      let respUser: any = (data as any)?.user;
-      let otpVerified = Boolean(respUser?.user_metadata?.otp_verified);
-      let confirmedAt = respUser?.email_confirmed_at;
-
-      // If response lacks user fields (can happen), fall back to local getUser with brief polling
-      if (!respUser) {
-        // After sign-in, enforce OTP via locally cached user to avoid extra round-trip.
-        // Poll briefly to avoid stale reads right after sign-in.
-        let current = await getCurrentUser();
-        otpVerified = Boolean((current as any)?.user_metadata?.otp_verified);
-        confirmedAt = (current as any)?.email_confirmed_at;
-        if (!otpVerified && !confirmedAt) {
-          for (let i = 0; i < 4; i++) {
-            await new Promise(r => setTimeout(r, 300));
-            current = await getCurrentUser();
-            otpVerified = Boolean((current as any)?.user_metadata?.otp_verified);
-            confirmedAt = (current as any)?.email_confirmed_at;
-            if (otpVerified || confirmedAt) break;
-          }
+      // If no error from Supabase, consider this a successful signup.
+      // In projects requiring email confirmation, Supabase may return no session
+      // and sometimes even no user object. We'll treat this as success and
+      // let the app redirect/show a success state via onSuccess.
+      console.log('Signup successful (no Supabase error). Proceeding to success handler.');
+      // Securely stash credentials server-side and pass one-time token to verify page
+      let tokenParam = '';
+      try {
+        const stash = await stashSignup(normalizedEmail, password);
+        if (stash.ok && stash.token) {
+          tokenParam = `&token=${encodeURIComponent(stash.token)}`;
+        } else {
+          toast.warning('Could not prepare auto sign-in. You can still complete verification.');
         }
-      }
-      if (!otpVerified && !confirmedAt) {
-        await signOut();
-        setError('Please verify your email with the OTP before logging in.');
-        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`);
-        return;
+      } catch (e) {
+        toast.warning('Network issue preparing secure sign-in. You can still complete verification.');
       }
 
-      onSuccess?.();
-      console.log('Login successful:', data);
+      // Navigate to OTP verification page with email (and token if available) as query param.
+      // The Verify page will handle sending the OTP once it mounts.
+      try {
+        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}${tokenParam}`);
+      } catch {}
+      return;
     } catch (err: any) {
-      console.error('Login error:', err);
-      const em = (err?.message || '').toLowerCase();
-      if (em.includes('failed to fetch') || em.includes('network')) {
-        setError('Network issue. Check your connection and try again.');
-      } else {
-        setError('Something went wrong. Please try again.');
-      }
-    } finally {
+      console.error('Unexpected signup error:', err);
+      setError('Something went wrong. Please try again.');
       setLoading(false);
     }
   };
@@ -263,8 +279,8 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           />
           {email && (
             <div style={{ display: 'contents' }}>
-              <div 
-                role="button" 
+              <div
+                role="button"
                 tabIndex={0}
                 aria-label="Clear Input"
                 onClick={() => setEmail('')}
@@ -284,19 +300,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
                   marginInlineEnd: '-4px'
                 }}
               >
-                <svg 
-                  aria-hidden="true" 
-                  role="graphics-symbol" 
-                  viewBox="0 0 16 16" 
-                  className="clearInput" 
-                  style={{
-                    width: '16px', 
-                    height: '16px', 
-                    display: 'block', 
-                    fill: 'rgba(81, 73, 60, 0.32)', 
-                    flexShrink: 0
-                  }}
-                >
+                <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 16 16" className="clearInput" style={{ width: '16px', height: '16px', display: 'block', fill: 'rgba(81, 73, 60, 0.32)', flexShrink: 0 }}>
                   <path d="M7.993 15.528a7.273 7.273 0 01-2.923-.593A7.633 7.633 0 012.653 13.3a7.797 7.797 0 01-1.633-2.417 7.273 7.273 0 01-.593-2.922c0-1.035.198-2.01.593-2.922A7.758 7.758 0 015.063.99 7.273 7.273 0 017.985.395a7.29 7.29 0 012.93.593 7.733 7.733 0 012.417 1.64 7.647 7.647 0 011.64 2.41c.396.914.594 1.888.594 2.923 0 1.035-.198 2.01-.593 2.922a7.735 7.735 0 01-4.058 4.05 7.272 7.272 0 01-2.922.594zM5.59 11.06c.2 0 .371-.066.513-.198L8 8.951l1.904 1.911a.675.675 0 00.498.198.667.667 0 00.491-.198.67.67 0 00.205-.49.64.64 0 00-.205-.491L8.981 7.969l1.92-1.911a.686.686 0 00.204-.491.646.646 0 00-.205-.484.646.646 0 00-.483-.205.67.67 0 00-.49.205L8 6.995 6.081 5.083a.696.696 0 00-.49-.19.682.682 0 00-.491.198.651.651 0 00-.198.49c0 .181.068.342.205.484l1.912 1.904-1.912 1.92a.646.646 0 00-.205.483c0 .19.066.354.198.49.136.132.3.198.49.198z"></path>
                 </svg>
               </div>
@@ -304,6 +308,8 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           )}
         </div>
       </div>
+
+      {/* Password step */}
       <div style={{
         opacity: step === 'password' ? 1 : 0,
         maxHeight: step === 'password' ? 140 : 0,
@@ -352,24 +358,27 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           lineHeight: '26px',
           position: 'relative',
           borderRadius: '10px',
-          border: passwordFocused ? '1px solid #000' : '1px solid rgba(15, 15, 15, 0.1)',
+          border: (password && password.length < 8) ? '1px solid #b91c1c' : (passwordFocused ? '1px solid #000' : '1px solid rgba(15, 15, 15, 0.1)'),
           background: 'transparent',
           cursor: 'text',
           paddingTop: '4px',
           paddingBottom: '4px',
           paddingInline: '10px',
           marginTop: '4px',
-          marginBottom: step === 'password' ? '12px' : '0px',
+          marginBottom: step === 'password' ? '2px' : '0px',
           height: '40px',
           boxSizing: 'border-box'
         }}>
           <input
             id="password"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password..."
-            aria-label="Enter your password..."
+            placeholder="Create a password..."
+            aria-label="Create a password..."
+            aria-describedby="password-help"
+            aria-invalid={password.length > 0 && password.length < 8}
+            minLength={8}
             style={{
               fontSize: 'inherit',
               lineHeight: 'inherit',
@@ -378,7 +387,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
               width: '100%',
               display: 'block',
               resize: 'none',
-              padding: '0px',
+              padding: '0px 28px 0 0',
               outline: 'none'
             }}
             onFocus={() => { setPasswordFocused(true); setError(null); }}
@@ -386,49 +395,58 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             required={step === 'password'}
             autoFocus={step === 'password'}
           />
-          {password && (
-            <div style={{ display: 'contents' }}>
-              <div 
-                role="button" 
-                tabIndex={0}
-                aria-label="Clear Input"
-                onClick={() => setPassword('')}
-                style={{
-                  userSelect: 'none',
-                  transition: 'background 20ms ease-in',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  borderRadius: '20px',
-                  height: '24px',
-                  width: '24px',
-                  padding: '0px',
-                  flexGrow: 0,
-                  marginInlineEnd: '-4px'
-                }}
-              >
-                <svg 
-                  aria-hidden="true" 
-                  role="graphics-symbol" 
-                  viewBox="0 0 16 16" 
-                  className="clearInput" 
-                  style={{
-                    width: '16px', 
-                    height: '16px', 
-                    display: 'block', 
-                    fill: 'rgba(81, 73, 60, 0.32)', 
-                    flexShrink: 0
-                  }}
-                >
-                  <path d="M7.993 15.528a7.273 7.273 0 01-2.923-.593A7.633 7.633 0 012.653 13.3a7.797 7.797 0 01-1.633-2.417 7.273 7.273 0 01-.593-2.922c0-1.035.198-2.01.593-2.922A7.758 7.758 0 015.063.99 7.273 7.273 0 017.985.395a7.29 7.29 0 012.93.593 7.733 7.733 0 012.417 1.64 7.647 7.647 0 011.64 2.41c.396.914.594 1.888.594 2.923 0 1.035-.198 2.01-.593 2.922a7.735 7.735 0 01-4.058 4.05 7.272 7.272 0 01-2.922.594zM5.59 11.06c.2 0 .371-.066.513-.198L8 8.951l1.904 1.911a.675.675 0 00.498.198.667.667 0 00.491-.198.67.67 0 00.205-.49.64.64 0 00-.205-.491L8.981 7.969l1.92-1.911a.686.686 0 00.204-.491.646.646 0 00-.205-.484.646.646 0 00-.483-.205.67.67 0 00-.49.205L8 6.995 6.081 5.083a.696.696 0 00-.49-.19.682.682 0 00-.491.198.651.651 0 00-.198.49c0 .181.068.342.205.484l1.912 1.904-1.912 1.92a.646.646 0 00-.205.483c0 .19.066.354.198.49.136.132.3.198.49.198z"></path>
-                </svg>
-              </div>
-            </div>
-          )}
+          {/* Toggle password visibility */}
+          <button
+            type="button"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-pressed={showPassword}
+            onClick={() => setShowPassword(v => !v)}
+            style={{
+              position: 'absolute',
+              right: '8px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              margin: 0,
+              cursor: 'pointer',
+              color: 'rgba(0,0,0,0.6)'
+            }}
+          >
+            {showPassword ? (
+              // Eye-off icon
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M17.94 17.94C16.23 19.22 14.2 20 12 20 5.48 20 1 12.99 1 12.99S3.29 9.42 6.56 7.53" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M9.9 5.96C10.57 5.82 11.28 5.75 12 5.75c6.52 0 11 7 11 7s-1.18 1.83-3.24 3.43" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M14.12 9.88A3 3 0 0 1 12 15a3 3 0 0 1-3-3c0-.5.12-.98.33-1.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M3 3l18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            ) : (
+              // Eye icon
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            )}
+          </button>
+        </div>
+        <div style={{ marginTop: '0px' }}>
+          <span
+            id="password-help"
+            style={{
+              fontSize: '12px',
+              color: password && password.length > 0 && password.length < 8 ? '#b91c1c' : 'rgba(0,0,0,0.6)',
+              paddingBottom: '12px',
+              display: 'block'
+            }}
+          >
+            Your password should be at least 8 characters.
+          </span>
         </div>
       </div>
+
+      {/* Submit */}
       <div style={{ marginBottom: '16px' }}>
         <button
           type="submit"
@@ -442,13 +460,18 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             border: 'none',
             fontSize: '14px',
             fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'background-color 0.2s ease',
-            opacity: loading ? 0.7 : 1,
-            pointerEvents: loading ? 'none' : 'auto'
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'opacity 0.2s ease, background-color 0.2s ease',
+            opacity: loading ? 0.7 : 1
+          }}
+          onClick={(e) => {
+            if (loading) {
+              e.preventDefault();
+              return;
+            }
           }}
         >
-          {step === 'email' ? (loading ? 'Continue...' : 'Continue') : (loading ? 'Signing in...' : 'Sign in')}
+          {step === 'email' ? (loading ? 'Continue...' : 'Continue') : (loading ? 'Creating account...' : 'Create account')}
         </button>
       </div>
       {error && (
@@ -460,18 +483,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           <span className="block text-xs sm:text-sm">{error}</span>
         </div>
       )}
-      {step === 'password' && error === 'Incorrect email or password.' && (
-        <div className="mt-2 text-xs text-gray-700">
-          Don't have an account?{' '}
-          <a
-            href={`/signup?email=${encodeURIComponent(email.trim().toLowerCase())}`}
-            className="font-medium text-black hover:underline"
-          >
-            Create one
-          </a>
-          .
-        </div>
-      )}
+
     </form>
   );
 }

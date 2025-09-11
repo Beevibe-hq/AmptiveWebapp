@@ -100,19 +100,23 @@ const Navbar = () => {
   };
 
   const isAIChatPage = location.pathname === '/ai-chat' || location.pathname === '/ai-chat/' || location.pathname === '/chat-mode' || location.pathname === '/chat-mode/';
-
   const isChatModePage = location.pathname === '/chat-mode' || location.pathname === '/chat-mode/';
-  
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/login/' || location.pathname === '/signup' || location.pathname === '/signup/';
+  const isCompleteProfilePage = location.pathname === '/complete-profile' || location.pathname === '/complete-profile/';
+  const isOtpPage = location.pathname === '/verify-otp' || location.pathname === '/verify-otp/';
+
   return (
     <nav 
       className={`fixed top-0 w-full z-50 ${
-        isChatModePage
-          ? 'bg-white lg:bg-transparent lg:backdrop-blur-0 lg:shadow-none lg:border-none' 
-          : isAIChatPage 
-            ? 'bg-transparent backdrop-blur-0 shadow-none border-none' 
-            : isScrolled 
-              ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100' 
-              : 'bg-white'
+        isCompleteProfilePage
+          ? 'bg-transparent backdrop-blur-0 shadow-none border-none'
+          : isChatModePage
+            ? 'bg-white lg:bg-transparent lg:backdrop-blur-0 lg:shadow-none lg:border-none' 
+            : isAIChatPage 
+              ? 'bg-transparent backdrop-blur-0 shadow-none border-none' 
+              : isScrolled 
+                ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100' 
+                : 'bg-white'
       }`}
     >
       <div className="px-4 sm:px-6 lg:px-8">
@@ -135,7 +139,7 @@ const Navbar = () => {
               </Link>
               
               {/* Search Icon - Only shown on mobile when search box is hidden */}
-              {!isAIChatPage && (
+              {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
                 <div className="sm:hidden">
                   <button 
                     className="p-1.5 text-black hover:text-gray-800"
@@ -149,7 +153,7 @@ const Navbar = () => {
             </motion.div>
             
             {/* Search Box - shown on medium screens and up with expand-on-focus animation */}
-            {!isAIChatPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
             <motion.div 
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -187,7 +191,7 @@ const Navbar = () => {
             )}
 
             {/* Desktop Navigation - shown only on large (lg) and up */}
-            {!isAIChatPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
             <div className="hidden lg:flex items-center space-x-8">
               {links.map((link) => (
                 <div 
@@ -293,7 +297,7 @@ const Navbar = () => {
             )}
             
             {/* Generate with AI Button - Medium - shown only on lg (1024px) and up */}
-            {!isAIChatPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
             <motion.div
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -331,7 +335,7 @@ const Navbar = () => {
             )}
 
             {/* Generate with AI Button - Desktop - shown only on xl (1240px) and up */}
-            {!isAIChatPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && (
             <motion.div
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -369,7 +373,7 @@ const Navbar = () => {
             )}
 
             {/* User Avatar or Sign In button - hidden on chat pages */}
-            {!isAIChatPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
               <div className="hidden xl:flex items-center">
                 {user ? (
                   <UserAvatar user={user} />
@@ -384,7 +388,7 @@ const Navbar = () => {
               </div>
             )}
             {/* Generate with AI Button - Mobile/Tablet */}
-            {!isAIChatPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -416,7 +420,7 @@ const Navbar = () => {
             )}
             
             {/* Mobile menu button - hidden on chat pages */}
-            {!isAIChatPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
               <div className="flex items-center lg:hidden ml-2">
                 <button
                   onClick={() => setIsMobileMenuOpen(true)}
@@ -444,10 +448,12 @@ const Navbar = () => {
       </div>
       
       {/* Mobile Menu */}
-      <MobileMenu 
-        isOpen={isMobileMenuOpen} 
-        onClose={() => setIsMobileMenuOpen(false)} 
-      />
+      {!isCompleteProfilePage && !isOtpPage && (
+        <MobileMenu 
+          isOpen={isMobileMenuOpen} 
+          onClose={() => setIsMobileMenuOpen(false)} 
+        />
+      )}
     </nav>
   );
 };

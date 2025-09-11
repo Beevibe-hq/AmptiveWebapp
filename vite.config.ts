@@ -14,6 +14,7 @@ export default defineConfig({
   assetsInclude: ['**/*.svg', '**/*.png', '**/*.jpg', '**/*.jpeg', '**/*.gif'],
   server: {
     port: 3000,
+    strictPort: true,
     open: true
   },
   optimizeDeps: {

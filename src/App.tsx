@@ -13,6 +13,10 @@ import ChatMode from './pages/ChatMode';
 import Help from './pages/Help';
 import Download from './pages/Download';
 import LoginPage from './pages/Login';
+import SignupPage from './pages/Signup';
+import VerifyOtpPage from './pages/VerifyOtp';
+import CompleteProfilePage from './pages/CompleteProfile';
+import { Toaster } from 'sonner';
 
 function App() {
   return (
@@ -20,6 +24,7 @@ function App() {
       <Routes>
         <Route path="*" element={<MainLayout />} />
       </Routes>
+      <Toaster position="top-center" richColors closeButton expand={false} />
     </Router>
   );
 }
@@ -27,7 +32,13 @@ function App() {
 // MainLayout component that includes Navbar and conditionally renders Footer
 function MainLayout() {
   const location = useLocation();
-  const hideFooter = location.pathname === '/ai-chat' || location.pathname === '/chat-mode';
+  const hideFooter =
+    location.pathname === '/ai-chat' ||
+    location.pathname === '/chat-mode' ||
+    location.pathname === '/login' ||
+    location.pathname === '/signup' ||
+    location.pathname === '/verify-otp' ||
+    location.pathname === '/complete-profile';
 
   return (
     <div className="min-h-screen font-inter">
@@ -46,6 +57,9 @@ function MainLayout() {
           <Route path="/help" element={<Help />} />
           <Route path="/download" element={<Download />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-otp" element={<VerifyOtpPage />} />
+          <Route path="/complete-profile" element={<CompleteProfilePage />} />
         </Routes>
       </main>
       {!hideFooter && <Footer />}
