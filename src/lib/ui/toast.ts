@@ -9,7 +9,12 @@ const baseStyle: React.CSSProperties = {
   fontSize: '14px',
   marginTop: '20px',
   border: '1px solid #e5e7eb',
-  maxWidth: '280px',
+  // Keep toast on one line and avoid wrapping
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  // Allow long messages to fit viewport width without wrapping
+  maxWidth: '90vw',
   width: 'fit-content',
   minWidth: 'auto',
   marginLeft: 'auto',

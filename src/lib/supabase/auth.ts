@@ -119,6 +119,36 @@ export const signOut = async () => {
   }
 };
 
+// Silent sign out: clears session and tokens WITHOUT redirecting or reloading the page
+export const signOutSilent = async () => {
+  try {
+    const supabase = createClient();
+    // Remove auth-related localStorage entries
+    const possibleKeys = [
+      'amptive.auth',
+      'sb-gjkvrllwtjktcarnikus-auth-token',
+      'sb-gjkvrllwtjktcarnikus-auth-token-1',
+      'sb-gjkvrllwtjktcarnikus-auth-event',
+    ];
+    possibleKeys.forEach((k) => localStorage.removeItem(k));
+
+    // Clear Supabase auth cookies (if any)
+    document.cookie.split(';').forEach((cookie) => {
+      const [name] = cookie.trim().split('=');
+      if (name.toLowerCase().startsWith('sb-')) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+      }
+    });
+
+    // Invalidate session with Supabase
+    const { error } = await supabase.auth.signOut();
+    return { error };
+  } catch (e) {
+    console.warn('Silent sign out error (ignored):', (e as any)?.message || e);
+    return { error: e as any };
+  }
+};
+
 export const getCurrentUser = async () => {
   const supabase = createClient();
   try {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail, signOut, getCurrentUser } from '@/lib/supabase/auth';
+import { signInWithEmail, signOut, signOutSilent, getCurrentUser } from '@/lib/supabase/auth';
 import { toastError } from '@/lib/ui/toast';
 
 const socialButtonContainer: React.CSSProperties = {
@@ -128,7 +128,23 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }
 
+      // Decide post-login redirect based on profile completion
+      const u = await getCurrentUser();
+      const md = (u as any)?.user_metadata || {};
+      const hasUsername = typeof md.username === 'string' && md.username.trim().length >= 3;
+      const hasFullName = typeof md.full_name === 'string' && md.full_name.trim().length > 0;
+      const hasDob = typeof md.dob === 'string' && md.dob.trim().length > 0;
+      const needsCompletion = !(hasUsername && hasFullName && hasDob);
+
       onSuccess?.();
+      if (needsCompletion) {
+        // Redirect first so UI changes immediately
+        navigate(`/complete-profile?email=${encodeURIComponent(normalizedEmail)}`, { replace: true });
+        // Then sign out silently on the next tick to avoid interrupting navigation
+        setTimeout(() => { void signOutSilent(); }, 0);
+      } else {
+        navigate('/', { replace: true });
+      }
       console.log('Login successful:', data);
     } catch (err: any) {
       console.error('Login error:', err);

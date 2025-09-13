@@ -6,7 +6,7 @@ import Logo from './Logo';
 import TextLogo from './TextLogo';
 import MobileMenu from './MobileMenu';
 import UserAvatar from './UserAvatar';
-import { getCurrentUser } from '@/lib/supabase/auth';
+import { getCurrentUser, signOutSilent } from '@/lib/supabase/auth';
 import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
@@ -37,10 +37,25 @@ const Navbar = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const requiresProfileCompletion = (u: any) => {
+      if (!u) return false;
+      const md = u.user_metadata || {};
+      const hasUsername = typeof md.username === 'string' && md.username.trim().length >= 3;
+      const hasFullName = typeof md.full_name === 'string' && md.full_name.trim().length > 0;
+      const hasDob = typeof md.dob === 'string' && md.dob.trim().length > 0;
+      return !(hasUsername && hasFullName && hasDob);
+    };
+
     const checkUser = async () => {
       try {
         const currentUser = await getCurrentUser();
-        setUser(currentUser);
+        if (requiresProfileCompletion(currentUser)) {
+          // Ensure the app treats them as logged out on load
+          await signOutSilent();
+          setUser(null);
+        } else {
+          setUser(currentUser);
+        }
       } catch (error) {
         console.error('Error fetching user:', error);
       } finally {
@@ -50,9 +65,15 @@ const Navbar = () => {
 
     checkUser();
 
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
+    // Auth state listener: if user becomes incomplete, sign them out silently
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const u = session?.user || null;
+      if (requiresProfileCompletion(u)) {
+        await signOutSilent();
+        setUser(null);
+      } else {
+        setUser(u);
+      }
     });
 
     return () => {
@@ -69,6 +90,8 @@ const Navbar = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Removed auto-redirect on route change; incomplete sessions are signed out silently instead.
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   
