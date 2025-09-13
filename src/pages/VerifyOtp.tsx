@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { signInWithEmail } from '@/lib/supabase/auth';
-import { verifyOtp, resendOtp, consumeSignup } from '@/lib/api/otp';
-import { toastSuccess, toastInfo } from '@/lib/ui/toast';
+import { verifyOtp, resendOtp } from '@/lib/api/otp';
+import { toastSuccess, toastInfo, toastError } from '@/lib/ui/toast';
 
 export default function VerifyOtpPage() {
   const location = useLocation();
@@ -13,12 +12,11 @@ export default function VerifyOtpPage() {
 
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // All errors are now shown as toasts
 
   useEffect(() => {
     if (!email) {
-      setError('Missing email. Please start signup again.');
+      toastError('Missing email. Please start signup again.');
     }
   }, [email]);
 
@@ -31,16 +29,14 @@ export default function VerifyOtpPage() {
       if (!email) return;
       try {
         setLoading(true);
-        setMessage(null);
-        setError(null);
         const res = await resendOtp(email);
         if (res.success) {
-          setMessage('We sent you a verification code.');
+          toastInfo('Verification code resent.');
         } else {
-          setError(res.message || 'Failed to send verification code.');
+          toastError(res.message || 'Failed to resend verification code.');
         }
       } catch (e) {
-        setError('Failed to send verification code.');
+        toastError('Failed to send verification code.');
       } finally {
         setLoading(false);
       }
@@ -53,37 +49,33 @@ export default function VerifyOtpPage() {
     e.preventDefault();
     if (!email) return;
     if (!code || code.trim().length === 0) {
-      setError('Please enter the verification code.');
+      toastError('Please enter the verification code.');
       return;
     }
-    setError(null);
-    setMessage(null);
     setLoading(true);
     const res = await verifyOtp(email, code.trim());
     setLoading(false);
     if (res.success) {
-      setMessage('✅ Verified! Continue to complete your profile...');
+      toastSuccess('Verification successful! Signing you in...');
       // Move to profile completion stage; pass along email and token
       const qp = new URLSearchParams();
       qp.set('email', email);
       if (token) qp.set('token', token);
       setTimeout(() => navigate(`/complete-profile?${qp.toString()}`), 400);
     } else {
-      setError(res.message || 'Verification failed. Please try again.');
+      toastError(res.message || 'Verification failed. Please try again.');
     }
   };
 
   const resend = async () => {
     if (!email) return;
-    setError(null);
-    setMessage(null);
     setLoading(true);
     const res = await resendOtp(email);
     setLoading(false);
     if (res.success) {
-      setMessage('A new verification code has been sent.');
+      toastInfo('Verification code resent.');
     } else {
-      setError(res.message || 'Failed to resend code. Please try again.');
+      toastError(res.message || 'Failed to resend verification code.');
     }
   };
 
@@ -94,7 +86,7 @@ export default function VerifyOtpPage() {
           <h2 className="text-center text-[28px] font-bold text-gray-900">Verify your email</h2>
           {email && (
             <>
-              <p className="mt-1 text-center text-sm text-gray-600">We've sent a code to {email}</p>
+              <p className="text-gray-600 text-center mb-6">We sent a 6-digit code to {email}</p>
               <div className="mt-2 flex justify-center">
                 <button
                   type="button"
@@ -155,17 +147,6 @@ export default function VerifyOtpPage() {
           >
             {loading ? 'Verifying...' : 'Verify'}
           </button>
-
-          {message && (
-            <div className="mt-3 bg-green-100 border border-green-400 text-green-700 px-3 py-2 rounded" role="status">
-              <span className="block text-sm">{message}</span>
-            </div>
-          )}
-          {error && (
-            <div className="mt-3 bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded" role="alert">
-              <span className="block text-sm">{error}</span>
-            </div>
-          )}
         </form>
       </div>
     </div>

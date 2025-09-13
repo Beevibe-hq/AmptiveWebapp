@@ -275,7 +275,6 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             onFocus={() => { setEmailFocused(true); setError(null); }}
             onBlur={() => setEmailFocused(false)}
             required={step === 'email'}
-            autoFocus={step === 'email'}
           />
           {email && (
             <div style={{ display: 'contents' }}>
@@ -400,7 +399,6 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             onFocus={() => { setPasswordFocused(true); setError(null); }}
             onBlur={() => setPasswordFocused(false)}
             required={step === 'password'}
-            autoFocus={step === 'password'}
           />
           {password && (
             <div style={{ display: 'contents' }}>
@@ -466,6 +464,49 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         >
           {step === 'email' ? (loading ? 'Continue...' : 'Continue') : (loading ? 'Signing in...' : 'Sign in')}
         </button>
+        <div style={{ 
+          width: '100%', 
+          marginTop: '16px',
+          marginBottom: '0px', 
+          fontSize: '12px', 
+          lineHeight: '16px', 
+          color: 'rgb(116, 113, 108)', 
+          textAlign: 'center',
+          textWrap: 'balance' 
+        }}>
+          <p style={{ marginBottom: '0px' }}>
+            By continuing, you acknowledge that you understand and agree to the{' '}
+            <a 
+              href="/terms" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline',
+                color: 'rgb(168, 164, 156)',
+                textDecoration: 'underline',
+                userSelect: 'auto',
+                cursor: 'pointer'
+              }}
+            >
+              Terms & Conditions
+            </a>{' '}
+            and{' '}
+            <a 
+              href="/privacy" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline',
+                color: 'rgb(168, 164, 156)',
+                textDecoration: 'underline',
+                userSelect: 'auto',
+                cursor: 'pointer'
+              }}
+            >
+              Privacy Policy
+            </a>
+          </p>
+        </div>
       </div>
       {error && (
         <div
