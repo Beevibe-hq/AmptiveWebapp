@@ -50,10 +50,13 @@ export default function CompleteProfilePage() {
   }, []);
   const useFallbackDob = !dateSupported || isIOS;
 
-  // Fallback DOB selects state
+  // Fallback DOB selects state + refs for robust submit on mobile
   const [dobYear, setDobYear] = useState<string>('');
   const [dobMonth, setDobMonth] = useState<string>('');
   const [dobDay, setDobDay] = useState<string>('');
+  const dobYearRef = useRef<HTMLSelectElement | null>(null);
+  const dobMonthRef = useRef<HTMLSelectElement | null>(null);
+  const dobDayRef = useRef<HTMLSelectElement | null>(null);
 
   // Build select options
   const years = useMemo(() => {
@@ -269,13 +272,29 @@ export default function CompleteProfilePage() {
       toastError('Missing email. Please start signup again.');
       return;
     }
+    // Build effective DOB (compose from selects on iOS fallback)
+    const effectiveDob = (() => {
+      if (useFallbackDob) {
+        const y = dobYear || dobYearRef.current?.value || '';
+        const m = dobMonth || dobMonthRef.current?.value || '';
+        const d = dobDay || dobDayRef.current?.value || '';
+        if (y && m && d) {
+          const mm = String(m).padStart(2, '0');
+          const dd = String(d).padStart(2, '0');
+          return `${y}-${mm}-${dd}`;
+        }
+        return '';
+      }
+      return dob;
+    })();
+
     // Enforce minimum age of 13
-    if (!dob) {
+    if (!effectiveDob) {
       toastError('Please select your date of birth.');
       return;
     }
     const today = new Date();
-    const dobDate = new Date(dob);
+    const dobDate = new Date(effectiveDob);
     let age = today.getFullYear() - dobDate.getFullYear();
     const m = today.getMonth() - dobDate.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
@@ -292,7 +311,7 @@ export default function CompleteProfilePage() {
     setLoading(true);
     try {
       const payload = {
-        dob: dob || undefined,
+        dob: effectiveDob || undefined,
         avatarDataUrl: avatarPreview || undefined,
         ...(avatarPreview
           ? {}
@@ -668,10 +687,12 @@ export default function CompleteProfilePage() {
               ) : (
                 <div className="mt-1 grid grid-cols-3 gap-2">
                   <select
+                    ref={dobMonthRef}
                     aria-label="Month"
                     value={dobMonth}
                     onChange={(e) => setDobMonth(e.target.value)}
                     className="h-10 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                    required
                   >
                     <option value="" disabled>MM</option>
                     {months.map((m) => (
@@ -679,10 +700,12 @@ export default function CompleteProfilePage() {
                     ))}
                   </select>
                   <select
+                    ref={dobDayRef}
                     aria-label="Day"
                     value={dobDay}
                     onChange={(e) => setDobDay(e.target.value)}
                     className="h-10 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                    required
                   >
                     <option value="" disabled>DD</option>
                     {daysInMonth.map((d) => (
@@ -690,10 +713,12 @@ export default function CompleteProfilePage() {
                     ))}
                   </select>
                   <select
+                    ref={dobYearRef}
                     aria-label="Year"
                     value={dobYear}
                     onChange={(e) => setDobYear(e.target.value)}
                     className="h-10 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                    required
                   >
                     <option value="" disabled>YYYY</option>
                     {years.map((y) => (
