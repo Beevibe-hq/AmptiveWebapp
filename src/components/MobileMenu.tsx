@@ -1,17 +1,33 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { 
+  X, 
+  Compass, 
+  PlusSquare, 
+  Ticket, 
+  User, 
+  Settings, 
+  Users, 
+  HelpCircle, 
+  LogOut,
+  ShoppingBag,
+  LogIn
+} from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { getCurrentUser } from '@/lib/supabase/auth';
+import { getCurrentUser, signOut } from '@/lib/supabase/auth';
 import UserAvatar from './UserAvatar';
 
-type MenuLink = {
+type BaseLink = {
   name: string;
   path: string;
+  icon?: React.ReactNode;
 };
 
-type DropdownLink = {
-  name: string;
+type MenuLink = BaseLink & {
+  onClick?: () => void;
+};
+
+type DropdownLink = BaseLink & {
   hasDropdown: true;
   dropdownItems: MenuLink[];
 };
@@ -68,13 +84,101 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
     }
   }, [isOpen]);
 
-  const links: LinkItem[] = [
-    { name: 'Events', path: '/events' },
-    { name: 'Explore', path: '/explore' },
-    { name: 'Store', path: '/store' },
-    { name: 'Community Task', path: '/community' },
-    { name: 'Help Center', path: '/help' }
+  // Navigation links for authenticated users with icons
+  const authLinks: LinkItem[] = [
+    // First group (top 2 items)
+    { 
+      name: 'Explore', 
+      path: '/explore',
+      icon: <Compass className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Create Event', 
+      path: '/events',
+      icon: <PlusSquare className="w-5 h-5 mr-3" />
+    },
+    
+    // Divider after first 2 items
+    { name: 'divider-small', path: '#' },
+    
+    // Second group (next 3 items)
+    { 
+      name: 'My Tickets', 
+      path: '/my-tickets',
+      icon: <Ticket className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'View Profile', 
+      path: '/profile',
+      icon: <User className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Settings', 
+      path: '/settings',
+      icon: <Settings className="w-5 h-5 mr-3" />
+    },
+    
+    // Divider item (hidden, only used for visual separation)
+    { name: 'divider', path: '#' },
+    
+    // Second group (bottom 3 items)
+    { 
+      name: 'Community Task', 
+      path: '/community',
+      icon: <Users className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Help Center', 
+      path: '/help',
+      icon: <HelpCircle className="w-5 h-5 mr-3" />
+    },
+    {
+      name: 'Sign Out',
+      path: '#',
+      icon: <LogOut className="w-5 h-5 mr-3" />,
+      onClick: async () => {
+        await signOut();
+        navigate('/');
+        window.location.reload();
+      }
+    }
   ];
+
+  // Navigation links for unauthenticated users with icons
+  const guestLinks: LinkItem[] = [
+    { 
+      name: 'Explore', 
+      path: '/explore',
+      icon: <Compass className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Create Event', 
+      path: '/events',
+      icon: <PlusSquare className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Store', 
+      path: '/store',
+      icon: <ShoppingBag className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Community Task', 
+      path: '/community',
+      icon: <Users className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Help Center', 
+      path: '/help',
+      icon: <HelpCircle className="w-5 h-5 mr-3" />
+    },
+    { 
+      name: 'Sign In', 
+      path: '/login',
+      icon: <LogIn className="w-5 h-5 mr-3" />
+    }
+  ];
+
+  const links = user ? authLinks : guestLinks;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +264,46 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
 
 {/* Menu Items */}
             <div className="flex-1 overflow-y-auto pr-4">
-              {links.map((link) => {
+{links.map((link, index) => {
+                if (link.name === 'divider') {
+                  return <div key="divider" className="h-6"></div>; // Larger space between main groups
+                }
+                if (link.name === 'divider-small') {
+                  return <div key="divider-small" className="h-4"></div>; // Smaller space between first two and next three items
+                }
+                
+                // Regular link with icon
+                if (!('hasDropdown' in link)) {
+                  return (
+                    <Link
+                      key={link.name}
+                      to={link.path}
+                      className="flex items-center w-full text-left px-6 py-3 text-2xl font-semibold text-gray-900 hover:bg-gray-50 cursor-pointer leading-8"
+                      onClick={() => onClose()}
+                    >
+                      {link.icon}
+                      {link.name}
+                    </Link>
+                  );
+                }
+                
+                // Sign out button with onClick
+                if (link.onClick) {
+                  return (
+                    <div
+                      key={link.name}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        link.onClick?.();
+                        onClose();
+                      }}
+                      className="flex items-center w-full text-left px-6 py-3 text-2xl font-semibold text-gray-900 hover:bg-gray-50 cursor-pointer leading-8"
+                    >
+                      {link.icon}
+                      {link.name}
+                    </div>
+                  );
+                }
                 if ('hasDropdown' in link) {
                   return (
                     <div key={link.name}>
@@ -186,9 +329,10 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                               <Link
                                 key={item.name}
                                 to={item.path}
-                                className="block px-6 py-3 text-sm text-gray-600 hover:bg-gray-100"
+                                className="flex items-center px-6 py-3 text-sm text-gray-600 hover:bg-gray-100"
                                 onClick={onClose}
                               >
+                                {item.icon || <span className="w-5 h-5 mr-3"></span>}
                                 {item.name}
                               </Link>
                             ))}

@@ -16,6 +16,8 @@ import LoginPage from './pages/Login';
 import SignupPage from './pages/Signup';
 import VerifyOtpPage from './pages/VerifyOtp';
 import CompleteProfilePage from './pages/CompleteProfile';
+import OAuthCallback from './pages/OAuthCallback';
+import ProfilePage from './pages/ProfilePage';
 import { Toaster } from 'sonner';
 
 function App() {
@@ -54,12 +56,13 @@ function MainLayout() {
           <Route path="/ai-tool" element={<AITool />} />
           <Route path="/ai-chat" element={<NewChat />} />
           <Route path="/chat-mode" element={<ChatMode />} />
-          <Route path="/help" element={<Help />} />
           <Route path="/download" element={<Download />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/verify-otp" element={<VerifyOtpPage />} />
           <Route path="/complete-profile" element={<CompleteProfilePage />} />
+          <Route path="/auth/callback" element={<OAuthCallback />} />
+          <Route path="/profile" element={<ProfilePage />} />
         </Routes>
       </main>
       {!hideFooter && <Footer />}

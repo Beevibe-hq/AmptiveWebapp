@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { signOut } from '@/lib/supabase/auth';
 import { useNavigate } from 'react-router-dom';
+import { getProfileById } from '@/lib/supabase/profiles';
 
 type SupaUser = {
+  id?: string;
   email?: string;
   user_metadata?: Record<string, any>;
 };
@@ -12,6 +14,8 @@ type SupaUser = {
 export default function UserAvatar({ user }: { user: SupaUser }) {
   const [isOpen, setIsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -20,9 +24,41 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
     window.location.reload();
   };
 
-  // Prefer storage URL if present; fallback to legacy base64 data URL
+  // Load avatar_url from profiles table (preferred)
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setIsLoading(true);
+        if (!user?.id) return;
+        
+        // Small delay to show the skeleton (for demo purposes)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const profile = await getProfileById(user.id);
+        if (cancelled) return;
+        
+        // If no avatar in profile but we have one in user_metadata, update the profile
+        if (!profile?.avatar_url && (user.user_metadata?.avatar_url || user.user_metadata?.picture)) {
+          const avatarUrl = user.user_metadata.avatar_url || user.user_metadata.picture;
+          await updateProfileAvatar(user.id, avatarUrl);
+          if (!cancelled) setProfileAvatarUrl(avatarUrl);
+        } else {
+          if (!cancelled) setProfileAvatarUrl(profile?.avatar_url || null);
+        }
+      } catch (error) {
+        console.error('Error loading profile avatar:', error);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [user?.id, user?.user_metadata?.avatar_url, user?.user_metadata?.picture]);
+
+  // Determine preferred avatar source: profiles.avatar_url -> provider avatar -> legacy data url
   const uploadedAvatar: string | undefined =
-    user?.user_metadata?.avatar_url || user?.user_metadata?.avatar_data_url;
+    profileAvatarUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || user?.user_metadata?.avatar_data_url;
 
   // Deterministic emoji avatar fallback
   const seed = (user?.user_metadata?.username || user?.email || 'guest').toLowerCase();
@@ -52,21 +88,39 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
         className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 text-black/80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black overflow-hidden"
         aria-label="Account menu"
       >
-        {uploadedAvatar && !imgError ? (
+        {isLoading ? (
+          <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
+        ) : uploadedAvatar && !imgError ? (
           <img
             src={uploadedAvatar}
             alt="Profile"
             className="w-full h-full object-cover"
-            onError={() => setImgError(true)}
+            onLoad={() => setIsLoading(false)}
+            onError={() => {
+              setImgError(true);
+              setIsLoading(false);
+            }}
           />
         ) : (
-          <span className="text-base select-none" aria-hidden="true" style={{ background: 'transparent', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: emojiBg }}>
+          <span 
+            className="text-base select-none" 
+            aria-hidden="true" 
+            style={{ 
+              background: 'transparent', 
+              width: '100%', 
+              height: '100%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              backgroundColor: emojiBg 
+            }}
+          >
             {emoji}
           </span>
         )}
       </button>
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+        <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
           <div className="py-1" role="menu" aria-orientation="vertical">
             <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100">
               {user?.email}

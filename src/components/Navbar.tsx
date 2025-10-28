@@ -7,6 +7,7 @@ import TextLogo from './TextLogo';
 import MobileMenu from './MobileMenu';
 import UserAvatar from './UserAvatar';
 import { getCurrentUser, signOutSilent } from '@/lib/supabase/auth';
+import { getProfileById, isProfileComplete } from '@/lib/supabase/profiles';
 import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
@@ -37,27 +38,22 @@ const Navbar = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const requiresProfileCompletion = (u: any) => {
-      if (!u) return false;
-      const md = u.user_metadata || {};
-      const hasUsername = typeof md.username === 'string' && md.username.trim().length >= 3;
-      const hasFullName = typeof md.full_name === 'string' && md.full_name.trim().length > 0;
-      const hasDob = typeof md.dob === 'string' && md.dob.trim().length > 0;
-      return !(hasUsername && hasFullName && hasDob);
-    };
-
     const checkUser = async () => {
       try {
         const currentUser = await getCurrentUser();
-        if (requiresProfileCompletion(currentUser)) {
-          // Ensure the app treats them as logged out on load
+        if (!currentUser) {
+          setUser(null);
+          return;
+        }
+        const profile = await getProfileById(currentUser.id);
+        if (!isProfileComplete(profile)) {
           await signOutSilent();
           setUser(null);
         } else {
           setUser(currentUser);
         }
       } catch (error) {
-        console.error('Error fetching user:', error);
+        console.error('Error fetching user/profile:', error);
       } finally {
         setLoading(false);
       }
@@ -65,14 +61,20 @@ const Navbar = () => {
 
     checkUser();
 
-    // Auth state listener: if user becomes incomplete, sign them out silently
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const u = session?.user || null;
-      if (requiresProfileCompletion(u)) {
-        await signOutSilent();
+      if (!u) { setUser(null); return; }
+      try {
+        const profile = await getProfileById(u.id);
+        if (!isProfileComplete(profile)) {
+          await signOutSilent();
+          setUser(null);
+        } else {
+          setUser(u);
+        }
+      } catch (e) {
+        console.error('Auth state profile check failed:', e);
         setUser(null);
-      } else {
-        setUser(u);
       }
     });
 
@@ -82,6 +84,7 @@ const Navbar = () => {
   }, []);
   const navigate = useNavigate();
   const location = useLocation();
+  const isProfilePage = location.pathname === '/profile' || location.pathname === '/profile/';
 
   useEffect(() => {
     const handleScroll = () => {
@@ -95,9 +98,27 @@ const Navbar = () => {
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   
-  const links: NavLink[] = [
-    { name: 'Events', path: '/events' },
+  // Navigation links for authenticated users
+  const authLinks: NavLink[] = [
+    { name: 'Create Event', path: '/events' },
     { name: 'Explore', path: '/explore' },
+    { name: 'My Tickets', path: '/my-tickets' },
+    { 
+      name: 'More',
+      hasDropdown: true,
+      dropdownItems: [
+        { name: 'View Profile', path: '/profile' },
+        { name: 'Settings', path: '/settings' },
+        { name: 'Community Task', path: '/community' },
+        { name: 'Help Center', path: '/help' }
+      ]
+    }
+  ];
+
+  // Navigation links for unauthenticated users (original)
+  const guestLinks: NavLink[] = [
+    { name: 'Explore', path: '/explore' },
+    { name: 'Create Event', path: '/events' },
     { name: 'Store', path: '/store' },
     { 
       name: 'More', 
@@ -108,6 +129,8 @@ const Navbar = () => {
       ]
     }
   ];
+
+  const links = user ? authLinks : guestLinks;
 
   // Search handler
   const handleSearch = (e: React.FormEvent) => {
@@ -139,8 +162,8 @@ const Navbar = () => {
               ? 'bg-transparent backdrop-blur-0 shadow-none border-none' 
               : isScrolled 
                 ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100' 
-                : 'bg-white'
-      }`}
+                : (isProfilePage ? 'bg-transparent' : 'bg-white')
+      } transition-colors duration-300`}
     >
       <div className="px-4 sm:px-6 lg:px-8">
         <motion.div 

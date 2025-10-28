@@ -19,8 +19,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+      // Prefer getSession so we hydrate from persisted storage synchronously
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      setUser(session?.user ?? null);
     } catch (error) {
       console.error('Error refreshing user:', error);
       setUser(null);
@@ -30,19 +32,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    refreshUser();
+    // On app load, hydrate from persisted session
+    void refreshUser();
 
     // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event: string, session: Session | null) => {
         setUser(session?.user ?? null);
+        setLoading(false);
       }
     );
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [supabase.auth]);
+    // We only want to set this up once for a given client instance
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, loading, refreshUser }}>

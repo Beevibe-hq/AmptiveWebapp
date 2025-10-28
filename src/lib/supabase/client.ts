@@ -9,26 +9,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-let _client: SupabaseClient | null = null;
-
-// One-time cleanup: remove any old Supabase cookies (from @supabase/ssr) to avoid 431 issues
-function cleanupOldSupabaseCookies() {
-  if (typeof document === 'undefined') return;
-  const cookieNames = document.cookie.split(';').map(c => c.split('=')[0].trim());
-  cookieNames
-    .filter(name => name.toLowerCase().startsWith('sb-'))
-    .forEach(name => {
-      // Expire cookie on current domain
-      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-    });
+// Keep a single Supabase client instance across HMR and navigations
+declare global {
+  // eslint-disable-next-line no-var
+  var __supabase_client__: SupabaseClient | undefined;
 }
+
+let _client: SupabaseClient | undefined = globalThis.__supabase_client__;
 
 export const createClient = () => {
   if (_client) return _client;
-  
-  if (typeof window !== 'undefined') {
-    cleanupOldSupabaseCookies();
-  }
 
   _client = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
     auth: {
@@ -36,27 +26,16 @@ export const createClient = () => {
       autoRefreshToken: true,
       detectSessionInUrl: true,
       storage: {
-        getItem: (key) => {
-          const item = localStorage.getItem(key);
-          console.log('Getting item:', key, item);
-          return item;
-        },
-        setItem: (key, value) => {
-          console.log('Setting item:', key, value);
-          localStorage.setItem(key, value);
-        },
-        removeItem: (key) => {
-          console.log('Removing item:', key);
-          localStorage.removeItem(key);
-        }
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value),
+        removeItem: (key) => localStorage.removeItem(key)
       },
       storageKey: 'amptive.auth',
     },
   });
 
-  _client.auth.onAuthStateChange((event, session) => {
-    console.log('Auth state changed:', event, session);
-  });
+  // Cache on global to survive HMR
+  globalThis.__supabase_client__ = _client;
 
   return _client;
 };

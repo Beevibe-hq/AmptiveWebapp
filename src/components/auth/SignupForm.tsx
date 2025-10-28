@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signUpWithEmail } from '@/lib/supabase/auth';
+import { signUpWithEmail, signInWithGoogle } from '@/lib/supabase/auth';
 import { stashSignup } from '@/lib/api/otp';
 import { toast } from 'sonner';
 import { checkEmailExists } from '@/lib/api/checkEmail';
@@ -169,6 +169,16 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
             style={socialButtonStyle}
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            onClick={async () => {
+              if (loading) return;
+              setLoading(true);
+              try {
+                await signInWithGoogle();
+              } catch (e) {
+                console.error('Google sign-up failed', e);
+                setLoading(false);
+              }
+            }}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>

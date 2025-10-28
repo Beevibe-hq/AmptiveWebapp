@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail, signOut, signOutSilent, getCurrentUser } from '@/lib/supabase/auth';
-import { toastError } from '@/lib/ui/toast';
+import { signInWithEmail, signOut, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/supabase/auth';
+import { getProfileById, isProfileComplete } from '@/lib/supabase/profiles';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -128,13 +128,10 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }
 
-      // Decide post-login redirect based on profile completion
+      // Decide post-login redirect based on profile completion in profiles table
       const u = await getCurrentUser();
-      const md = (u as any)?.user_metadata || {};
-      const hasUsername = typeof md.username === 'string' && md.username.trim().length >= 3;
-      const hasFullName = typeof md.full_name === 'string' && md.full_name.trim().length > 0;
-      const hasDob = typeof md.dob === 'string' && md.dob.trim().length > 0;
-      const needsCompletion = !(hasUsername && hasFullName && hasDob);
+      const profile = u ? await getProfileById(u.id) : null;
+      const needsCompletion = !isProfileComplete(profile);
 
       onSuccess?.();
       if (needsCompletion) {
@@ -169,6 +166,16 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             style={socialButtonStyle}
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            onClick={async () => {
+              if (loading) return;
+              setLoading(true);
+              try {
+                await signInWithGoogle();
+              } catch (e) {
+                console.error('Google sign-in failed', e);
+                setLoading(false);
+              }
+            }}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>

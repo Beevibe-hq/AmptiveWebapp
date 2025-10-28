@@ -53,3 +53,17 @@
   background-size: 300% 300%;
   animation: hero-gradient 8s ease-in-out infinite;
 }
+
+/* Wave animation for status pill */
+@keyframes pill-wave {
+  0% { background-position: -150% 0; }
+  100% { background-position: 150% 0; }
+}
+
+.pill-wave {
+  /* overlay a moving light streak on top of the base bg color */
+  background-image: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 100%);
+  background-repeat: no-repeat;
+  background-size: 200% 100%;
+  animation: pill-wave 2.2s ease-in-out infinite;
+}

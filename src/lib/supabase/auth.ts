@@ -23,6 +23,39 @@ export const signInWithEmail = async (email: string, password: string) => {
   }
 };
 
+// Start Google OAuth flow. The user will be redirected to Supabase and back to our callback.
+export const signInWithGoogle = async () => {
+  const supabase = createClient();
+  // Get the current origin, ensuring it doesn't include any path or hash
+  const currentOrigin = window.location.origin;
+  // Use the exact same redirect URL that's configured in your Supabase dashboard
+  const redirectTo = `${currentOrigin}/auth/callback`;
+  
+  try {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+        queryParams: {
+          // Force consent screen if needed and ensure offline access for refresh tokens
+          prompt: 'consent',
+          access_type: 'offline',
+        },
+      },
+    });
+    
+    if (error) {
+      console.error('OAuth error:', error);
+      throw error;
+    }
+    
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error during Google sign in:', error);
+    return { data: null, error };
+  }
+};
+
 export const signUpWithEmail = async (email: string, password: string) => {
   const supabase = createClient();
   try {
