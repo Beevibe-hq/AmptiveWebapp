@@ -46,10 +46,14 @@ const formatEventTimeLabel = (iso?: string | null) => {
   if (!iso) return 'Time to be announced';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return 'Time to be announced';
-  return date.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const suffix = hours >= 12 ? 'PM' : 'AM';
+  const hour12 = ((hours % 12) + 12) % 12 || 12;
+  if (minutes === 0) {
+    return `${hour12}${suffix}`;
+  }
+  return `${hour12}:${minutes.toString().padStart(2, '0')}${suffix}`;
 };
 
 const buildLocationLabel = (venue?: string | null, city?: string | null) => {
@@ -236,17 +240,26 @@ const ProfilePage = () => {
 
   const renderEventCard = useCallback(
     (event: EventCardData) => (
-      <div key={event.id} className="flex items-stretch gap-2">
-        <div className="flex w-16 flex-col items-center pt-1">
-          <div className="text-center text-base font-bold text-gray-500">
+      <div key={event.id} className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3">
+        <div className="flex items-center gap-3 sm:hidden">
+          <span className="text-sm font-bold text-red-500">{event.startTimeLabel}</span>
+          <div className="relative h-px flex-1">
+            <div className="absolute inset-0 overflow-hidden rounded-full">
+              <div className="absolute inset-0 bg-[repeating-linear-gradient(to_right,rgba(239,68,68,0.7),rgba(239,68,68,0.7)_8px,transparent_8px,transparent_16px)]" />
+              <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-r from-transparent via-white/70 to-white" />
+            </div>
+          </div>
+        </div>
+        <div className="hidden sm:flex sm:w-16 sm:flex-col sm:items-center sm:pt-1">
+          <div className="text-center text-sm font-bold text-red-500">
             {event.startTimeLabel}
           </div>
           <div className="relative mt-2 h-full w-px flex-1">
-            <div className="absolute inset-0 bg-[repeating-linear-gradient(to_bottom,rgba(209,213,219,0.75),rgba(209,213,219,0.75)_8px,transparent_8px,transparent_16px)]" />
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/40 to-white/90" />
+            <div className="absolute inset-0 bg-[repeating-linear-gradient(to_bottom,rgba(239,68,68,0.45),rgba(239,68,68,0.45)_8px,transparent_8px,transparent_16px)]" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/10 to-white" />
           </div>
         </div>
-        <div className="relative flex-1 overflow-hidden rounded-2xl border border-black/10 bg-black/4 text-sm shadow-sm backdrop-blur-lg transition-colors hover:border-black/60">
+        <div className="relative flex-1 overflow-hidden rounded-2xl border border-black/10 bg-black/4 text-sm shadow-sm backdrop-blur-lg transition-colors hover:border-black/60 sm:ml-0 ml-6">
           <a
             href={event.detailsUrl}
             className="absolute inset-0"
@@ -266,7 +279,7 @@ const ProfilePage = () => {
                 <span>{event.dateLabel}</span>
               </div>
               <h3 className="mt-2 text-[18px] font-bold text-gray-900 truncate">{event.title}</h3>
-              <div className="mt-2 text-[16px] font-medium text-black">
+              <div className="mt-2 text-[16px] font-medium text-black truncate">
                 {event.locationLabel}
               </div>
               {event.tickets.length > 0 && (
