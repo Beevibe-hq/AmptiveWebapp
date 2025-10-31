@@ -9,12 +9,15 @@ type DatabaseEventRow = {
   id: string;
   title?: string | null;
   start_time?: string | null;
+  end_time?: string | null;
   venue?: string | null;
   city?: string | null;
   cover_image?: string | null;
   details_url?: string | null;
   manage_url?: string | null;
 };
+
+type EventStatus = 'upcoming' | 'live' | 'past';
 
 type EventCardData = {
   id: string;
@@ -26,6 +29,9 @@ type EventCardData = {
   detailsUrl: string;
   manageUrl: string;
   tickets: EventTicket[];
+  startIso: string | null;
+  endIso: string | null;
+  status: EventStatus;
 };
 
 const defaultEventCover = 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp';
@@ -35,8 +41,8 @@ const formatEventDateLabel = (iso?: string | null) => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return 'Date to be announced';
   return date.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
+    weekday: 'short',
+    month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
@@ -50,10 +56,9 @@ const formatEventTimeLabel = (iso?: string | null) => {
   const minutes = date.getMinutes();
   const suffix = hours >= 12 ? 'PM' : 'AM';
   const hour12 = ((hours % 12) + 12) % 12 || 12;
-  if (minutes === 0) {
-    return `${hour12}${suffix}`;
-  }
-  return `${hour12}:${minutes.toString().padStart(2, '0')}${suffix}`;
+  const hourString = hour12.toString().padStart(2, '0');
+  const minuteString = minutes.toString().padStart(2, '0');
+  return `${hourString}:${minuteString}${suffix}`;
 };
 
 const buildLocationLabel = (venue?: string | null, city?: string | null) => {
@@ -79,20 +84,62 @@ const formatTicketPrice = (price: number, currency?: string | null) => {
   return formatter.format(price);
 };
 
-const mapEventRows = (rows: DatabaseEventRow[], ticketMap: Record<string, EventTicket[]>): EventCardData[] =>
+const toTimestamp = (iso?: string | null) => {
+  if (!iso) return Number.NaN;
+  const time = new Date(iso).getTime();
+  return Number.isNaN(time) ? Number.NaN : time;
+};
+
+const resolveEventStatus = (startIso: string | null, endIso: string | null, now: Date): EventStatus => {
+  const nowMs = now.getTime();
+  const startMs = toTimestamp(startIso ?? undefined);
+  const endMs = toTimestamp(endIso ?? undefined);
+
+  if (!Number.isNaN(endMs) && nowMs >= endMs) {
+    return 'past';
+  }
+
+  if (!Number.isNaN(startMs)) {
+    if (nowMs >= startMs) {
+      if (Number.isNaN(endMs) || nowMs < endMs) {
+        return 'live';
+      }
+      return 'past';
+    }
+    return 'upcoming';
+  }
+
+  return 'upcoming';
+};
+
+const mapEventRows = (
+  rows: DatabaseEventRow[],
+  ticketMap: Record<string, EventTicket[]>,
+  now: Date
+): EventCardData[] =>
   rows
     .filter((row): row is DatabaseEventRow & { id: string } => Boolean(row.id))
-    .map((row) => ({
-      id: row.id,
-      title: row.title ?? 'Untitled Event',
-      dateLabel: formatEventDateLabel(row.start_time),
-      startTimeLabel: formatEventTimeLabel(row.start_time),
-      locationLabel: buildLocationLabel(row.venue, row.city),
-      coverImage: row.cover_image ?? defaultEventCover,
-      detailsUrl: row.details_url ?? `/events/${row.id}`,
-      manageUrl: row.manage_url ?? `/events/manage/${row.id}`,
-      tickets: ticketMap[row.id] ?? [],
-    }));
+    .map((row) => {
+      const startIso = row.start_time ?? null;
+      const endIso = row.end_time ?? null;
+      const status = resolveEventStatus(startIso, endIso, now);
+      const startTimeLabel = status === 'live' ? 'LIVE' : formatEventTimeLabel(startIso);
+
+      return {
+        id: row.id,
+        title: row.title ?? 'Untitled Event',
+        dateLabel: formatEventDateLabel(row.start_time),
+        startTimeLabel,
+        locationLabel: buildLocationLabel(row.venue, row.city),
+        coverImage: row.cover_image ?? defaultEventCover,
+        detailsUrl: row.details_url ?? `/events/${row.id}`,
+        manageUrl: row.manage_url ?? `/events/manage/${row.id}`,
+        tickets: ticketMap[row.id] ?? [],
+        startIso,
+        endIso,
+        status,
+      };
+    });
 
 const ProfilePage = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -111,20 +158,30 @@ const ProfilePage = () => {
     async (targetUserId: string) => {
       const nowIso = new Date().toISOString();
 
-      const [{ data: upcomingData, error: upcomingError }, { data: pastData, error: pastError }] = await Promise.all([
-        supabase
-          .from('events')
-          .select('id, title, start_time, venue, city, cover_image, details_url, manage_url')
-          .eq('user_id', targetUserId)
-          .gte('start_time', nowIso)
-          .order('start_time', { ascending: true }),
-        supabase
-          .from('events')
-          .select('id, title, start_time, venue, city, cover_image, details_url, manage_url')
-          .eq('user_id', targetUserId)
-          .lt('start_time', nowIso)
-          .order('start_time', { ascending: false }),
-      ]);
+      const selectFieldsWithEnd = 'id, title, start_time, end_time, venue, city, cover_image, details_url, manage_url';
+      const selectFieldsWithoutEnd = 'id, title, start_time, venue, city, cover_image, details_url, manage_url';
+
+      const runQueries = (fields: string) =>
+        Promise.all([
+          supabase
+            .from('events')
+            .select(fields)
+            .eq('user_id', targetUserId)
+            .gte('start_time', nowIso)
+            .order('start_time', { ascending: true }),
+          supabase
+            .from('events')
+            .select(fields)
+            .eq('user_id', targetUserId)
+            .lt('start_time', nowIso)
+            .order('start_time', { ascending: false }),
+        ] as const);
+
+      let [{ data: upcomingData, error: upcomingError }, { data: pastData, error: pastError }] = await runQueries(selectFieldsWithEnd);
+
+      if (upcomingError?.code === '42703' || pastError?.code === '42703') {
+        [{ data: upcomingData, error: upcomingError }, { data: pastData, error: pastError }] = await runQueries(selectFieldsWithoutEnd);
+      }
 
       if (upcomingError) throw upcomingError;
       if (pastError) throw pastError;
@@ -156,10 +213,38 @@ const ProfilePage = () => {
         });
       }
 
-      return {
-        upcoming: mapEventRows(upcomingData ?? [], ticketMap),
-        past: mapEventRows(pastData ?? [], ticketMap),
-      };
+      const now = new Date();
+      const upcomingMapped = mapEventRows(upcomingData ?? [], ticketMap, now);
+      const pastMapped = mapEventRows(pastData ?? [], ticketMap, now);
+      const allEvents = [...upcomingMapped, ...pastMapped];
+
+      const upcoming = allEvents
+        .filter((event) => event.status !== 'past')
+        .sort((a, b) => {
+          if (a.status !== b.status) {
+            if (a.status === 'live') return -1;
+            if (b.status === 'live') return 1;
+          }
+          const aStart = toTimestamp(a.startIso);
+          const bStart = toTimestamp(b.startIso);
+          if (Number.isNaN(aStart) && Number.isNaN(bStart)) return 0;
+          if (Number.isNaN(aStart)) return 1;
+          if (Number.isNaN(bStart)) return -1;
+          return aStart - bStart;
+        });
+
+      const past = allEvents
+        .filter((event) => event.status === 'past')
+        .sort((a, b) => {
+          const aStart = toTimestamp(a.startIso);
+          const bStart = toTimestamp(b.startIso);
+          if (Number.isNaN(aStart) && Number.isNaN(bStart)) return 0;
+          if (Number.isNaN(aStart)) return 1;
+          if (Number.isNaN(bStart)) return -1;
+          return bStart - aStart;
+        });
+
+      return { upcoming, past };
     },
     [supabase]
   );
@@ -212,6 +297,8 @@ const ProfilePage = () => {
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId: number | undefined;
+
     const run = async () => {
       if (!user?.id) {
         setUpcomingEvents([]);
@@ -232,113 +319,165 @@ const ProfilePage = () => {
         }
       }
     };
+
     run();
+    intervalId = window.setInterval(run, 60 * 1000);
+
     return () => {
       cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
     };
   }, [user?.id, loadEvents]);
 
   const renderEventCard = useCallback(
-    (event: EventCardData) => (
-      <div key={event.id} className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3">
-        <div className="flex items-center gap-3 sm:hidden">
-          <span className="text-sm font-bold text-red-500">{event.startTimeLabel}</span>
-          <div className="relative h-px flex-1">
-            <div className="absolute inset-0 overflow-hidden rounded-full">
-              <div className="absolute inset-0 bg-[repeating-linear-gradient(to_right,rgba(239,68,68,0.7),rgba(239,68,68,0.7)_8px,transparent_8px,transparent_16px)]" />
-              <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-r from-transparent via-white/70 to-white" />
+    (event: EventCardData) => {
+      const isPast = event.status === 'past';
+      const isLive = event.status === 'live';
+
+      const accentTextClass = isPast ? 'text-gray-500' : isLive ? 'text-red-500' : 'text-black';
+      const iconColorClass = isPast ? 'text-gray-400' : 'text-red-500';
+
+      const cardBorderClasses = (() => {
+        if (isPast) return 'border-gray-200 hover:border-gray-300';
+        if (isLive) return 'border-red-100 hover:border-red-200';
+        return 'border-black/10 hover:border-black/40';
+      })();
+
+      const mobileHorizontalDashClass = (() => {
+        if (isPast) return 'bg-[repeating-linear-gradient(to_right,rgba(148,163,184,0.6),rgba(148,163,184,0.6)_8px,transparent_8px,transparent_16px)]';
+        if (isLive) return 'bg-[repeating-linear-gradient(to_right,rgba(239,68,68,0.7),rgba(239,68,68,0.7)_8px,transparent_8px,transparent_16px)]';
+        return 'bg-[repeating-linear-gradient(to_right,rgba(0,0,0,0.65),rgba(0,0,0,0.65)_8px,transparent_8px,transparent_16px)]';
+      })();
+      const mobileVerticalDashClass = (() => {
+        if (isPast) return 'bg-[repeating-linear-gradient(to_bottom,rgba(148,163,184,0.5),rgba(148,163,184,0.5)_8px,transparent_8px,transparent_16px)]';
+        if (isLive) return 'bg-[repeating-linear-gradient(to_bottom,rgba(239,68,68,0.6),rgba(239,68,68,0.6)_8px,transparent_8px,transparent_16px)]';
+        return 'bg-[repeating-linear-gradient(to_bottom,rgba(0,0,0,0.55),rgba(0,0,0,0.55)_8px,transparent_8px,transparent_16px)]';
+      })();
+      const desktopVerticalDashClass = (() => {
+        if (isPast) return 'bg-[repeating-linear-gradient(to_bottom,rgba(148,163,184,0.5),rgba(148,163,184,0.5)_8px,transparent_8px,transparent_16px)]';
+        if (isLive) return 'bg-[repeating-linear-gradient(to_bottom,rgba(239,68,68,0.6),rgba(239,68,68,0.6)_8px,transparent_8px,transparent_16px)]';
+        return 'bg-[repeating-linear-gradient(to_bottom,rgba(0,0,0,0.55),rgba(0,0,0,0.55)_8px,transparent_8px,transparent_16px)]';
+      })();
+      const desktopHorizontalDashClass = (() => {
+        if (isPast) return 'bg-[repeating-linear-gradient(to_right,rgba(148,163,184,0.6),rgba(148,163,184,0.6)_8px,transparent_8px,transparent_16px)]';
+        if (isLive) return 'bg-[repeating-linear-gradient(to_right,rgba(239,68,68,0.7),rgba(239,68,68,0.7)_8px,transparent_8px,transparent_16px)]';
+        return 'bg-[repeating-linear-gradient(to_right,rgba(0,0,0,0.65),rgba(0,0,0,0.65)_8px,transparent_8px,transparent_16px)]';
+      })();
+
+      const fullTitle = event.title ?? '';
+      const mobileTitle = fullTitle.length > 20 ? `${fullTitle.slice(0, 20)}…` : fullTitle;
+
+      const renderTimeBadge = (variant: 'mobile' | 'desktop') => {
+        if (isLive) {
+          const padding = variant === 'mobile' ? 'px-2.5 py-0.5' : 'px-3 py-1';
+          return (
+            <span
+              className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white bg-red-500 rounded-full shadow-sm ${padding}`}
+            >
+              <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-white/50 animate-ping" aria-hidden="true" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />
+              </span>
+              LIVE
+            </span>
+          );
+        }
+
+        const textSize = variant === 'mobile' ? 'text-sm' : 'text-sm';
+        return <span className={`${textSize} font-semibold ${accentTextClass}`}>{event.startTimeLabel}</span>;
+      };
+
+      return (
+        <div key={event.id} className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3">
+          {/* Mobile time and connector */}
+          <div className="flex items-center gap-3 sm:hidden">
+            {renderTimeBadge('mobile')}
+            <div className="relative flex-1 h-6">
+              <div className={`absolute left-0 right-2 top-1/2 h-px -translate-y-1/2 ${mobileHorizontalDashClass}`} />
+              <div className={`absolute right-2 top-1/2 h-6 w-px ${mobileVerticalDashClass}`} />
             </div>
           </div>
-        </div>
-        <div className="hidden sm:flex sm:w-16 sm:flex-col sm:items-center sm:pt-1">
-          <div className="text-center text-sm font-bold text-red-500">
-            {event.startTimeLabel}
+
+          {/* Desktop time column */}
+          <div className="hidden sm:flex sm:w-20 sm:flex-col sm:items-center sm:pt-1">
+            <div className="text-center">{renderTimeBadge('desktop')}</div>
+            <div className="relative mt-3 flex-1 w-full">
+              <div className={`absolute left-1/2 right-0 top-0 bottom-1/2 -translate-x-1/2 w-px ${desktopVerticalDashClass}`} />
+              <div className={`absolute left-1/2 right-[-0.75rem] top-1/2 h-px -translate-y-1/2 ${desktopHorizontalDashClass}`} />
+            </div>
           </div>
-          <div className="relative mt-2 h-full w-px flex-1">
-            <div className="absolute inset-0 bg-[repeating-linear-gradient(to_bottom,rgba(239,68,68,0.45),rgba(239,68,68,0.45)_8px,transparent_8px,transparent_16px)]" />
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/10 to-white" />
-          </div>
-        </div>
-        <div className="relative flex-1 overflow-hidden rounded-2xl border border-black/10 bg-black/4 text-sm shadow-sm backdrop-blur-lg transition-colors hover:border-black/60 sm:ml-0 ml-6">
-          <a
-            href={event.detailsUrl}
-            className="absolute inset-0"
-            aria-label={`View details for ${event.title}`}
-          />
-          <div className="relative z-10 flex flex-row gap-2 p-3 sm:items-start sm:gap-3 sm:p-4 md:gap-4">
-            <div className="flex-1 flex flex-col text-left">
-              <div className="mb-2 flex items-center text-[14px] text-gray-500">
-                <svg
-                  className="w-[1.2em] h-[1.2em] mr-1 text-red-500"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
-                </svg>
-                <span>{event.dateLabel}</span>
-              </div>
-              <h3 className="mt-2 text-[18px] font-bold text-gray-900 truncate">{event.title}</h3>
-              <div className="mt-2 text-[16px] font-medium text-black truncate">
-                {event.locationLabel}
-              </div>
-              {event.tickets.length > 0 && (
-                <div className="mt-2 space-y-1.5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Ticket Types</p>
-                  <div className="flex flex-wrap gap-2">
-                    {event.tickets.map((ticket) => (
-                      <span
-                        key={ticket.id}
-                        className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/40 px-3 py-1 text-xs font-semibold text-gray-800 backdrop-blur"
-                      >
-                        <span>{ticket.label}</span>
-                        <span className="text-gray-500">{formatTicketPrice(ticket.price, ticket.currency)}</span>
-                      </span>
-                    ))}
+
+          {/* Card */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate(event.detailsUrl || `/events/${event.id}`)}
+            onKeyDown={(evt) => {
+              if (evt.key === 'Enter' || evt.key === ' ') {
+                evt.preventDefault();
+                navigate(event.detailsUrl || `/events/${event.id}`);
+              }
+            }}
+            className={`relative w-full flex-1 overflow-hidden rounded-2xl border bg-gradient-to-br from-gray-100 via-orange-50/20 to-gray-100 text-sm shadow-sm shadow-[0_8px_20px_rgba(15,23,42,0.05)] backdrop-blur-lg transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2 focus:ring-offset-gray-100 sm:ml-0 ${cardBorderClasses}`}
+          >
+            <div className="relative z-10 flex flex-row gap-2 p-3 sm:items-start sm:gap-4 sm:p-5">
+              <div className="flex-1 flex flex-col text-left">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-gray-500">
+                  <svg className={`h-4 w-4 ${iconColorClass}`} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
+                  </svg>
+                  <span>{event.dateLabel}</span>
+                </div>
+                <h3 className="mt-3 text-xl font-semibold text-gray-900 sm:text-2xl">
+                  <span className="truncate sm:hidden">{mobileTitle}</span>
+                  <span className="hidden truncate sm:inline">{fullTitle}</span>
+                </h3>
+                <p className="mt-1 text-sm font-medium text-gray-700 sm:text-base">{event.locationLabel}</p>
+                {event.tickets.length > 0 && (
+                  <div className="mt-4 space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Ticket Types</p>
+                    <div className="flex flex-wrap gap-2">
+                      {event.tickets.map((ticket) => (
+                        <span key={ticket.id} className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-3 py-1 text-xs font-semibold text-gray-800">
+                          <span>{ticket.label}</span>
+                          <span className="text-gray-500">{formatTicketPrice(ticket.price, ticket.currency)}</span>
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              {event.manageUrl && (
-                <div className="mt-auto w-full pt-10 text-left">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      navigate(event.manageUrl);
-                    }}
-                    className="mt-4 -mb-1 inline-flex items-center gap-2 rounded-full bg-black/10 px-4 py-2 text-sm font-semibold text-black transition hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
-                  >
-                    <span>Manage Event</span>
-                    <svg
-                      aria-hidden="true"
-                      className="h-3.5 w-3.5"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
+                )}
+                {event.manageUrl && (
+                  <div className="mt-auto w-full pt-8 text-left">
+                    <button
+                      type="button"
+                      className="mt-4 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        navigate(event.manageUrl);
+                      }}
                     >
-                      <path d="M13.44 9.25H4.5a.75.75 0 0 0 0 1.5h8.94l-2.22 2.22a.75.75 0 1 0 1.06 1.06l3.5-3.5a.75.75 0 0 0 0-1.06l-3.5-3.5a.75.75 0 1 0-1.06 1.06l2.22 2.22Z" />
-                    </svg>
-                  </button>
+                      <span>Manage Event</span>
+                      <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13.44 9.25H4.5a.75.75 0 0 0 0 1.5h8.94l-2.22 2.22a.75.75 0 1 0 1.06 1.06l3.5-3.5a.75.75 0 0 0 0-1.06l-3.5-3.5a.75.75 0 1 0-1.06 1.06l2.22 2.22Z" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="flex-shrink-0 self-start sm:self-start">
+                <div className="relative aspect-square w-20 sm:w-24 md:w-28 lg:w-32 overflow-hidden rounded-xl bg-white">
+                  <img src={event.coverImage} alt={event.title} className="h-full w-full object-cover" />
                 </div>
-              )}
-            </div>
-            <div className="flex-shrink-0 self-start sm:self-start">
-              <div className="relative aspect-square w-20 sm:w-24 md:w-28 lg:w-32 overflow-hidden rounded-xl bg-white">
-                <img
-                  src={event.coverImage}
-                  alt={event.title}
-                  className="h-full w-full object-cover"
-                />
               </div>
             </div>
           </div>
         </div>
-      </div>
-    ),
+      );
+    },
     [navigate]
   );
 
-  // Only use avatars from our database, not from OAuth providers
   const uploadedAvatar: string | undefined = profileAvatarUrl || undefined;
 
   // Deterministic emoji avatar fallback
@@ -513,7 +652,7 @@ const ProfilePage = () => {
       {/* Content */}
       <div className="relative z-10 w-full pl-3 pr-4 pt-20 pb-8">
         {/* Profile Header */}
-        <div className="pl-4 pr-6 py-8 sm:p-10 text-center">
+        <div className="px-4 py-8 sm:px-8 sm:py-10 text-center">
             <div className="mx-auto h-64 w-64 md:h-80 md:w-80 rounded-full overflow-hidden shadow-xl bg-white" style={avatarShadowStyle}>
               {loading ? (
                 <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
@@ -574,8 +713,8 @@ const ProfilePage = () => {
             </div>
 
             <div className="mt-20">
-              <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-[24px] font-bold text-gray-900 whitespace-nowrap">Events</span>
+                <div className="flex flex-row flex-wrap items-center justify-between gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-[20px] font-bold text-gray-900 whitespace-nowrap sm:text-[24px]">Events</span>
                 <div className="flex items-center space-x-4 overflow-x-auto sm:justify-end">
                   <button
                     type="button"
@@ -605,7 +744,7 @@ const ProfilePage = () => {
               <div className="mt-6">
                 {activeEventTab === 'upcoming' && (
                   upcomingEvents.length > 0 ? (
-                    <div className="grid gap-6 sm:grid-cols-2">
+                    <div className="grid gap-6 lg:grid-cols-2">
                       {upcomingEvents.map(renderEventCard)}
                     </div>
                   ) : (
@@ -626,7 +765,7 @@ const ProfilePage = () => {
 
                 {activeEventTab === 'past' && (
                   pastEvents.length > 0 ? (
-                    <div className="grid gap-6 sm:grid-cols-2">
+                    <div className="grid gap-6 lg:grid-cols-2">
                       {pastEvents.map(renderEventCard)}
                     </div>
                   ) : (

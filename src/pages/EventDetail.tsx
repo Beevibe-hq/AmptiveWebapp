@@ -1,263 +1,496 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, MapPin, Users, Share2, Heart, DollarSign, TrendingUp, Clock, Star } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Share2, Ticket } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { extractDominantColors } from '@/utils/colorExtractor';
+
+type EventRecord = {
+  id: string;
+  title?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  venue?: string | null;
+  city?: string | null;
+  cover_image?: string | null;
+  details_url?: string | null;
+  manage_url?: string | null;
+  description?: string | null;
+  summary?: string | null;
+  user_id?: string | null;
+};
+
+type EventTicket = {
+  id: string;
+  label: string;
+  price: number;
+  currency?: string | null;
+};
+
+const DEFAULT_COVER =
+  'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp';
+
+const formatDate = (iso?: string | null, withYear = true) => {
+  if (!iso) return 'Date to be announced';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Date to be announced';
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: withYear ? 'numeric' : undefined,
+  });
+};
+
+const formatShortDate = (iso?: string | null) => {
+  if (!iso) return 'TBD';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'TBD';
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+const formatTimeRange = (startIso?: string | null, endIso?: string | null) => {
+  if (!startIso) return 'Time to be announced';
+  const start = new Date(startIso);
+  if (Number.isNaN(start.getTime())) return 'Time to be announced';
+  const startLabel = start.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  if (!endIso) return startLabel;
+  const end = new Date(endIso);
+  if (Number.isNaN(end.getTime())) return startLabel;
+  const endLabel = end.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${startLabel} – ${endLabel}`;
+};
+
+const buildLocationLabel = (venue?: string | null, city?: string | null) => {
+  const parts = [venue, city].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'Location to be announced';
+};
+
+const formatTicketPrice = (price?: number, currency?: string | null) => {
+  if (!Number.isFinite(price)) return 'Free';
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: currency ?? 'NGN',
+    minimumFractionDigits: price % 1 === 0 ? 0 : 2,
+  });
+  return formatter.format(price ?? 0);
+};
+
+const resolveStatus = (startIso?: string | null, endIso?: string | null) => {
+  const now = Date.now();
+  const start = startIso ? new Date(startIso).getTime() : Number.NaN;
+  const end = endIso ? new Date(endIso).getTime() : Number.NaN;
+
+  if (!Number.isNaN(end) && now >= end) return 'Past';
+  if (!Number.isNaN(start)) {
+    if (now >= start && (Number.isNaN(end) || now < end)) return 'Live';
+    if (now < start) return 'Upcoming';
+  }
+  return 'Upcoming';
+};
 
 const EventDetail = () => {
-  const { id } = useParams();
-  const [isLiked, setIsLiked] = useState(false);
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const supabase = useMemo(() => createClient(), []);
 
-  // Mock event data - in real app, this would come from API
-  const event = {
-    id: 1,
-    title: 'Electronic Fusion Night',
-    artist: 'DJ Synthesis',
-    date: 'Feb 15, 2025',
-    time: '8:00 PM - 12:00 AM',
-    location: 'Virtual Event',
-    image: 'https://images.pexels.com/photos/1105666/pexels-photo-1105666.jpeg?auto=compress&cs=tinysrgb&w=800&h=400&dpr=2',
-    price: '$25',
-    attendees: 234,
-    investment: 75,
-    investmentGoal: '$10,000',
-    investmentRaised: '$7,500',
-    description: `Join us for an unforgettable night of electronic music featuring DJ Synthesis, known for blending deep house with ambient soundscapes. This virtual event will feature interactive elements, live chat, and exclusive behind-the-scenes content.
+  const [event, setEvent] = useState<EventRecord | null>(null);
+  const [tickets, setTickets] = useState<EventTicket[]>([]);
+  const [relatedEvents, setRelatedEvents] = useState<EventRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [heroGradient, setHeroGradient] = useState<{ primary: string; secondary: string }>({
+    primary: '#111827',
+    secondary: '#040507',
+  });
 
-Experience cutting-edge music from the comfort of your home with high-quality streaming and professional lighting effects. Limited capacity ensures an intimate atmosphere despite the virtual format.`,
-    features: [
-      'High-quality audio streaming',
-      'Interactive live chat',
-      'Exclusive behind-the-scenes content',
-      'Digital meet & greet opportunity',
-    ],
-    artist_info: {
-      name: 'DJ Synthesis',
-      bio: 'With over 10 years in the electronic music scene, DJ Synthesis has performed at major festivals worldwide and has a dedicated following of electronic music enthusiasts.',
-      image: 'https://images.pexels.com/photos/1389429/pexels-photo-1389429.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
-      followers: '12.5K',
-    },
-    reviews: [
-      {
-        name: 'Alex Chen',
-        rating: 5,
-        comment: "Amazing experience! The sound quality was incredible and the interactive elements made it feel like a real concert.",
-        date: '2 days ago',
-      },
-      {
-        name: 'Maria Garcia',
-        rating: 5,
-        comment: "DJ Synthesis never disappoints. Great investment opportunity too!",
-        date: '1 week ago',
-      },
-    ],
+  useEffect(() => {
+    if (!id) {
+      setError('Missing event identifier.');
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      setShareFeedback(null);
+
+      try {
+        const { data: eventData, error: eventError } = await supabase
+          .from('events')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (eventError) throw eventError;
+
+        if (!eventData) {
+          if (!cancelled) {
+            setEvent(null);
+            setTickets([]);
+            setRelatedEvents([]);
+            setError('We couldn’t find this event.');
+          }
+          return;
+        }
+
+        const eventRecord = eventData as EventRecord;
+        if (!cancelled) {
+          setEvent(eventRecord);
+          const cover = eventRecord.cover_image || DEFAULT_COVER;
+          extractDominantColors(cover, 2)
+            .then(([primary, secondary]) => {
+              if (!cancelled) {
+                setHeroGradient({ primary, secondary: secondary ?? primary });
+              }
+            })
+            .catch((gradientError) => {
+              console.error('Error extracting cover colors:', gradientError);
+              if (!cancelled) {
+                setHeroGradient({ primary: '#111827', secondary: '#040507' });
+              }
+            });
+        }
+
+        const [ticketRes, relatedRes] = await Promise.all([
+          supabase
+            .from('event_tickets')
+            .select('id, label, price, currency')
+            .eq('event_id', id),
+          eventRecord.user_id
+            ? supabase
+                .from('events')
+                .select('id, title, start_time, venue, city, cover_image')
+                .eq('user_id', eventRecord.user_id)
+                .neq('id', id)
+                .order('start_time', { ascending: true })
+                .limit(4)
+            : Promise.resolve({ data: [] as EventRecord[], error: null }),
+        ]);
+
+        if (ticketRes.error) throw ticketRes.error;
+        if (relatedRes.error) throw relatedRes.error;
+
+        if (!cancelled) {
+          setTickets(
+            (ticketRes.data ?? []).map((ticket) => ({
+              id: ticket.id,
+              label: ticket.label ?? 'General Admission',
+              price: Number(ticket.price) || 0,
+              currency: ticket.currency,
+            }))
+          );
+          setRelatedEvents((relatedRes.data ?? []) as EventRecord[]);
+        }
+      } catch (err) {
+        console.error('Error loading event details:', err);
+        if (!cancelled) {
+          setError('Something went wrong while fetching this event.');
+          setEvent(null);
+          setTickets([]);
+          setRelatedEvents([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, supabase]);
+
+  const handleShare = async () => {
+    if (!event) return;
+    const shareData = {
+      title: event.title ?? 'Upcoming Event',
+      text: `Check out ${event.title ?? 'this event'} on Amptive`,
+      url: window.location.href,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setShareFeedback('Link shared successfully.');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareData.url);
+        setShareFeedback('Link copied to clipboard.');
+      } else {
+        setShareFeedback('Sharing not supported on this browser.');
+      }
+    } catch (shareError) {
+      console.error('Error sharing event:', shareError);
+      setShareFeedback('Unable to share the event right now.');
+    }
   };
 
-  return (
-    <div className="pt-20 min-h-screen bg-gray-50">
-      {/* Back Button */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <Link
-          to="/events"
-          className="inline-flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5 mr-2" />
-          Back to Events
-        </Link>
-      </div>
-
-      {/* Hero Section */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden mb-8">
-          <div className="relative">
-            <img
-              src={event.image}
-              alt={event.title}
-              className="w-full h-64 md:h-80 object-cover"
-            />
-            <div className="absolute inset-0 bg-black/30"></div>
-            <div className="absolute bottom-6 left-6 right-6 text-white">
-              <h1 className="text-3xl md:text-4xl font-bold mb-2">{event.title}</h1>
-              <p className="text-xl text-white/90">{event.artist}</p>
-            </div>
-            <div className="absolute top-6 right-6 flex gap-2">
-              <button
-                onClick={() => setIsLiked(!isLiked)}
-                className={`p-3 rounded-full backdrop-blur-sm transition-all duration-200 ${
-                  isLiked ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
-                }`}
-              >
-                <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
-              </button>
-              <button className="p-3 rounded-full bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm transition-all duration-200">
-                <Share2 className="w-5 h-5" />
-              </button>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#07080c] text-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-20">
+          <div className="space-y-6">
+            <div className="h-10 w-48 rounded-full bg-white/10 animate-pulse" />
+            <div className="h-16 w-3/4 rounded-2xl bg-white/10 animate-pulse" />
+            <div className="h-64 rounded-3xl bg-white/10 animate-pulse" />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="h-60 rounded-3xl bg-white/10 animate-pulse" />
+              <div className="h-60 rounded-3xl bg-white/10 animate-pulse" />
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Event Details */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Event Details</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="flex items-center">
-                  <Calendar className="w-5 h-5 text-primary-600 mr-3" />
-                  <div>
-                    <p className="font-medium text-gray-900">{event.date}</p>
-                    <p className="text-sm text-gray-600">{event.time}</p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <MapPin className="w-5 h-5 text-primary-600 mr-3" />
-                  <div>
-                    <p className="font-medium text-gray-900">{event.location}</p>
-                    <p className="text-sm text-gray-600">Online Event</p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <Users className="w-5 h-5 text-primary-600 mr-3" />
-                  <div>
-                    <p className="font-medium text-gray-900">{event.attendees} Attending</p>
-                    <p className="text-sm text-gray-600">Limited capacity</p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <DollarSign className="w-5 h-5 text-primary-600 mr-3" />
-                  <div>
-                    <p className="font-medium text-gray-900">{event.price}</p>
-                    <p className="text-sm text-gray-600">Per ticket</p>
-                  </div>
-                </div>
+  if (error || !event) {
+    return (
+      <div className="min-h-screen bg-[#07080c] text-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-20 text-center space-y-6">
+          <p className="text-sm uppercase tracking-[0.3em] text-white/60">Event Overview</p>
+          <h1 className="text-3xl font-semibold">{error ?? 'Event not found'}</h1>
+          <p className="text-white/60">
+            The event you are looking for may have been removed or is no longer available.
+          </p>
+          <div className="pt-6">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/20"
+              onClick={() => navigate(-1)}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const coverImage = event.cover_image || DEFAULT_COVER;
+  const startDate = formatDate(event.start_time);
+  const timeRange = formatTimeRange(event.start_time, event.end_time);
+  const locationLabel = buildLocationLabel(event.venue, event.city);
+  const status = resolveStatus(event.start_time, event.end_time);
+  const year = event.start_time ? new Date(event.start_time).getFullYear() : new Date().getFullYear();
+  const manageUrl = (event.manage_url && event.manage_url.trim().length > 0)
+    ? event.manage_url
+    : `/events/manage/${event.id}`;
+  const cheapestTicket = tickets.reduce<EventTicket | null>((cheapest, ticket) => {
+    if (cheapest === null) return ticket;
+    if (!Number.isFinite(ticket.price)) return cheapest;
+    if (!Number.isFinite(cheapest.price) || ticket.price < cheapest.price) return ticket;
+    return cheapest;
+  }, null);
+  const ticketPriceLabel = tickets.length === 0
+    ? 'Free'
+    : cheapestTicket
+    ? formatTicketPrice(cheapestTicket.price, cheapestTicket.currency)
+    : 'Free';
+
+  return (
+    <div className="min-h-screen bg-[#07080c] text-white">
+      <div className="relative isolate overflow-hidden">
+        <div className="absolute inset-0 -z-10">
+          <img src={coverImage} alt={event.title ?? 'Event artwork'} className="h-full w-full object-cover opacity-5" />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `linear-gradient(135deg, ${heroGradient.primary} 0%, rgba(0,0,0,0.6) 45%, ${heroGradient.secondary} 100%)`,
+            }}
+          />
+          <div className="absolute inset-0 mix-blend-soft-light" />
+        </div>
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)] items-start">
+            <div className="order-2 space-y-6 lg:order-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+                  {year}
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
+                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                  {status}
+                </span>
               </div>
-
-              <div className="prose prose-gray max-w-none">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">About This Event</h3>
-                <p className="text-gray-600 whitespace-pre-line">{event.description}</p>
-              </div>
-
-              <div className="mt-6">
-                <h4 className="text-lg font-semibold text-gray-900 mb-3">What's Included</h4>
-                <ul className="space-y-2">
-                  {event.features.map((feature, index) => (
-                    <li key={index} className="flex items-center text-gray-600">
-                      <div className="w-2 h-2 bg-primary-600 rounded-full mr-3"></div>
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* Artist Info */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">About the Artist</h2>
-              <div className="flex items-start space-x-4">
-                <img
-                  src={event.artist_info.image}
-                  alt={event.artist_info.name}
-                  className="w-16 h-16 rounded-full object-cover"
-                />
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-1">{event.artist_info.name}</h3>
-                  <p className="text-sm text-gray-600 mb-3">{event.artist_info.followers} followers</p>
-                  <p className="text-gray-600">{event.artist_info.bio}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Reviews */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Reviews</h2>
               <div className="space-y-4">
-                {event.reviews.map((review, index) => (
-                  <div key={index} className="border-b border-gray-100 pb-4 last:border-b-0">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-gray-900">{review.name}</h4>
-                      <span className="text-sm text-gray-500">{review.date}</span>
-                    </div>
-                    <div className="flex items-center mb-2">
-                      {[...Array(5)].map((_, i) => (
-                        <Star
-                          key={i}
-                          className={`w-4 h-4 ${
-                            i < review.rating ? 'text-yellow-400 fill-current' : 'text-gray-300'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-gray-600">{review.comment}</p>
-                  </div>
-                ))}
+                <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
+                  {event.title ?? 'Untitled Event'}
+                </h1>
+                <p className="text-white/70 text-base sm:text-lg">
+                  {event.summary ??
+                    'Experience this curated event featuring emerging talent, intimate energy, and a carefully designed atmosphere for fans.'}
+                </p>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 sm:gap-2.5 text-white/80">
+                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
+                  <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Date</span>
+                  <span className="font-medium text-white">{startDate}</span>
+                </span>
+                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
+                  <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Time</span>
+                  <span className="font-medium text-white">{timeRange}</span>
+                </span>
+                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
+                  <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Location</span>
+                  <span className="font-medium text-white">{locationLabel}</span>
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
+                {tickets.length > 0 && (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                    <Ticket className="h-4 w-4" />
+                    {tickets.length} ticket {tickets.length === 1 ? 'type' : 'types'}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 md:px-6 py-2.5 md:py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+                >
+                  <Share2 className="h-4 w-4" />
+                  Share Event
+                </button>
+                <Link
+                  to={manageUrl}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white text-[#07080c] px-4 md:px-6 py-2.5 md:py-3 text-sm font-semibold transition hover:bg-gray-100"
+                >
+                  Manage Event
+                </Link>
+              </div>
+
+              <p className="mt-2 text-xs text-white/60">
+                {ticketPriceLabel === 'Free' ? 'Free event' : `Tickets from ${ticketPriceLabel}`}
+              </p>
+
+              
+            </div>
+
+            <div className="order-1 flex flex-col gap-6 lg:order-2 lg:sticky lg:top-32">
+              <div className="relative aspect-square overflow-hidden rounded-3xl border border-white/15 bg-white/5 shadow-[0_30px_80px_rgba(7,8,12,0.35)]">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
+                <img src={coverImage} alt={event.title ?? 'Event artwork'} className="h-full w-full object-cover" />
               </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Ticket Purchase */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm sticky top-24">
-              <div className="text-center mb-6">
-                <div className="text-3xl font-bold text-gray-900 mb-2">{event.price}</div>
-                <p className="text-gray-600">per ticket</p>
+      <div className="bg-gray-50 text-gray-900">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.6fr),minmax(0,0.9fr)]">
+            <section className="space-y-10">
+              <div className="rounded-3xl border border-gray-200 bg-white p-8 shadow-sm">
+                <h2 className="text-2xl font-semibold text-gray-900">Event Overview</h2>
+                <p className="mt-4 text-gray-600 leading-relaxed whitespace-pre-line">
+                  {event.description ??
+                    'Details for this event will be announced soon. Check back for artist information, special experiences, and key updates as we prepare the perfect show.'}
+                </p>
               </div>
 
-              <button className="w-full bg-gradient-to-r from-primary-600 to-electric-500 text-white py-3 rounded-lg font-semibold hover:shadow-lg transition-all duration-200 mb-4">
-                Get Tickets
-              </button>
-
-              <div className="text-center text-sm text-gray-600 mb-6">
-                <Clock className="w-4 h-4 inline mr-1" />
-                Early bird pricing ends in 5 days
-              </div>
-
-              {/* Investment Section */}
-              <div className="border-t pt-6">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-900">Investment Progress</span>
-                  <span className="text-sm font-bold text-primary-600">{event.investment}%</span>
-                </div>
-                
-                <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
-                  <div
-                    className="bg-gradient-to-r from-primary-600 to-electric-500 h-3 rounded-full transition-all duration-300"
-                    style={{ width: `${event.investment}%` }}
-                  ></div>
-                </div>
-
-                <div className="flex justify-between text-sm text-gray-600 mb-4">
-                  <span>Raised: {event.investmentRaised}</span>
-                  <span>Goal: {event.investmentGoal}</span>
-                </div>
-
-                <Link
-                  to="/invest"
-                  className="w-full border-2 border-primary-600 text-primary-600 py-3 rounded-lg font-semibold hover:bg-primary-50 transition-all duration-200 text-center block"
-                >
-                  <TrendingUp className="w-4 h-4 inline mr-2" />
-                  Invest in This Event
-                </Link>
-              </div>
-            </div>
-
-            {/* Quick Stats */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Stats</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Attendees</span>
-                  <span className="font-medium text-gray-900">{event.attendees}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Investment Progress</span>
-                  <span className="font-medium text-primary-600">{event.investment}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Days Until Event</span>
-                  <span className="font-medium text-gray-900">12</span>
+              <div className="rounded-3xl border border-gray-200 bg-white p-8 shadow-sm">
+                <h3 className="text-xl font-semibold text-gray-900">Schedule & Logistics</h3>
+                <div className="mt-6 space-y-5">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm uppercase tracking-[0.28em] text-gray-400">Doors Open</span>
+                    <span className="text-base font-medium text-gray-900">{formatDate(event.start_time, false)}</span>
+                  </div>
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm uppercase tracking-[0.28em] text-gray-400">Showtime</span>
+                    <span className="text-base font-medium text-gray-900">{timeRange}</span>
+                  </div>
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm uppercase tracking-[0.28em] text-gray-400">Venue</span>
+                    <span className="text-base font-medium text-gray-900">{locationLabel}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </section>
+
+            <aside className="space-y-8">
+              <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">Ticket Options</h3>
+                  <Ticket className="h-5 w-5 text-gray-400" />
+                </div>
+                <div className="mt-4 space-y-3">
+                  {tickets.length === 0 && (
+                    <p className="text-sm text-gray-500">Tickets have not been published yet.</p>
+                  )}
+                  {tickets.map((ticket) => (
+                    <div key={ticket.id} className="flex items-center justify-between rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                      <span className="text-sm font-medium text-gray-900">{ticket.label}</span>
+                      <span className="text-sm font-semibold text-gray-700">{formatTicketPrice(ticket.price, ticket.currency)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {relatedEvents.length > 0 && (
+                <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900">More from this host</h3>
+                  <div className="mt-5 space-y-4">
+                    {relatedEvents.map((item) => (
+                      <Link
+                        key={item.id}
+                        to={`/events/${item.id}`}
+                        className="group flex items-center justify-between gap-4 rounded-2xl border border-gray-100 px-4 py-3 transition hover:border-gray-200 hover:bg-gray-50"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900 group-hover:text-black">
+                            {item.title ?? 'Untitled Event'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {formatShortDate(item.start_time)} · {buildLocationLabel(item.venue, item.city)}
+                          </p>
+                        </div>
+                        <span className="text-gray-300 transition group-hover:text-gray-500">→</span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900">Need edits?</h3>
+                <p className="mt-2 text-sm text-gray-600">
+                  Jump back into the event manager to update details, adjust ticketing, or share new dates.
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <Link
+                    to={manageUrl}
+                    className="flex-1 rounded-full border border-gray-200 bg-gray-900 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-black"
+                  >
+                    Manage Event
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    className="inline-flex items-center justify-center rounded-full border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       </div>
