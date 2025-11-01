@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Share2, Ticket } from 'lucide-react';
+import { Coins, Share2, Ticket } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { extractDominantColors } from '@/utils/colorExtractor';
 
@@ -28,6 +28,64 @@ type EventTicket = {
 
 const DEFAULT_COVER =
   'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp';
+
+const DEFAULT_GRADIENT = {
+  primary: '#131620',
+  secondary: '#07080c',
+};
+
+const FALLBACK_COLORS = new Set(['#1e3a8a', '#3b82f6']);
+
+const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
+  const normalized = hex.replace('#', '');
+  if (normalized.length !== 6) return null;
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  if ([r, g, b].some((value) => Number.isNaN(value))) return null;
+  return { r, g, b };
+};
+
+const rgbChannelToHex = (value: number): string => {
+  const clamped = Math.max(0, Math.min(255, Math.round(value)));
+  return clamped.toString(16).padStart(2, '0');
+};
+
+const rgbToHex = ({ r, g, b }: { r: number; g: number; b: number }): string => `#${rgbChannelToHex(r)}${rgbChannelToHex(g)}${rgbChannelToHex(b)}`;
+
+const lightenHex = (hex: string, amount: number): string => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const { r, g, b } = rgb;
+  return rgbToHex({
+    r: r + (255 - r) * amount,
+    g: g + (255 - g) * amount,
+    b: b + (255 - b) * amount,
+  });
+};
+
+const darkenHex = (hex: string, amount: number): string => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const { r, g, b } = rgb;
+  return rgbToHex({
+    r: r * (1 - amount),
+    g: g * (1 - amount),
+    b: b * (1 - amount),
+  });
+};
+
+const relativeLuminance = (hex: string): number => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+
+  const [r, g, b] = [rgb.r, rgb.g, rgb.b].map((channel) => {
+    const srgb = channel / 255;
+    return srgb <= 0.03928 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4);
+  });
+
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
 
 const formatDate = (iso?: string | null, withYear = true) => {
   if (!iso) return 'Date to be announced';
@@ -108,10 +166,12 @@ const EventDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
-  const [heroGradient, setHeroGradient] = useState<{ primary: string; secondary: string }>({
-    primary: '#111827',
-    secondary: '#040507',
-  });
+  const [heroGradient, setHeroGradient] = useState<{ primary: string; secondary: string }>(DEFAULT_GRADIENT);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
 
   useEffect(() => {
     if (!id) {
@@ -150,16 +210,42 @@ const EventDetail = () => {
         if (!cancelled) {
           setEvent(eventRecord);
           const cover = eventRecord.cover_image || DEFAULT_COVER;
-          extractDominantColors(cover, 2)
-            .then(([primary, secondary]) => {
+          extractDominantColors(cover, 8)
+            .then((palette) => {
+              const validPalette = palette
+                .map((color) => color.trim().toLowerCase())
+                .filter((color, index, self) => hexToRgb(color) && self.indexOf(color) === index)
+                .filter((color) => !FALLBACK_COLORS.has(color))
+                .filter((color) => {
+                  const { r, g, b } = hexToRgb(color)!;
+                  const maxChannel = Math.max(r, g, b);
+                  const minChannel = Math.min(r, g, b);
+                  const saturation = maxChannel === 0 ? 0 : (maxChannel - minChannel) / maxChannel;
+                  return saturation > 0.08;
+                });
+
+              if (validPalette.length === 0) {
+                setHeroGradient(DEFAULT_GRADIENT);
+                return;
+              }
+
+              const sortedByDarkness = [...validPalette].sort(
+                (a, b) => relativeLuminance(a) - relativeLuminance(b),
+              );
+
+              const candidate = sortedByDarkness.find((color) => relativeLuminance(color) < 0.35) ?? sortedByDarkness[0];
+
+              const adjustedDark = darkenHex(candidate, 0.1);
+              const adjustedLight = lightenHex(candidate, 0.12);
+
               if (!cancelled) {
-                setHeroGradient({ primary, secondary: secondary ?? primary });
+                setHeroGradient({ primary: adjustedLight, secondary: adjustedDark });
               }
             })
             .catch((gradientError) => {
               console.error('Error extracting cover colors:', gradientError);
               if (!cancelled) {
-                setHeroGradient({ primary: '#111827', secondary: '#040507' });
+                setHeroGradient(DEFAULT_GRADIENT);
               }
             });
         }
@@ -291,6 +377,13 @@ const EventDetail = () => {
   const manageUrl = (event.manage_url && event.manage_url.trim().length > 0)
     ? event.manage_url
     : `/events/manage/${event.id}`;
+  const summaryText = (event.summary && event.summary.trim().length > 0
+    ? event.summary.trim()
+    : event.description && event.description.trim().length > 0
+    ? event.description.trim()
+    : 'Experience this curated event featuring emerging talent, intimate energy, and a carefully designed atmosphere for fans.');
+  const hasLongSummary = summaryText.length > 140;
+
   const cheapestTicket = tickets.reduce<EventTicket | null>((cheapest, ticket) => {
     if (cheapest === null) return ticket;
     if (!Number.isFinite(ticket.price)) return cheapest;
@@ -311,7 +404,7 @@ const EventDetail = () => {
           <div
             className="absolute inset-0"
             style={{
-              background: `linear-gradient(135deg, ${heroGradient.primary} 0%, rgba(0,0,0,0.6) 45%, ${heroGradient.secondary} 100%)`,
+              background: `linear-gradient(180deg, ${heroGradient.primary} 0%, ${heroGradient.secondary} 100%)`,
             }}
           />
           <div className="absolute inset-0 mix-blend-soft-light" />
@@ -320,27 +413,53 @@ const EventDetail = () => {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16">
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)] items-start">
             <div className="order-2 space-y-6 lg:order-1">
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-4">
                 <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
                   {year}
                 </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
-                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      status === 'Past' ? 'bg-gray-400' : 'bg-emerald-400'
+                    }`}
+                  />
                   {status}
                 </span>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
                   {event.title ?? 'Untitled Event'}
                 </h1>
-                <p className="text-white/70 text-base sm:text-lg">
-                  {event.summary ??
-                    'Experience this curated event featuring emerging talent, intimate energy, and a carefully designed atmosphere for fans.'}
-                </p>
+                <div className="space-y-2">
+                  <p
+                    className="text-white/70 text-base sm:text-lg"
+                    style={
+                      hasLongSummary && !isSummaryExpanded
+                        ? {
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }
+                        : undefined
+                    }
+                  >
+                    {summaryText}
+                  </p>
+                  {hasLongSummary && (
+                    <button
+                      type="button"
+                      onClick={() => setIsSummaryExpanded((prev) => !prev)}
+                      className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60 transition hover:text-white"
+                    >
+                      {isSummaryExpanded ? 'Show Less' : 'Read More'}
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-2 sm:gap-2.5 text-white/80">
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
+              <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-2.5 text-white/80">
+                <span className="inline-flex items-center rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
                   <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Date</span>
                   <span className="font-medium text-white">{startDate}</span>
                 </span>
@@ -361,6 +480,12 @@ const EventDetail = () => {
                     {tickets.length} ticket {tickets.length === 1 ? 'type' : 'types'}
                   </span>
                 )}
+                <Link
+                  to={manageUrl}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white text-[#07080c] px-4 md:px-6 py-2.5 md:py-3 text-sm font-semibold transition hover:bg-gray-100"
+                >
+                  Manage Event
+                </Link>
                 <button
                   type="button"
                   onClick={handleShare}
@@ -369,23 +494,18 @@ const EventDetail = () => {
                   <Share2 className="h-4 w-4" />
                   Share Event
                 </button>
-                <Link
-                  to={manageUrl}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white text-[#07080c] px-4 md:px-6 py-2.5 md:py-3 text-sm font-semibold transition hover:bg-gray-100"
-                >
-                  Manage Event
-                </Link>
               </div>
 
-              <p className="mt-2 text-xs text-white/60">
-                {ticketPriceLabel === 'Free' ? 'Free event' : `Tickets from ${ticketPriceLabel}`}
-              </p>
+              <div className="mt-2 flex items-center gap-2 text-xs text-white/60">
+                <Coins className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{ticketPriceLabel === 'Free' ? 'Free event' : `Tickets from ${ticketPriceLabel}`}</span>
+              </div>
 
               
             </div>
 
             <div className="order-1 flex flex-col gap-6 lg:order-2 lg:sticky lg:top-32">
-              <div className="relative aspect-square overflow-hidden rounded-3xl border border-white/15 bg-white/5 shadow-[0_30px_80px_rgba(7,8,12,0.35)]">
+              <div className="relative aspect-square overflow-hidden rounded-3xl bg-white/5 shadow-[0_30px_80px_rgba(7,8,12,0.35)]">
                 <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
                 <img src={coverImage} alt={event.title ?? 'Event artwork'} className="h-full w-full object-cover" />
               </div>

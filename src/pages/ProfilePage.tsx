@@ -366,6 +366,7 @@ const ProfilePage = () => {
 
       const fullTitle = event.title ?? '';
       const mobileTitle = fullTitle.length > 20 ? `${fullTitle.slice(0, 20)}…` : fullTitle;
+      const desktopTitle = fullTitle.length > 30 ? `${fullTitle.slice(0, 30)}…` : fullTitle;
 
       const renderTimeBadge = (variant: 'mobile' | 'desktop') => {
         if (isLive) {
@@ -430,7 +431,7 @@ const ProfilePage = () => {
                 </div>
                 <h3 className="mt-3 text-xl font-semibold text-gray-900 sm:text-2xl">
                   <span className="truncate sm:hidden">{mobileTitle}</span>
-                  <span className="hidden truncate sm:inline">{fullTitle}</span>
+                  <span className="hidden truncate sm:inline">{desktopTitle}</span>
                 </h3>
                 <p className="mt-1 text-sm font-medium text-gray-700 sm:text-base">{event.locationLabel}</p>
                 {event.tickets.length > 0 && (
