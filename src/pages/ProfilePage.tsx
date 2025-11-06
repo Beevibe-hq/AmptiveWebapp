@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
@@ -152,6 +152,17 @@ const ProfilePage = () => {
   const [activeEventTab, setActiveEventTab] = useState<'upcoming' | 'past'>('upcoming');
   const [upcomingEvents, setUpcomingEvents] = useState<EventCardData[]>([]);
   const [pastEvents, setPastEvents] = useState<EventCardData[]>([]);
+  const [hoveredPastCard, setHoveredPastCard] = useState<string | null>(null);
+  const [pastFadeState, setPastFadeState] = useState<'idle' | 'out' | 'in'>('idle');
+  const fadeOutTimeoutRef = useRef<number | null>(null);
+  const fadeInTimeoutRef = useRef<number | null>(null);
+  const [pastOffset, setPastOffset] = useState(0);
+  const isPastStackingEnabled = true;
+  const [isMobileView, setIsMobileView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 639px)').matches;
+  });
+  const pastCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const navigate = useNavigate();
   const supabase = createClient();
   const loadEvents = useCallback(
@@ -330,7 +341,18 @@ const ProfilePage = () => {
   }, [user?.id, loadEvents]);
 
   const renderEventCard = useCallback(
-    (event: EventCardData) => {
+    (
+      event: EventCardData,
+      options?: {
+        stacked?: boolean;
+        index?: number;
+        total?: number;
+        hovered?: boolean;
+        onHoverStart?: () => void;
+        onHoverEnd?: () => void;
+        setNode?: (node: HTMLDivElement | null) => void;
+      }
+    ) => {
       const isPast = event.status === 'past';
       const isLive = event.status === 'live';
 
@@ -367,6 +389,33 @@ const ProfilePage = () => {
       const fullTitle = event.title ?? '';
       const mobileTitle = fullTitle.length > 20 ? `${fullTitle.slice(0, 20)}…` : fullTitle;
       const desktopTitle = fullTitle.length > 30 ? `${fullTitle.slice(0, 30)}…` : fullTitle;
+      const ctaTarget = isPast
+        ? event.detailsUrl || `/events/${event.id}`
+        : event.manageUrl;
+      const ctaLabel = isPast ? 'View Recap' : 'Manage Event';
+
+      const hasTickets = event.tickets.length > 0;
+      const multipleTickets = event.tickets.length > 1;
+      const minPricedTicket = hasTickets
+        ? event.tickets.reduce((lowest, current) => {
+            const currentPrice = typeof current.price === 'number' ? current.price : Number(current.price);
+            if (!lowest) return current;
+            const lowestPrice = typeof lowest.price === 'number' ? lowest.price : Number(lowest.price);
+            if (Number.isNaN(lowestPrice) || currentPrice < lowestPrice) {
+              return current;
+            }
+            return lowest;
+          }, event.tickets[0])
+        : null;
+      const singleTicket = hasTickets && !multipleTickets ? minPricedTicket : null;
+
+      const ticketPillClasses = isPast
+        ? 'border border-black/10 bg-white/60 text-gray-800'
+        : 'border border-blue-200 bg-blue-50 text-blue-800';
+      const ticketPriceClasses = isPast ? 'text-gray-500' : 'text-blue-700 font-semibold';
+      const freePillClasses = isPast
+        ? 'border border-black/10 bg-white/60 text-gray-700'
+        : 'border border-blue-200 bg-blue-50 text-blue-800';
 
       const renderTimeBadge = (variant: 'mobile' | 'desktop') => {
         if (isLive) {
@@ -388,25 +437,81 @@ const ProfilePage = () => {
         return <span className={`${textSize} font-semibold ${accentTextClass}`}>{event.startTimeLabel}</span>;
       };
 
-      return (
-        <div key={event.id} className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3">
-          {/* Mobile time and connector */}
-          <div className="flex items-center gap-3 sm:hidden">
-            {renderTimeBadge('mobile')}
-            <div className="relative flex-1 h-6">
-              <div className={`absolute left-0 right-2 top-1/2 h-px -translate-y-1/2 ${mobileHorizontalDashClass}`} />
-              <div className={`absolute right-2 top-1/2 h-6 w-px ${mobileVerticalDashClass}`} />
-            </div>
-          </div>
+      const overlapTopClass = options?.stacked && (options.index ?? 0) > 0 ? ' -mt-12 sm:-mt-18' : '';
+      const stackedWrapperClasses = options?.stacked ? ' transition-transform hover:-translate-y-1' : '';
+      const stackedWidthClasses = options?.stacked ? ' w-[96%] sm:w-[85%] lg:w-[70%]' : '';
+      const stackedAlignmentClasses = options?.stacked ? ' self-center' : '';
+      const baseZ = options?.stacked ? (options.total ?? 0) - (options.index ?? 0) : 0;
+      const wrapperStyle = options?.stacked
+        ? {
+            zIndex: options?.hovered ? (options.total ?? 0) + 10 : baseZ,
+            marginTop:
+              options?.hovered && (options.index ?? 0) > 0
+                ? (options.index ?? 0) === 1
+                  ? '-4.5rem'
+                  : '-4rem'
+                : undefined,
+            transition: 'margin-top 320ms ease, transform 320ms ease',
+          }
+        : undefined;
+      const stackedShadowStrength = options?.stacked
+        ? options?.hovered
+          ? 0.22
+          : Math.max(0.06, 0.18 - (options.index ?? 0) * 0.03)
+        : null;
+      const stackedScale = options?.stacked
+        ? options?.hovered
+          ? 1
+          : Math.max(0.88, 1 - (options.index ?? 0) * 0.04)
+        : 1;
+      const blurAmount = options?.stacked && !options?.hovered
+        ? (options.index ?? 0) === 1
+          ? 4
+          : (options.index ?? 0) >= 2
+          ? 7
+          : 0
+        : 0;
+      const cardStyle = options?.stacked
+        ? {
+            boxShadow: `0 18px 40px rgba(15,23,42,${stackedShadowStrength!.toFixed(2)})`,
+            transform: `scale(${stackedScale.toFixed(2)})`,
+            transformOrigin: 'top center',
+            filter: blurAmount ? `blur(${blurAmount}px)` : 'none',
+            transition: 'transform 320ms ease, box-shadow 320ms ease, filter 240ms ease',
+          }
+        : undefined;
 
-          {/* Desktop time column */}
-          <div className="hidden sm:flex sm:w-20 sm:flex-col sm:items-center sm:pt-1">
-            <div className="text-center">{renderTimeBadge('desktop')}</div>
-            <div className="relative mt-3 flex-1 w-full">
-              <div className={`absolute left-1/2 right-0 top-0 bottom-1/2 -translate-x-1/2 w-px ${desktopVerticalDashClass}`} />
-              <div className={`absolute left-1/2 right-[-0.75rem] top-1/2 h-px -translate-y-1/2 ${desktopHorizontalDashClass}`} />
-            </div>
-          </div>
+      return (
+        <div
+          key={event.id}
+          className={`flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3${overlapTopClass}${stackedWrapperClasses}${stackedWidthClasses}${stackedAlignmentClasses}`}
+          ref={options?.setNode}
+          data-event-id={event.id}
+          style={wrapperStyle}
+          onMouseEnter={options?.onHoverStart}
+          onMouseLeave={options?.onHoverEnd}
+        >
+          {!isPast && (
+            <>
+              {/* Mobile time and connector */}
+              <div className="flex items-center gap-3 sm:hidden">
+                {renderTimeBadge('mobile')}
+                <div className="relative flex-1 h-6">
+                  <div className={`absolute left-0 right-2 top-1/2 h-px -translate-y-1/2 ${mobileHorizontalDashClass}`} />
+                  <div className={`absolute right-2 top-1/2 h-6 w-px ${mobileVerticalDashClass}`} />
+                </div>
+              </div>
+
+              {/* Desktop time column */}
+              <div className="hidden sm:flex sm:w-20 sm:flex-col sm:items-center sm:pt-1">
+                <div className="text-center">{renderTimeBadge('desktop')}</div>
+                <div className="relative mt-3 flex-1 w-full">
+                  <div className={`absolute left-1/2 right-0 top-0 bottom-1/2 -translate-x-1/2 w-px ${desktopVerticalDashClass}`} />
+                  <div className={`absolute left-1/2 right-[-0.75rem] top-1/2 h-px -translate-y-1/2 ${desktopHorizontalDashClass}`} />
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Card */}
           <div
@@ -420,6 +525,7 @@ const ProfilePage = () => {
               }
             }}
             className={`relative w-full flex-1 overflow-hidden rounded-2xl border bg-gradient-to-br from-gray-100 via-orange-50/20 to-gray-100 text-sm shadow-sm shadow-[0_8px_20px_rgba(15,23,42,0.05)] backdrop-blur-lg transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2 focus:ring-offset-gray-100 sm:ml-0 ${cardBorderClasses}`}
+            style={cardStyle}
           >
             <div className="relative z-10 flex flex-row gap-2 p-3 sm:items-start sm:gap-4 sm:p-5">
               <div className="flex-1 flex flex-col text-left">
@@ -434,20 +540,33 @@ const ProfilePage = () => {
                   <span className="hidden truncate sm:inline">{desktopTitle}</span>
                 </h3>
                 <p className="mt-1 text-sm font-medium text-gray-700 sm:text-base">{event.locationLabel}</p>
-                {event.tickets.length > 0 && (
-                  <div className="mt-4 space-y-1.5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Ticket Types</p>
-                    <div className="flex flex-wrap gap-2">
-                      {event.tickets.map((ticket) => (
-                        <span key={ticket.id} className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-3 py-1 text-xs font-semibold text-gray-800">
-                          <span>{ticket.label}</span>
-                          <span className="text-gray-500">{formatTicketPrice(ticket.price, ticket.currency)}</span>
+                {hasTickets ? (
+                  multipleTickets && minPricedTicket ? (
+                    <div className="mt-4">
+                      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${ticketPillClasses}`}>
+                        <span>From</span>
+                        <span className={ticketPriceClasses}>
+                          {formatTicketPrice(minPricedTicket.price, minPricedTicket.currency)}
                         </span>
-                      ))}
+                      </span>
                     </div>
+                  ) : singleTicket ? (
+                    <div className="mt-4">
+                      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${ticketPillClasses}`}>
+                        <span className={ticketPriceClasses}>
+                          {formatTicketPrice(singleTicket.price, singleTicket.currency)}
+                        </span>
+                      </span>
+                    </div>
+                  ) : null
+                ) : (
+                  <div className="mt-4">
+                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${freePillClasses}`}>
+                      Free
+                    </span>
                   </div>
                 )}
-                {event.manageUrl && (
+                {ctaTarget && (
                   <div className="mt-auto w-full pt-8 text-left">
                     <button
                       type="button"
@@ -455,10 +574,10 @@ const ProfilePage = () => {
                       onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        navigate(event.manageUrl);
+                        navigate(ctaTarget);
                       }}
                     >
-                      <span>Manage Event</span>
+                      <span>{ctaLabel}</span>
                       <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
                         <path d="M13.44 9.25H4.5a.75.75 0 0 0 0 1.5h8.94l-2.22 2.22a.75.75 0 1 0 1.06 1.06l3.5-3.5a.75.75 0 0 0 0-1.06l-3.5-3.5a.75.75 0 1 0-1.06 1.06l2.22 2.22Z" />
                       </svg>
@@ -468,7 +587,11 @@ const ProfilePage = () => {
               </div>
               <div className="flex-shrink-0 self-start sm:self-start">
                 <div className="relative aspect-square w-20 sm:w-24 md:w-28 lg:w-32 overflow-hidden rounded-xl bg-white">
-                  <img src={event.coverImage} alt={event.title} className="h-full w-full object-cover" />
+                  <img
+                    src={event.coverImage}
+                    alt={event.title}
+                    className={`h-full w-full object-cover ${isPast ? 'grayscale' : ''}`}
+                  />
                 </div>
               </div>
             </div>
@@ -541,6 +664,114 @@ const ProfilePage = () => {
     return { boxShadow: `0 35px 70px 10px ${soft}` } as React.CSSProperties;
   }, [shadowColor]);
 
+  const PAST_BATCH_SIZE = 3;
+  const displayedPastEvents = useMemo(() => {
+    if (pastEvents.length === 0) return [] as EventCardData[];
+    const batch = pastEvents.slice(pastOffset, pastOffset + PAST_BATCH_SIZE);
+    if (batch.length === 0 && pastOffset !== 0) {
+      return pastEvents.slice(0, Math.min(PAST_BATCH_SIZE, pastEvents.length));
+    }
+    return batch;
+  }, [pastEvents, pastOffset]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mediaQuery = window.matchMedia('(max-width: 639px)');
+    const handleChange = (event: MediaQueryListEvent) => setIsMobileView(event.matches);
+    setIsMobileView(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  useEffect(() => {
+    setPastOffset(0);
+    setPastFadeState('idle');
+  }, [pastEvents.length]);
+
+  useEffect(() => {
+    if (!isMobileView || displayedPastEvents.length === 0) return;
+    setHoveredPastCard((current) => {
+      if (current && displayedPastEvents.some((event) => event.id === current)) {
+        return current;
+      }
+      return displayedPastEvents[0].id;
+    });
+  }, [displayedPastEvents, isMobileView]);
+
+  useEffect(() => {
+    if (!isMobileView || displayedPastEvents.length === 0) return undefined;
+
+    let frameRequested = false;
+
+    const evaluate = () => {
+      frameRequested = false;
+      let bestId: string | null = null;
+      let bestRatio = 0;
+
+      displayedPastEvents.forEach((event) => {
+        const node = pastCardRefs.current.get(event.id);
+        if (!node) return;
+        const rect = node.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+        const visibleHeight = Math.max(0, Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0));
+        const ratio = rect.height > 0 ? visibleHeight / rect.height : 0;
+        if (ratio > bestRatio + 0.05) {
+          bestRatio = ratio;
+          bestId = event.id;
+        }
+      });
+
+      if (bestId && bestRatio > 0) {
+        setHoveredPastCard(bestId);
+      }
+    };
+
+    const handleScroll = () => {
+      if (frameRequested) return;
+      frameRequested = true;
+      window.requestAnimationFrame(evaluate);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    evaluate();
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [displayedPastEvents, isMobileView]);
+
+  const registerPastCardRef = useCallback(
+    (eventId: string) => (node: HTMLDivElement | null) => {
+      if (!node) {
+        pastCardRefs.current.delete(eventId);
+        return;
+      }
+      pastCardRefs.current.set(eventId, node);
+    },
+    []
+  );
+
+  const handlePastViewMore = () => {
+    if (pastEvents.length <= PAST_BATCH_SIZE) return;
+    if (pastFadeState === 'out') return;
+
+    setPastFadeState('out');
+    if (fadeOutTimeoutRef.current) window.clearTimeout(fadeOutTimeoutRef.current);
+    if (fadeInTimeoutRef.current) window.clearTimeout(fadeInTimeoutRef.current);
+
+    fadeOutTimeoutRef.current = window.setTimeout(() => {
+      setPastOffset((current) => {
+        const nextOffset = current + PAST_BATCH_SIZE;
+        return nextOffset >= pastEvents.length ? 0 : nextOffset;
+      });
+      setPastFadeState('in');
+
+      fadeInTimeoutRef.current = window.setTimeout(() => {
+        setPastFadeState('idle');
+      }, 240);
+    }, 200);
+  };
+
   // Subtle top tint overlay using the dominant avatar color
   const topTintStyle = useMemo(() => {
     if (!shadowColor) return undefined;
@@ -594,7 +825,7 @@ const ProfilePage = () => {
 
         {/* Skeleton Content */}
         <div className="relative z-10 w-full px-4 pt-20 pb-8">
-          <div className="px-6 py-8 sm:p-10">
+          <div className="px-6 py-8 sm:px-10">
             <div className="mx-auto h-64 w-64 md:h-80 md:w-80 rounded-full overflow-hidden bg-gray-200 animate-pulse" />
             <div className="mt-6 h-4 w-48 bg-gray-200 rounded animate-pulse" />
             <div className="mt-4 h-20 w-3/4 bg-gray-200 rounded animate-pulse" />
@@ -766,9 +997,50 @@ const ProfilePage = () => {
 
                 {activeEventTab === 'past' && (
                   pastEvents.length > 0 ? (
-                    <div className="grid gap-6 lg:grid-cols-2">
-                      {pastEvents.map(renderEventCard)}
-                    </div>
+                    <>
+                      <div
+                        className={`relative flex flex-col items-stretch gap-4 sm:gap-0 sm:items-center transition-opacity duration-200 ease-in-out ${
+                          pastFadeState === 'out'
+                            ? 'opacity-0'
+                            : pastFadeState === 'in'
+                            ? 'opacity-100'
+                            : 'opacity-100'
+                        }`}
+                      >
+                        {displayedPastEvents.map((event, index) =>
+                          renderEventCard(event, {
+                            stacked: isPastStackingEnabled,
+                            index,
+                            total: displayedPastEvents.length,
+                            hovered: isPastStackingEnabled && hoveredPastCard === event.id,
+                            onHoverStart: isPastStackingEnabled ? () => setHoveredPastCard(event.id) : undefined,
+                            onHoverEnd: isPastStackingEnabled
+                              ? () =>
+                                  setHoveredPastCard((current) => (current === event.id ? null : current))
+                              : undefined,
+                            setNode: registerPastCardRef(event.id),
+                          })
+                        )}
+                      </div>
+                      {pastEvents.length > PAST_BATCH_SIZE && (
+                        <div className="mt-6 flex justify-center">
+                          <button
+                            type="button"
+                            onClick={handlePastViewMore}
+                            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white"
+                          >
+                            {pastOffset + PAST_BATCH_SIZE >= pastEvents.length ? 'Back to First Events' : 'View More'}
+                            <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                              {pastOffset + PAST_BATCH_SIZE >= pastEvents.length ? (
+                                <path d="M11.78 16.28a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.75.75 0 1 1 1.06 1.06L7.81 10.5l3.97 3.97a.75.75 0 0 1 0 1.06Z" />
+                              ) : (
+                                <path d="M10 3.5a.75.75 0 0 1 .75.75v5h5a.75.75 0 0 1 0 1.5h-5v5a.75.75 0 0 1-1.5 0v-5h-5a.75.75 0 0 1 0-1.5h5v-5A.75.75 0 0 1 10 3.5Z" />
+                              )}
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">
                       <div className="mx-auto mb-4 text-4xl">😮</div>

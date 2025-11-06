@@ -75,6 +75,15 @@ const darkenHex = (hex: string, amount: number): string => {
   });
 };
 
+const getSaturation = (hex: string): number => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const { r, g, b } = rgb;
+  const maxChannel = Math.max(r, g, b);
+  const minChannel = Math.min(r, g, b);
+  return maxChannel === 0 ? 0 : (maxChannel - minChannel) / maxChannel;
+};
+
 const relativeLuminance = (hex: string): number => {
   const rgb = hexToRgb(hex);
   if (!rgb) return 0;
@@ -216,13 +225,7 @@ const EventDetail = () => {
                 .map((color) => color.trim().toLowerCase())
                 .filter((color, index, self) => hexToRgb(color) && self.indexOf(color) === index)
                 .filter((color) => !FALLBACK_COLORS.has(color))
-                .filter((color) => {
-                  const { r, g, b } = hexToRgb(color)!;
-                  const maxChannel = Math.max(r, g, b);
-                  const minChannel = Math.min(r, g, b);
-                  const saturation = maxChannel === 0 ? 0 : (maxChannel - minChannel) / maxChannel;
-                  return saturation > 0.08;
-                });
+                .filter((color) => getSaturation(color) > 0.08);
 
               if (validPalette.length === 0) {
                 setHeroGradient(DEFAULT_GRADIENT);
@@ -234,9 +237,14 @@ const EventDetail = () => {
               );
 
               const candidate = sortedByDarkness.find((color) => relativeLuminance(color) < 0.35) ?? sortedByDarkness[0];
+              const brightCandidate = [...validPalette]
+                .sort((a, b) => relativeLuminance(b) - relativeLuminance(a))
+                .find((color) => relativeLuminance(color) > 0.5 && getSaturation(color) > 0.15);
 
               const adjustedDark = darkenHex(candidate, 0.1);
-              const adjustedLight = lightenHex(candidate, 0.12);
+              const adjustedLightBase = brightCandidate ?? candidate;
+              const lightAdjustAmount = brightCandidate ? 0.08 : 0.12;
+              const adjustedLight = lightenHex(adjustedLightBase, lightAdjustAmount);
 
               if (!cancelled) {
                 setHeroGradient({ primary: adjustedLight, secondary: adjustedDark });
@@ -459,7 +467,7 @@ const EventDetail = () => {
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-2.5 text-white/80">
-                <span className="inline-flex items-center rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
+                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
                   <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Date</span>
                   <span className="font-medium text-white">{startDate}</span>
                 </span>
@@ -474,12 +482,6 @@ const EventDetail = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
-                {tickets.length > 0 && (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    <Ticket className="h-4 w-4" />
-                    {tickets.length} ticket {tickets.length === 1 ? 'type' : 'types'}
-                  </span>
-                )}
                 <Link
                   to={manageUrl}
                   className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white text-[#07080c] px-4 md:px-6 py-2.5 md:py-3 text-sm font-semibold transition hover:bg-gray-100"
