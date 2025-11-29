@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Coins, Share2, Ticket } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Coins, MapPin, Share2, Ticket } from 'lucide-react';
+import amptiveLogo from '@/assets/amptivelogo.svg';
 import { createClient } from '@/lib/supabase/client';
 import { extractDominantColors } from '@/utils/colorExtractor';
 
@@ -26,6 +27,8 @@ type EventTicket = {
   currency?: string | null;
 };
 
+type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
+
 const DEFAULT_COVER =
   'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp';
 
@@ -35,6 +38,18 @@ const DEFAULT_GRADIENT = {
 };
 
 const FALLBACK_COLORS = new Set(['#1e3a8a', '#3b82f6']);
+
+const GOOGLE_MAP_STYLE_PARAMS = [
+  'feature:administrative|element:geometry|visibility:off',
+  'feature:administrative.land_parcel|visibility:off',
+  'feature:administrative.neighborhood|visibility:off',
+  'feature:poi|visibility:off',
+  'feature:poi|element:labels.text|visibility:off',
+  'feature:road|element:labels|visibility:off',
+  'feature:road|element:labels.icon|visibility:off',
+  'feature:transit|visibility:off',
+  'feature:water|element:geometry.fill|color:0x71d3f4',
+];
 
 const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
   const normalized = hex.replace('#', '');
@@ -164,6 +179,84 @@ const resolveStatus = (startIso?: string | null, endIso?: string | null) => {
   return 'Upcoming';
 };
 
+const AVAILABILITY_SEQUENCE: AvailabilityStatus[] = ['Available', 'Limited Spots', 'Almost Sold Out', 'Sold Out'];
+
+const AVAILABILITY_BADGE_CLASSES: Record<AvailabilityStatus, string> = {
+  Available: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'Almost Sold Out': 'border-amber-200 bg-amber-50 text-amber-700',
+  'Limited Spots': 'border-orange-200 bg-orange-50 text-orange-700',
+  'Sold Out': 'border-rose-200 bg-rose-50 text-rose-700',
+};
+
+const PLACEHOLDER_GRADIENTS = [
+  'from-[#2d1b69] via-[#312558] to-[#10142a]',
+  'from-[#0f172a] via-[#1e293b] to-[#111827]',
+  'from-[#1b1a55] via-[#2d3a8c] to-[#0b172d]',
+  'from-[#2f2346] via-[#3b1d6b] to-[#120c1f]',
+];
+
+const deriveAvailabilityStatus = (ticket: EventTicket, index: number): AvailabilityStatus => {
+  const label = ticket.label?.toLowerCase() ?? '';
+  if (label.includes('sold out')) return 'Sold Out';
+  if (ticket.price === 0 || label.includes('free') || label.includes('general') || label.includes('standard')) {
+    return 'Available';
+  }
+  if (label.includes('vip') || label.includes('table') || ticket.price >= 200) {
+    return 'Limited Spots';
+  }
+  if (label.includes('early') || label.includes('pre-sale')) {
+    return 'Almost Sold Out';
+  }
+  return AVAILABILITY_SEQUENCE[index % AVAILABILITY_SEQUENCE.length];
+};
+
+const deriveTicketBenefits = (ticket: EventTicket): string[] => {
+  const label = ticket.label?.toLowerCase() ?? '';
+  const benefits = new Set<string>();
+
+  if (label.includes('vip') || label.includes('premium')) {
+    benefits.add('Priority check-in lane');
+    benefits.add('Complimentary welcome drink');
+    benefits.add('Exclusive lounge seating');
+  }
+
+  if (label.includes('table') || label.includes('booth')) {
+    benefits.add('Reserved table with bottle service');
+    benefits.add('Dedicated host for your group');
+  }
+
+  if (label.includes('early') || label.includes('pre-sale')) {
+    benefits.add('Early venue access');
+    benefits.add('Limited edition merch drop access');
+  }
+
+  if (label.includes('backstage')) {
+    benefits.add('Backstage meet & greet');
+  }
+
+  if (label.includes('general') || label.includes('standard') || benefits.size === 0) {
+    benefits.add('Guaranteed entry to the event');
+    benefits.add('Access to all main stage performances');
+  }
+
+  if (ticket.price === 0) {
+    benefits.add('No payment required at entry');
+  }
+
+  return Array.from(benefits);
+};
+
+const getInitials = (value?: string | null) => {
+  if (!value) return 'EH';
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return 'EH';
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('');
+  return initials || 'EH';
+};
+
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -177,6 +270,9 @@ const EventDetail = () => {
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [heroGradient, setHeroGradient] = useState<{ primary: string; secondary: string }>(DEFAULT_GRADIENT);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const [organizerProfile, setOrganizerProfile] = useState<{ username?: string | null; full_name?: string | null; avatar_url?: string | null } | null>(null);
+  const [organizerAvatarError, setOrganizerAvatarError] = useState(false);
+  const [failedImageIds, setFailedImageIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
@@ -210,6 +306,7 @@ const EventDetail = () => {
             setEvent(null);
             setTickets([]);
             setRelatedEvents([]);
+            setOrganizerProfile(null);
             setError('We couldn’t find this event.');
           }
           return;
@@ -258,7 +355,7 @@ const EventDetail = () => {
             });
         }
 
-        const [ticketRes, relatedRes] = await Promise.all([
+        const [ticketRes, relatedRes, organizerRes] = await Promise.all([
           supabase
             .from('event_tickets')
             .select('id, label, price, currency')
@@ -272,10 +369,18 @@ const EventDetail = () => {
                 .order('start_time', { ascending: true })
                 .limit(4)
             : Promise.resolve({ data: [] as EventRecord[], error: null }),
+          eventRecord.user_id
+            ? supabase
+                .from('profiles')
+                .select('username, full_name, avatar_url')
+                .eq('user_id', eventRecord.user_id)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
         ]);
 
         if (ticketRes.error) throw ticketRes.error;
         if (relatedRes.error) throw relatedRes.error;
+        if (organizerRes.error) throw organizerRes.error;
 
         if (!cancelled) {
           setTickets(
@@ -287,6 +392,7 @@ const EventDetail = () => {
             }))
           );
           setRelatedEvents((relatedRes.data ?? []) as EventRecord[]);
+          setOrganizerProfile(organizerRes.data ?? null);
         }
       } catch (err) {
         console.error('Error loading event details:', err);
@@ -295,6 +401,7 @@ const EventDetail = () => {
           setEvent(null);
           setTickets([]);
           setRelatedEvents([]);
+          setOrganizerProfile(null);
         }
       } finally {
         if (!cancelled) {
@@ -309,6 +416,10 @@ const EventDetail = () => {
       cancelled = true;
     };
   }, [id, supabase]);
+
+  useEffect(() => {
+    setOrganizerAvatarError(false);
+  }, [organizerProfile?.avatar_url]);
 
   const handleShare = async () => {
     if (!event) return;
@@ -385,12 +496,15 @@ const EventDetail = () => {
   const manageUrl = (event.manage_url && event.manage_url.trim().length > 0)
     ? event.manage_url
     : `/events/manage/${event.id}`;
-  const summaryText = (event.summary && event.summary.trim().length > 0
-    ? event.summary.trim()
-    : event.description && event.description.trim().length > 0
+  const descriptionText = event.description && event.description.trim().length > 0
     ? event.description.trim()
-    : 'Experience this curated event featuring emerging talent, intimate energy, and a carefully designed atmosphere for fans.');
-  const hasLongSummary = summaryText.length > 140;
+    : null;
+  const summaryText = event.summary && event.summary.trim().length > 0
+    ? event.summary.trim()
+    : descriptionText ??
+      'Experience this curated event featuring emerging talent, intimate energy, and a carefully designed atmosphere for fans.';
+  const summaryWordCount = summaryText.trim().split(/\s+/).length;
+  const hasLongSummary = summaryText.length > 220 || summaryWordCount > 40;
 
   const cheapestTicket = tickets.reduce<EventTicket | null>((cheapest, ticket) => {
     if (cheapest === null) return ticket;
@@ -403,6 +517,19 @@ const EventDetail = () => {
     : cheapestTicket
     ? formatTicketPrice(cheapestTicket.price, cheapestTicket.currency)
     : 'Free';
+  const hasAnnouncedLocation = locationLabel !== 'Location to be announced';
+  const mapQuery = hasAnnouncedLocation ? encodeURIComponent(locationLabel) : null;
+  const mapStyleQuery = GOOGLE_MAP_STYLE_PARAMS.map((param) => `style=${encodeURIComponent(param)}`).join('&');
+  const mapSrc = mapQuery
+    ? `https://maps.google.com/maps?q=${mapQuery}&z=14&output=embed${mapStyleQuery ? `&${mapStyleQuery}` : ''}`
+    : null;
+  const fallbackTicket: EventTicket = {
+    id: `${event.id}-free-pass`,
+    label: 'Complimentary Access',
+    price: 0,
+    currency: cheapestTicket?.currency ?? null,
+  };
+  const ticketsToDisplay = tickets.length > 0 ? tickets : [fallbackTicket];
 
   return (
     <div className="min-h-screen bg-[#07080c] text-white">
@@ -438,46 +565,20 @@ const EventDetail = () => {
                 <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
                   {event.title ?? 'Untitled Event'}
                 </h1>
-                <div className="space-y-2">
-                  <p
-                    className="text-white/70 text-base sm:text-lg"
-                    style={
-                      hasLongSummary && !isSummaryExpanded
-                        ? {
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          }
-                        : undefined
-                    }
-                  >
-                    {summaryText}
-                  </p>
-                  {hasLongSummary && (
-                    <button
-                      type="button"
-                      onClick={() => setIsSummaryExpanded((prev) => !prev)}
-                      className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60 transition hover:text-white"
-                    >
-                      {isSummaryExpanded ? 'Show Less' : 'Read More'}
-                    </button>
-                  )}
-                </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-2.5 text-white/80">
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
-                  <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Date</span>
-                  <span className="font-medium text-white">{startDate}</span>
+              <div className="mt-5 flex flex-wrap items-center gap-3 text-white/85">
+                <span className="inline-flex items-center rounded-full border border-white/8 bg-white/10 px-3.5 py-1.5 text-xs sm:text-sm">
+                  <span className="mr-2 uppercase tracking-[0.16em] text-white/55">Date</span>
+                  <span className="text-sm font-semibold text-white">{startDate}</span>
                 </span>
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
-                  <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Time</span>
-                  <span className="font-medium text-white">{timeRange}</span>
+                <span className="inline-flex items-center rounded-full border border-white/8 bg-white/10 px-3.5 py-1.5 text-xs sm:text-sm">
+                  <span className="mr-2 uppercase tracking-[0.16em] text-white/55">Time</span>
+                  <span className="text-sm font-semibold text-white">{timeRange}</span>
                 </span>
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] sm:text-xs">
-                  <span className="mr-1.5 uppercase tracking-[0.14em] text-white/50">Location</span>
-                  <span className="font-medium text-white">{locationLabel}</span>
+                <span className="inline-flex items-center rounded-full border border-white/8 bg-white/10 px-3.5 py-1.5 text-xs sm:text-sm">
+                  <span className="mr-2 uppercase tracking-[0.16em] text-white/55">Location</span>
+                  <span className="text-sm font-semibold text-white">{locationLabel}</span>
                 </span>
               </div>
 
@@ -518,101 +619,262 @@ const EventDetail = () => {
 
       <div className="bg-gray-50 text-gray-900">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.6fr),minmax(0,0.9fr)]">
-            <section className="space-y-10">
-              <div className="rounded-3xl border border-gray-200 bg-white p-8 shadow-sm">
-                <h2 className="text-2xl font-semibold text-gray-900">Event Overview</h2>
-                <p className="mt-4 text-gray-600 leading-relaxed whitespace-pre-line">
-                  {event.description ??
-                    'Details for this event will be announced soon. Check back for artist information, special experiences, and key updates as we prepare the perfect show.'}
-                </p>
-              </div>
+          <div className="space-y-24">
+            <section className="space-y-4">
+              <h3 className="text-2xl font-bold text-gray-900">About Event</h3>
+              <p
+                className="text-[20px] text-gray-600 leading-relaxed whitespace-pre-line"
+                style={
+                  hasLongSummary && !isSummaryExpanded
+                    ? {
+                        display: '-webkit-box',
+                        WebkitLineClamp: 4,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }
+                    : undefined
+                }
+              >
+                {summaryText}
+              </p>
+              {hasLongSummary && (
+                <button
+                  type="button"
+                  onClick={() => setIsSummaryExpanded((prev) => !prev)}
+                  className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 transition hover:text-gray-800"
+                >
+                  {isSummaryExpanded ? 'Show Less' : 'Read More'}
+                </button>
+              )}
+            </section>
 
-              <div className="rounded-3xl border border-gray-200 bg-white p-8 shadow-sm">
-                <h3 className="text-xl font-semibold text-gray-900">Schedule & Logistics</h3>
-                <div className="mt-6 space-y-5">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-sm uppercase tracking-[0.28em] text-gray-400">Doors Open</span>
-                    <span className="text-base font-medium text-gray-900">{formatDate(event.start_time, false)}</span>
+            <section className="space-y-6">
+              <h3 className="text-2xl font-bold text-gray-900">Location</h3>
+              <p className="text-[20px] text-gray-600 leading-relaxed">
+                {hasAnnouncedLocation
+                  ? `Join us at ${locationLabel}.`
+                  : 'Venue details will be shared once the location is confirmed.'}
+              </p>
+              <div className="relative">
+                <div
+                  className="pointer-events-none absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-gray-900/12 via-gray-900/6 to-transparent shadow-[0_36px_80px_rgba(7,8,12,0.18)]"
+                  aria-hidden="true"
+                />
+                <div className="relative h-[28rem] overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-3xl border border-gray-900/8"
+                    aria-hidden="true"
+                  />
+                  {mapSrc ? (
+                    <iframe
+                      title={`Map showing ${locationLabel}`}
+                      src={mapSrc}
+                      className="absolute inset-0 h-full w-full"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-center text-sm text-white/70">
+                      <MapPin className="h-6 w-6 text-white/60" />
+                      <p>Map preview will appear once the venue is finalized.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {organizerProfile && (
+              <section className="space-y-4">
+                <h3 className="text-2xl font-bold text-gray-900">Organized by</h3>
+                <div className="flex flex-col gap-8 rounded-[2.5rem] border border-gray-200 px-8 py-8 min-h-[14rem] sm:flex-row sm:items-center sm:justify-between sm:gap-8 sm:px-12 sm:py-10">
+                  <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
+                    <div className="relative h-32 w-32 overflow-hidden rounded-full bg-gray-100">
+                      {organizerProfile.avatar_url && !organizerAvatarError ? (
+                        <img
+                          src={organizerProfile.avatar_url}
+                          alt={organizerProfile.username ?? organizerProfile.full_name ?? 'Event host'}
+                          className="h-full w-full object-cover"
+                          onError={() => setOrganizerAvatarError(true)}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-lg font-semibold text-gray-500">
+                          {getInitials(organizerProfile.full_name ?? organizerProfile.username ?? 'Event Host')}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1 text-center sm:text-left">
+                      <span className="text-2xl font-bold text-gray-900">
+                        {organizerProfile.full_name ?? organizerProfile.username ?? 'Event Host'}
+                      </span>
+                      {organizerProfile.username && organizerProfile.full_name && (
+                        <span className="text-base text-gray-500">@{organizerProfile.username}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-sm uppercase tracking-[0.28em] text-gray-400">Showtime</span>
-                    <span className="text-base font-medium text-gray-900">{timeRange}</span>
+                  <Link
+                    to={manageUrl}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-black sm:w-auto"
+                  >
+                    <span>Manage Event</span>
+                  </Link>
+                </div>
+              </section>
+            )}
+
+            <section className="space-y-6">
+              <h3 className="text-2xl font-bold text-gray-900">Event Overview</h3>
+              <div className="space-y-6">
+                <div className="flex items-center gap-3">
+                  <Clock className="h-6 w-6 text-gray-900" />
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-gray-400">Showtime</p>
+                    <p className="text-sm font-semibold text-gray-900">{timeRange}</p>
                   </div>
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-sm uppercase tracking-[0.28em] text-gray-400">Venue</span>
-                    <span className="text-base font-medium text-gray-900">{locationLabel}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <MapPin className="h-6 w-6 text-gray-900" />
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-gray-400">Venue</p>
+                    <p className="text-sm font-semibold text-gray-900 leading-snug">{locationLabel}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Ticket className="h-6 w-6 text-gray-900" />
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-gray-400">Tickets</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {ticketPriceLabel === 'Free' ? 'Free event' : `From ${ticketPriceLabel}`}
+                    </p>
+                    <p className="text-xs text-gray-500">Secure your spot early to avoid missing out.</p>
                   </div>
                 </div>
               </div>
             </section>
 
-            <aside className="space-y-8">
-              <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">Ticket Options</h3>
-                  <Ticket className="h-5 w-5 text-gray-400" />
+            <section className="space-y-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-bold text-gray-900">Tickets</h3>
+                  <p className="text-[20px] text-gray-500">Preview available passes and their current availability.</p>
                 </div>
-                <div className="mt-4 space-y-3">
-                  {tickets.length === 0 && (
-                    <p className="text-sm text-gray-500">Tickets have not been published yet.</p>
-                  )}
-                  {tickets.map((ticket) => (
-                    <div key={ticket.id} className="flex items-center justify-between rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
-                      <span className="text-sm font-medium text-gray-900">{ticket.label}</span>
-                      <span className="text-sm font-semibold text-gray-700">{formatTicketPrice(ticket.price, ticket.currency)}</span>
-                    </div>
-                  ))}
+                <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                  <Ticket className="h-4 w-4 text-gray-400" />
+                  {tickets.length > 0 ? `${tickets.length} option${tickets.length > 1 ? 's' : ''}` : 'Coming soon'}
                 </div>
               </div>
 
-              {relatedEvents.length > 0 && (
-                <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-gray-900">More from this host</h3>
-                  <div className="mt-5 space-y-4">
-                    {relatedEvents.map((item) => (
+              <div className="grid gap-6 sm:grid-cols-2">
+                {ticketsToDisplay.map((ticket, index) => {
+                    const availabilityStatus = deriveAvailabilityStatus(ticket, index);
+                    const badgeClasses = AVAILABILITY_BADGE_CLASSES[availabilityStatus];
+                    const benefits = deriveTicketBenefits(ticket);
+
+                    return (
+                      <div key={ticket.id} className="group relative min-h-[15rem] [perspective:1600px]">
+                        <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
+                          <div className="absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border border-gray-200 bg-gradient-to-br from-blue-50/70 via-white/80 to-blue-100/60 px-6 py-6 backdrop-blur-sm shadow-[0_18px_40px_rgba(15,23,42,0.08)] [backface-visibility:hidden]">
+                            <span className="pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border border-gray-200 bg-gray-50" aria-hidden="true" />
+                            <span className="pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-gray-300" aria-hidden="true" />
+                            <span className="pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-gray-300" aria-hidden="true" />
+                            <div className="relative z-10 flex items-start justify-between gap-3">
+                              <div className="space-y-1.5">
+                                <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Ticket Type</p>
+                                <p className="text-lg font-semibold text-gray-900">{ticket.label}</p>
+                              </div>
+                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${badgeClasses}`}>
+                                {availabilityStatus}
+                              </span>
+                            </div>
+                            <div className="relative z-10 mt-6 flex items-baseline justify-between">
+                              <span className="text-3xl font-bold text-gray-900">
+                                {ticket.price === 0 ? 'Free' : formatTicketPrice(ticket.price, ticket.currency)}
+                              </span>
+                              <span className="text-xs uppercase tracking-[0.24em] text-gray-400">Per guest</span>
+                            </div>
+                          </div>
+
+                          <div className="absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border border-blue-400 bg-gradient-to-br from-slate-900/95 via-indigo-900/85 to-blue-900/80 px-6 py-6 text-white shadow-[0_22px_60px_rgba(8,15,40,0.45)] [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                            <span className="pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border border-blue-500/40 bg-slate-900/70" aria-hidden="true" />
+                            <span className="pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-blue-500/40" aria-hidden="true" />
+                            <span className="pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-blue-500/40" aria-hidden="true" />
+
+                            <div className="relative z-10 space-y-4">
+                              <div className="space-y-2">
+                                <p className="text-xs uppercase tracking-[0.32em] text-blue-200/80">Access & Benefits</p>
+                                <ul className="space-y-2 text-sm text-white/85">
+                                  {benefits.map((benefit) => (
+                                    <li key={benefit} className="flex items-start gap-2">
+                                      <span className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-blue-300" />
+                                      <span className="leading-snug">{benefit}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+
+                            <div className="relative z-10 mt-4 flex items-center justify-between">
+                              <span className="text-xl font-semibold text-white/90">
+                                {ticket.price === 0 ? 'Free' : formatTicketPrice(ticket.price, ticket.currency)}
+                              </span>
+                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${badgeClasses}`}>
+                                {availabilityStatus}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                })}
+              </div>
+            </section>
+
+            {relatedEvents.length > 0 && (
+              <section className="space-y-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900">More Events</h3>
+                </div>
+
+                <div className="overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="grid auto-cols-[minmax(18rem,20.5rem)] grid-flow-col gap-x-6 md:gap-x-8 pr-4">
+                    {relatedEvents.map((item, index) => (
                       <Link
                         key={item.id}
                         to={`/events/${item.id}`}
-                        className="group flex items-center justify-between gap-4 rounded-2xl border border-gray-100 px-4 py-3 transition hover:border-gray-200 hover:bg-gray-50"
+                        className="group flex w-full min-w-[18rem] flex-col gap-3 transition-transform duration-300 hover:-translate-y-1"
                       >
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900 group-hover:text-black">
+                        <div className="relative aspect-square overflow-hidden rounded-[1.5rem]">
+                          {item.cover_image && !failedImageIds.has(item.id) ? (
+                            <img
+                              src={item.cover_image}
+                              alt={item.title ?? 'Related event cover'}
+                              className="h-full w-full object-cover transition duration-700 ease-out group-hover:scale-105"
+                              loading="lazy"
+                              onError={() => setFailedImageIds((prev) => new Set(prev).add(item.id))}
+                            />
+                          ) : (
+                            <div
+                              className={`flex h-full w-full items-center justify-center rounded-[1.5rem] bg-gradient-to-br ${PLACEHOLDER_GRADIENTS[index % PLACEHOLDER_GRADIENTS.length]} p-6`}
+                            >
+                              <img src={amptiveLogo} alt="Amptive" className="h-16 w-auto opacity-85 drop-shadow-[0_6px_18px_rgba(15,23,42,0.35)]" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <p className="text-lg font-semibold text-gray-900 group-hover:text-black">
                             {item.title ?? 'Untitled Event'}
                           </p>
-                          <p className="text-xs text-gray-500">
-                            {formatShortDate(item.start_time)} · {buildLocationLabel(item.venue, item.city)}
+                          <p className="text-sm text-gray-500">
+                            {buildLocationLabel(item.venue, item.city)}
                           </p>
                         </div>
-                        <span className="text-gray-300 transition group-hover:text-gray-500">→</span>
                       </Link>
                     ))}
                   </div>
                 </div>
-              )}
+              </section>
+            )}
 
-              <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900">Need edits?</h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Jump back into the event manager to update details, adjust ticketing, or share new dates.
-                </p>
-                <div className="mt-4 flex gap-2">
-                  <Link
-                    to={manageUrl}
-                    className="flex-1 rounded-full border border-gray-200 bg-gray-900 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-black"
-                  >
-                    Manage Event
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={handleShare}
-                    className="inline-flex items-center justify-center rounded-full border border-gray-200 px-3 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100"
-                  >
-                    <Share2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </aside>
           </div>
         </div>
       </div>

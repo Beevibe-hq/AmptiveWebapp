@@ -1,18 +1,22 @@
 import { Link } from 'react-router-dom';
 import { Apple, Play } from 'lucide-react';
-
+import { useTheme } from '@/contexts/ThemeContext';
 
 const Footer = () => {
+  const { dominantColor } = useTheme();
+
   return (
-    <footer className="bg-white w-full">
+    <footer
+      className="w-full bg-transparent"
+    >
       <div className="w-[95vw] mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 lg:pt-16 lg:pb-12">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 md:gap-8">
           {/* Brand - Only logo */}
           <div className="flex items-start lg:col-span-4 min-h-0 lg:min-h-[240px] pb-6 md:pb-0">
             <div className="flex items-center">
-              <img 
-                src="/amptive_logotype.svg" 
-                alt="Amptive Logo" 
+              <img
+                src="/amptive_logotype.svg"
+                alt="Amptive Logo"
                 className="h-16 w-auto invert-[100%]"
               />
             </div>
@@ -62,7 +66,7 @@ const Footer = () => {
             </a>
             <a href="https://play.google.com" className="text-gray-600 hover:text-gray-900 transition-colors" aria-label="Google Play Store">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 40 40" fill="currentColor" className="transform scale-125">
-                <path d="M10.09,8a1.94,1.94,0,0,1,1.28.28l13,7.39L21.08,19Zm-1,1A2.31,2.31,0,0,0,9,9.67V30.33a2.31,2.31,0,0,0,.09.67l11-11Zm12,12-11,11a1.88,1.88,0,0,0,1.28-.28l13-7.39Zm8.52-2.34-3.94-2.24L22.07,20l3.59,3.59,3.94-2.24C30.9,20.61,30.9,19.39,29.6,18.65Z"/>
+                <path d="M10.09,8a1.94,1.94,0,0,1,1.28.28l13,7.39L21.08,19Zm-1,1A2.31,2.31,0,0,0,9,9.67V30.33a2.31,2.31,0,0,0,.09.67l11-11Zm12,12-11,11a1.88,1.88,0,0,0,1.28-.28l13-7.39Zm8.52-2.34-3.94-2.24L22.07,20l3.59,3.59,3.94-2.24C30.9,20.61,30.9,19.39,29.6,18.65Z" />
               </svg>
             </a>
             <a href="https://x.com/amptive" className="text-gray-600 hover:text-gray-900 transition-colors" aria-label="X (Twitter)">

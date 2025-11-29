@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Homepage from './pages/Homepage';
 import Events from './pages/Events';
+import CreateEvent from './pages/CreateEvent';
 import EventDetail from './pages/EventDetail';
 import Invest from './pages/Invest';
 import Shop from './pages/Shop';
@@ -20,14 +21,18 @@ import OAuthCallback from './pages/OAuthCallback';
 import ProfilePage from './pages/ProfilePage';
 import { Toaster } from 'sonner';
 
+import { ThemeProvider } from './contexts/ThemeContext';
+
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="*" element={<MainLayout />} />
-      </Routes>
-      <Toaster position="top-center" richColors closeButton expand={false} />
-    </Router>
+    <ThemeProvider>
+      <Router>
+        <Routes>
+          <Route path="*" element={<MainLayout />} />
+        </Routes>
+        <Toaster position="top-center" richColors closeButton expand={false} />
+      </Router>
+    </ThemeProvider>
   );
 }
 
@@ -49,6 +54,7 @@ function MainLayout() {
         <Routes>
           <Route path="/" element={<Homepage />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/events/create" element={<CreateEvent />} />
           <Route path="/events/:id" element={<EventDetail />} />
           <Route path="/invest" element={<Invest />} />
           <Route path="/shop" element={<Shop />} />

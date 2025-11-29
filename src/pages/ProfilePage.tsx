@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
 import { ProfileRow, getProfileById, updateProfileAvatar } from '@/lib/supabase/profiles';
 import { extractDominantColors } from '@/utils/colorExtractor';
+import amptiveLogo from '@/assets/amptivelogo.svg';
 
 type DatabaseEventRow = {
   id: string;
@@ -25,7 +26,7 @@ type EventCardData = {
   dateLabel: string;
   startTimeLabel: string;
   locationLabel: string;
-  coverImage: string;
+  coverImage: string | null;
   detailsUrl: string;
   manageUrl: string;
   tickets: EventTicket[];
@@ -34,7 +35,12 @@ type EventCardData = {
   status: EventStatus;
 };
 
-const defaultEventCover = 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp';
+const CARD_PLACEHOLDER_GRADIENTS = [
+  'from-[#2d1b69] via-[#312558] to-[#10142a]',
+  'from-[#0f172a] via-[#1e293b] to-[#111827]',
+  'from-[#1b1a55] via-[#2d3a8c] to-[#0b172d]',
+  'from-[#2f2346] via-[#3b1d6b] to-[#120c1f]',
+];
 
 const formatEventDateLabel = (iso?: string | null) => {
   if (!iso) return 'Date to be announced';
@@ -131,7 +137,7 @@ const mapEventRows = (
         dateLabel: formatEventDateLabel(row.start_time),
         startTimeLabel,
         locationLabel: buildLocationLabel(row.venue, row.city),
-        coverImage: row.cover_image ?? defaultEventCover,
+        coverImage: row.cover_image ?? null,
         detailsUrl: row.details_url ?? `/events/${row.id}`,
         manageUrl: row.manage_url ?? `/events/manage/${row.id}`,
         tickets: ticketMap[row.id] ?? [],
@@ -163,6 +169,7 @@ const ProfilePage = () => {
     return window.matchMedia('(max-width: 639px)').matches;
   });
   const pastCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [failedCardImageIds, setFailedCardImageIds] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
   const supabase = createClient();
   const loadEvents = useCallback(
@@ -259,7 +266,7 @@ const ProfilePage = () => {
     },
     [supabase]
   );
-  
+
   // Load profile data
   useEffect(() => {
     let cancelled = false;
@@ -287,7 +294,7 @@ const ProfilePage = () => {
     loadProfile();
     return () => { cancelled = true; };
   }, [user?.id]);
-  
+
   // Update profile when avatar URL changes (only if it's a new URL)
   useEffect(() => {
     let cancelled = false;
@@ -398,14 +405,14 @@ const ProfilePage = () => {
       const multipleTickets = event.tickets.length > 1;
       const minPricedTicket = hasTickets
         ? event.tickets.reduce((lowest, current) => {
-            const currentPrice = typeof current.price === 'number' ? current.price : Number(current.price);
-            if (!lowest) return current;
-            const lowestPrice = typeof lowest.price === 'number' ? lowest.price : Number(lowest.price);
-            if (Number.isNaN(lowestPrice) || currentPrice < lowestPrice) {
-              return current;
-            }
-            return lowest;
-          }, event.tickets[0])
+          const currentPrice = typeof current.price === 'number' ? current.price : Number(current.price);
+          if (!lowest) return current;
+          const lowestPrice = typeof lowest.price === 'number' ? lowest.price : Number(lowest.price);
+          if (Number.isNaN(lowestPrice) || currentPrice < lowestPrice) {
+            return current;
+          }
+          return lowest;
+        }, event.tickets[0])
         : null;
       const singleTicket = hasTickets && !multipleTickets ? minPricedTicket : null;
 
@@ -444,15 +451,15 @@ const ProfilePage = () => {
       const baseZ = options?.stacked ? (options.total ?? 0) - (options.index ?? 0) : 0;
       const wrapperStyle = options?.stacked
         ? {
-            zIndex: options?.hovered ? (options.total ?? 0) + 10 : baseZ,
-            marginTop:
-              options?.hovered && (options.index ?? 0) > 0
-                ? (options.index ?? 0) === 1
-                  ? '-4.5rem'
-                  : '-4rem'
-                : undefined,
-            transition: 'margin-top 320ms ease, transform 320ms ease',
-          }
+          zIndex: options?.hovered ? (options.total ?? 0) + 10 : baseZ,
+          marginTop:
+            options?.hovered && (options.index ?? 0) > 0
+              ? (options.index ?? 0) === 1
+                ? '-4.5rem'
+                : '-4rem'
+              : undefined,
+          transition: 'margin-top 320ms ease, transform 320ms ease',
+        }
         : undefined;
       const stackedShadowStrength = options?.stacked
         ? options?.hovered
@@ -464,21 +471,26 @@ const ProfilePage = () => {
           ? 1
           : Math.max(0.88, 1 - (options.index ?? 0) * 0.04)
         : 1;
-      const blurAmount = options?.stacked && !options?.hovered
-        ? (options.index ?? 0) === 1
-          ? 4
-          : (options.index ?? 0) >= 2
-          ? 7
-          : 0
-        : 0;
+      const blurAmount = (() => {
+        if (!options?.stacked || options?.hovered) return 0;
+        const idx = options.index ?? 0;
+        if (isMobileView) {
+          if (idx === 0) return 6;
+          if (idx === 1) return 9;
+          return 12;
+        }
+        if (idx === 0) return 0;
+        if (idx === 1) return 4;
+        return 7;
+      })();
       const cardStyle = options?.stacked
         ? {
-            boxShadow: `0 18px 40px rgba(15,23,42,${stackedShadowStrength!.toFixed(2)})`,
-            transform: `scale(${stackedScale.toFixed(2)})`,
-            transformOrigin: 'top center',
-            filter: blurAmount ? `blur(${blurAmount}px)` : 'none',
-            transition: 'transform 320ms ease, box-shadow 320ms ease, filter 240ms ease',
-          }
+          boxShadow: `0 18px 40px rgba(15,23,42,${stackedShadowStrength!.toFixed(2)})`,
+          transform: `scale(${stackedScale.toFixed(2)})`,
+          transformOrigin: 'top center',
+          filter: blurAmount ? `blur(${blurAmount}px)` : 'none',
+          transition: 'transform 320ms ease, box-shadow 320ms ease, filter 240ms ease',
+        }
         : undefined;
 
       return (
@@ -586,12 +598,28 @@ const ProfilePage = () => {
                 )}
               </div>
               <div className="flex-shrink-0 self-start sm:self-start">
-                <div className="relative aspect-square w-20 sm:w-24 md:w-28 lg:w-32 overflow-hidden rounded-xl bg-white">
-                  <img
-                    src={event.coverImage}
-                    alt={event.title}
-                    className={`h-full w-full object-cover ${isPast ? 'grayscale' : ''}`}
-                  />
+                <div className="relative aspect-square w-20 sm:w-24 md:w-28 lg:w-32 overflow-hidden rounded-xl">
+                  {event.coverImage && !failedCardImageIds.has(event.id) ? (
+                    <img
+                      src={event.coverImage}
+                      alt={event.title}
+                      className={`h-full w-full object-cover ${isPast ? 'grayscale' : ''}`}
+                      loading="lazy"
+                      onError={() =>
+                        setFailedCardImageIds((previous) => {
+                          const next = new Set(previous);
+                          next.add(event.id);
+                          return next;
+                        })
+                      }
+                    />
+                  ) : (
+                    <div
+                      className={`flex h-full w-full items-center justify-center rounded-xl bg-gradient-to-br ${CARD_PLACEHOLDER_GRADIENTS[(options?.index ?? 0) % CARD_PLACEHOLDER_GRADIENTS.length]} ${isPast ? 'opacity-90' : ''}`}
+                    >
+                      <img src={amptiveLogo} alt="Amptive" className="h-10 w-auto opacity-85 drop-shadow-[0_4px_14px_rgba(15,23,42,0.35)]" />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -607,11 +635,11 @@ const ProfilePage = () => {
   // Deterministic emoji avatar fallback
   const seed = (user?.user_metadata?.username || user?.email || 'guest').toLowerCase();
   const emojiSet = useMemo(
-    () => ['😀','😎','🤠','🦄','🐼','🐸','🐯','🐵','🐧','🐰','🐨','🦊','🐙','🐳','🐝','🐢','🐞','🌸','🌼','🍀','🍉','🍓','🍍','⚡','⭐','🌙','☀️','🔥','🎧','🎨','🎯','🚀','🧠','💎','💜','💛','💚','💙','🧸'],
+    () => ['😀', '😎', '🤠', '🦄', '🐼', '🐸', '🐯', '🐵', '🐧', '🐰', '🐨', '🦊', '🐙', '🐳', '🐝', '🐢', '🐞', '🌸', '🌼', '🍀', '🍉', '🍓', '🍍', '⚡', '⭐', '🌙', '☀️', '🔥', '🎧', '🎨', '🎯', '🚀', '🧠', '💎', '💜', '💛', '💚', '💙', '🧸'],
     []
   );
   const bgSet = useMemo(
-    () => ['#FDE68A','#FFEDD5','#E9D5FF','#DBEAFE','#DCFCE7','#FCE7F3','#FFE4E6','#F3E8FF','#E0E7FF','#D1FAE5'],
+    () => ['#FDE68A', '#FFEDD5', '#E9D5FF', '#DBEAFE', '#DCFCE7', '#FCE7F3', '#FFE4E6', '#F3E8FF', '#E0E7FF', '#D1FAE5'],
     []
   );
   const hash = useMemo(() => {
@@ -689,7 +717,11 @@ const ProfilePage = () => {
   }, [pastEvents.length]);
 
   useEffect(() => {
-    if (!isMobileView || displayedPastEvents.length === 0) return;
+    if (displayedPastEvents.length === 0) return;
+    if (isMobileView) {
+      setHoveredPastCard(null);
+      return;
+    }
     setHoveredPastCard((current) => {
       if (current && displayedPastEvents.some((event) => event.id === current)) {
         return current;
@@ -706,23 +738,28 @@ const ProfilePage = () => {
     const evaluate = () => {
       frameRequested = false;
       let bestId: string | null = null;
-      let bestRatio = 0;
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+      const viewportCenter = viewportHeight / 2;
 
       displayedPastEvents.forEach((event) => {
         const node = pastCardRefs.current.get(event.id);
         if (!node) return;
         const rect = node.getBoundingClientRect();
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
-        const visibleHeight = Math.max(0, Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0));
-        const ratio = rect.height > 0 ? visibleHeight / rect.height : 0;
-        if (ratio > bestRatio + 0.05) {
-          bestRatio = ratio;
+        if (rect.bottom <= 0 || rect.top >= viewportHeight) return;
+        const cardCenter = rect.top + rect.height / 2;
+        const distance = Math.abs(cardCenter - viewportCenter);
+        if (distance < bestDistance) {
+          bestDistance = distance;
           bestId = event.id;
         }
       });
 
-      if (bestId && bestRatio > 0) {
-        setHoveredPastCard(bestId);
+      if (bestId && bestDistance < viewportHeight * 0.28) {
+        setHoveredPastCard((current) => (current === bestId ? current : bestId));
+      } else {
+        setHoveredPastCard((current) => (current && displayedPastEvents.some((event) => event.id === current) ? current : null));
       }
     };
 
@@ -808,7 +845,7 @@ const ProfilePage = () => {
     return (
       <div className="min-h-screen bg-white">
         {/* Blur Background */}
-        <div 
+        <div
           className="fixed inset-0 -z-10"
           style={{
             backdropFilter: 'blur(140px)',
@@ -866,7 +903,7 @@ const ProfilePage = () => {
   return (
     <div className="min-h-screen bg-white">
       {/* Blur Background */}
-      <div 
+      <div
         className="fixed inset-0 -z-10"
         style={{
           backdropFilter: 'blur(140px)',
@@ -880,254 +917,176 @@ const ProfilePage = () => {
       {topTintStyle && (
         <div className="fixed top-0 left-0 right-0 h-80 md:h-96 lg:h-[28rem] z-0 pointer-events-none" style={topTintStyle}></div>
       )}
-      
+
       {/* Content */}
       <div className="relative z-10 w-full pl-3 pr-4 pt-20 pb-8">
         {/* Profile Header */}
         <div className="px-4 py-8 sm:px-8 sm:py-10 text-center">
-            <div className="mx-auto h-64 w-64 md:h-80 md:w-80 rounded-full overflow-hidden shadow-xl bg-white" style={avatarShadowStyle}>
-              {loading ? (
-                <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
-              ) : uploadedAvatar && !imgError ? (
-                <img
-                  src={uploadedAvatar}
-                  alt={user?.email || 'User'}
-                  className="w-full h-full object-cover"
-                  onLoad={() => setLoading(false)}
-                  onError={() => {
-                    setImgError(true);
-                    setLoading(false);
-                  }}
-                />
-              ) : (
-                <div 
-                  className="w-full h-full flex items-center justify-center text-9xl"
-                  style={{ backgroundColor: emojiBg }}
-                >
-                  {emoji}
-                </div>
-              )}
-            </div>
-            <h1 className="w-full font-bold text-black text-center whitespace-nowrap overflow-visible mt-3 md:mt-1 text-[40px] md:text-[92px]" style={{ fontWeight: 700, color: '#000000' }}>
-              {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
-            </h1>
-            <p className="mt-1 text-gray-600 text-center">@{profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</p>
-            <div className="mt-7 flex flex-row flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/profile/edit')}
-                className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold border border-gray-300 hover:bg-gray-100 transition-all duration-200"
+          <div className="mx-auto h-64 w-64 md:h-80 md:w-80 rounded-full overflow-hidden shadow-xl bg-white" style={avatarShadowStyle}>
+            {loading ? (
+              <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
+            ) : uploadedAvatar && !imgError ? (
+              <img
+                src={uploadedAvatar}
+                alt={user?.email || 'User'}
+                className="w-full h-full object-cover"
+                onLoad={() => setLoading(false)}
+                onError={() => {
+                  setImgError(true);
+                  setLoading(false);
+                }}
+              />
+            ) : (
+              <div
+                className="w-full h-full flex items-center justify-center text-9xl"
+                style={{ backgroundColor: emojiBg }}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="1.5"
-                  stroke="currentColor"
-                  className="w-4 h-4"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-                  />
-                </svg>
-                Edit Profile
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/events/create')}
-                className="bg-black text-white px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold hover:bg-gray-900 transition-all duration-200"
-              >
-                Create Event
-              </button>
-            </div>
-
-            <div className="mt-20">
-                <div className="flex flex-row flex-wrap items-center justify-between gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-[20px] font-bold text-gray-900 whitespace-nowrap sm:text-[24px]">Events</span>
-                <div className="flex items-center space-x-4 overflow-x-auto sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setActiveEventTab('upcoming')}
-                    className={`px-4 py-2 rounded-full border text-sm font-semibold transition whitespace-nowrap ${
-                      activeEventTab === 'upcoming'
-                        ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
-                        : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
-                    }`}
-                  >
-                    Upcoming
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveEventTab('past')}
-                    className={`px-4 py-2 rounded-full border text-sm font-semibold transition whitespace-nowrap ${
-                      activeEventTab === 'past'
-                        ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
-                        : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
-                    }`}
-                  >
-                    Past
-                  </button>
-                </div>
+                {emoji}
               </div>
+            )}
+          </div>
+          <h1 className="w-full font-bold text-black text-center whitespace-nowrap overflow-visible mt-3 md:mt-1 text-[40px] md:text-[92px]" style={{ fontWeight: 700, color: '#000000' }}>
+            {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+          </h1>
+          <p className="mt-1 text-gray-600 text-center">@{profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</p>
+          <div className="mt-7 flex flex-row flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/profile/edit')}
+              className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold border border-gray-300 hover:bg-gray-100 transition-all duration-200"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="1.5"
+                stroke="currentColor"
+                className="w-4 h-4"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
+                />
+              </svg>
+              Edit Profile
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/events/create')}
+              className="bg-black text-white px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold hover:bg-gray-900 transition-all duration-200"
+            >
+              Create Event
+            </button>
+          </div>
 
-              <div className="mt-6">
-                {activeEventTab === 'upcoming' && (
-                  upcomingEvents.length > 0 ? (
-                    <div className="grid gap-6 lg:grid-cols-2">
-                      {upcomingEvents.map(renderEventCard)}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">
-                      <div className="mx-auto mb-4 text-4xl">😮</div>
-                      <h3 className="text-lg font-semibold text-gray-700">No upcoming events</h3>
-                      <p className="mt-2 text-sm">Create your first event to share it with your audience.</p>
-                      <button
-                        type="button"
-                        onClick={() => navigate('/events/create')}
-                        className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-black rounded-full hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
-                      >
-                        <span>Create event</span>
-                      </button>
-                    </div>
-                  )
-                )}
+          <div className="mt-20">
+            <div className="flex flex-row flex-wrap items-center justify-between gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-[20px] font-bold text-gray-900 whitespace-nowrap sm:text-[24px]">Events</span>
+              <div className="flex items-center space-x-4 overflow-x-auto sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setActiveEventTab('upcoming')}
+                  className={`px-4 py-2 rounded-full border text-sm font-semibold transition whitespace-nowrap ${activeEventTab === 'upcoming'
+                      ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
+                      : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
+                    }`}
+                >
+                  Upcoming
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveEventTab('past')}
+                  className={`px-4 py-2 rounded-full border text-sm font-semibold transition whitespace-nowrap ${activeEventTab === 'past'
+                      ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
+                      : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
+                    }`}
+                >
+                  Past
+                </button>
+              </div>
+            </div>
 
-                {activeEventTab === 'past' && (
-                  pastEvents.length > 0 ? (
-                    <>
-                      <div
-                        className={`relative flex flex-col items-stretch gap-4 sm:gap-0 sm:items-center transition-opacity duration-200 ease-in-out ${
-                          pastFadeState === 'out'
-                            ? 'opacity-0'
-                            : pastFadeState === 'in'
+            <div className="mt-6">
+              {activeEventTab === 'upcoming' && (
+                upcomingEvents.length > 0 ? (
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {upcomingEvents.map(renderEventCard)}
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">
+                    <div className="mx-auto mb-4 text-4xl">😮</div>
+                    <h3 className="text-lg font-semibold text-gray-700">No upcoming events</h3>
+                    <p className="mt-2 text-sm">Create your first event to share it with your audience.</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/events/create')}
+                      className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-black rounded-full hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
+                    >
+                      <span>Create event</span>
+                    </button>
+                  </div>
+                )
+              )}
+
+              {activeEventTab === 'past' && (
+                pastEvents.length > 0 ? (
+                  <>
+                    <div
+                      className={`relative flex flex-col items-stretch gap-4 sm:gap-0 sm:items-center transition-opacity duration-200 ease-in-out ${pastFadeState === 'out'
+                          ? 'opacity-0'
+                          : pastFadeState === 'in'
                             ? 'opacity-100'
                             : 'opacity-100'
                         }`}
-                      >
-                        {displayedPastEvents.map((event, index) =>
-                          renderEventCard(event, {
-                            stacked: isPastStackingEnabled,
-                            index,
-                            total: displayedPastEvents.length,
-                            hovered: isPastStackingEnabled && hoveredPastCard === event.id,
-                            onHoverStart: isPastStackingEnabled ? () => setHoveredPastCard(event.id) : undefined,
-                            onHoverEnd: isPastStackingEnabled
-                              ? () =>
-                                  setHoveredPastCard((current) => (current === event.id ? null : current))
-                              : undefined,
-                            setNode: registerPastCardRef(event.id),
-                          })
-                        )}
-                      </div>
-                      {pastEvents.length > PAST_BATCH_SIZE && (
-                        <div className="mt-6 flex justify-center">
-                          <button
-                            type="button"
-                            onClick={handlePastViewMore}
-                            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white"
-                          >
-                            {pastOffset + PAST_BATCH_SIZE >= pastEvents.length ? 'Back to First Events' : 'View More'}
-                            <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              {pastOffset + PAST_BATCH_SIZE >= pastEvents.length ? (
-                                <path d="M11.78 16.28a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.75.75 0 1 1 1.06 1.06L7.81 10.5l3.97 3.97a.75.75 0 0 1 0 1.06Z" />
-                              ) : (
-                                <path d="M10 3.5a.75.75 0 0 1 .75.75v5h5a.75.75 0 0 1 0 1.5h-5v5a.75.75 0 0 1-1.5 0v-5h-5a.75.75 0 0 1 0-1.5h5v-5A.75.75 0 0 1 10 3.5Z" />
-                              )}
-                            </svg>
-                          </button>
-                        </div>
+                    >
+                      {displayedPastEvents.map((event, index) =>
+                        renderEventCard(event, {
+                          stacked: isPastStackingEnabled,
+                          index,
+                          total: displayedPastEvents.length,
+                          hovered: isPastStackingEnabled && hoveredPastCard === event.id,
+                          onHoverStart: isPastStackingEnabled ? () => setHoveredPastCard(event.id) : undefined,
+                          onHoverEnd: isPastStackingEnabled
+                            ? () =>
+                              setHoveredPastCard((current) => (current === event.id ? null : current))
+                            : undefined,
+                          setNode: registerPastCardRef(event.id),
+                        })
                       )}
-                    </>
-                  ) : (
-                    <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">
-                      <div className="mx-auto mb-4 text-4xl">😮</div>
-                      <h3 className="text-lg font-semibold text-gray-700">No past events</h3>
-                      <p className="mt-2 text-sm">Events you host will appear here once they’re completed.</p>
                     </div>
-                  )
-                )}
-              </div>
+                    {pastEvents.length > PAST_BATCH_SIZE && (
+                      <div className="mt-6 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={handlePastViewMore}
+                          className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white"
+                        >
+                          {pastOffset + PAST_BATCH_SIZE >= pastEvents.length ? 'Back to First Events' : 'View More'}
+                          <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                            {pastOffset + PAST_BATCH_SIZE >= pastEvents.length ? (
+                              <path d="M11.78 16.28a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.75.75 0 1 1 1.06 1.06L7.81 10.5l3.97 3.97a.75.75 0 0 1 0 1.06Z" />
+                            ) : (
+                              <path d="M10 3.5a.75.75 0 0 1 .75.75v5h5a.75.75 0 0 1 0 1.5h-5v5a.75.75 0 0 1-1.5 0v-5h-5a.75.75 0 0 1 0-1.5h5v-5A.75.75 0 0 1 10 3.5Z" />
+                            )}
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">
+                    <div className="mx-auto mb-4 text-4xl">😮</div>
+                    <h3 className="text-lg font-semibold text-gray-700">No past events</h3>
+                    <p className="mt-2 text-sm">Events you host will appear here once they’re completed.</p>
+                  </div>
+                )
+              )}
             </div>
           </div>
+        </div>
 
-          {/* Profile Sections */}
-          <div className="border-t border-gray-200">
-            <div className="px-6 py-8 sm:px-10 space-y-8">
-              {/* Account Section */}
-              <div>
-                <h2 className="text-lg font-medium text-gray-900 mb-4">Account Settings</h2>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
-                    <div>
-                      <h3 className="font-medium text-gray-900">Email</h3>
-                      <p className="text-sm text-gray-500">{user?.email}</p>
-                    </div>
-                    <button className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                      Change
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
-                    <div>
-                      <h3 className="font-medium text-gray-900">Password</h3>
-                      <p className="text-sm text-gray-500">•••••••••••</p>
-                    </div>
-                    <button className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                      Change
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Preferences Section */}
-              <div>
-                <h2 className="text-lg font-medium text-gray-900 mb-4">Preferences</h2>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
-                    <div>
-                      <h3 className="font-medium text-gray-900">Theme</h3>
-                      <p className="text-sm text-gray-500">System</p>
-                    </div>
-                    <button className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                      Change
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
-                    <div>
-                      <h3 className="font-medium text-gray-900">Notifications</h3>
-                      <p className="text-sm text-gray-500">Email, Push</p>
-                    </div>
-                    <button className="text-sm font-medium text-blue-600 hover:text-blue-500">
-                      Manage
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Danger Zone */}
-              <div className="border-t border-gray-200 pt-6">
-                <h2 className="text-lg font-medium text-red-600 mb-4">Danger Zone</h2>
-                <div className="space-y-4">
-                  <button className="w-full flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200">
-                    Delete Account
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      await supabase.auth.signOut();
-                      navigate('/');
-                    }}
-                    className="w-full flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-                  >
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
       </div>
     </div>
   );
