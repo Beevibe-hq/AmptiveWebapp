@@ -45,12 +45,13 @@ function MainLayout() {
     location.pathname === '/login' ||
     location.pathname === '/signup' ||
     location.pathname === '/verify-otp' ||
-    location.pathname === '/complete-profile';
+    location.pathname === '/complete-profile' ||
+    location.pathname === '/events/create';
 
   return (
     <div className="min-h-screen font-inter">
       <Navbar />
-      <main className="bg-white">
+      <main className={location.pathname === '/events/create' ? '' : 'bg-white'}>
         <Routes>
           <Route path="/" element={<Homepage />} />
           <Route path="/events" element={<Events />} />

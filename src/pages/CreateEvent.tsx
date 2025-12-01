@@ -1,11 +1,75 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X } from 'lucide-react';
+import { Loader2, ArrowLeft, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import RichTextEditor from '@/components/RichTextEditor';
 import LocationPicker from '@/components/LocationPicker';
+import { QRCodeSVG } from 'qrcode.react';
+
+type TicketTheme = 'silver' | 'bronze' | 'gold' | 'platinum' | 'obsidian';
+
+const TICKET_THEMES: Record<TicketTheme, {
+  name: string;
+  gradient: string;
+  border: string;
+  text: string;
+  badge: string;
+  badgeText: string;
+}> = {
+  silver: {
+    name: 'Silver',
+    gradient: 'bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200',
+    border: 'border-gray-200',
+    text: 'text-gray-900',
+    badge: 'bg-gray-100 border-gray-200',
+    badgeText: 'text-gray-700'
+  },
+  bronze: {
+    name: 'Bronze',
+    gradient: 'bg-gradient-to-br from-orange-50 via-orange-100 to-orange-200',
+    border: 'border-orange-200',
+    text: 'text-orange-900',
+    badge: 'bg-orange-100 border-orange-200',
+    badgeText: 'text-orange-800'
+  },
+  gold: {
+    name: 'Gold',
+    gradient: 'bg-gradient-to-br from-yellow-50 via-yellow-100 to-yellow-200',
+    border: 'border-yellow-200',
+    text: 'text-yellow-900',
+    badge: 'bg-yellow-100 border-yellow-200',
+    badgeText: 'text-yellow-800'
+  },
+  platinum: {
+    name: 'Platinum',
+    gradient: 'bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200',
+    border: 'border-slate-200',
+    text: 'text-slate-900',
+    badge: 'bg-slate-100 border-slate-200',
+    badgeText: 'text-slate-700'
+  },
+  obsidian: {
+    name: 'Obsidian',
+    gradient: 'bg-gradient-to-br from-gray-800 via-gray-900 to-black',
+    border: 'border-gray-700',
+    text: 'text-white',
+    badge: 'bg-gray-800 border-gray-700',
+    badgeText: 'text-gray-300'
+  }
+};
+
+type EventTicket = {
+  id: string;
+  title: string;
+  price: number;
+  currency: string;
+  benefits: string[];
+  colorTheme?: TicketTheme;
+};
+
+type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
 
 type FormState = {
   title: string;
@@ -16,6 +80,8 @@ type FormState = {
   venue: string;
   city: string;
   coverImage: string;
+  locationType: 'physical' | 'online';
+  tickets: EventTicket[];
 };
 
 const PREVIEW_GRADIENTS = [
@@ -69,7 +135,103 @@ const buildInitialFormState = (): FormState => {
     venue: '',
     city: '',
     coverImage: '',
+    locationType: 'physical',
+    tickets: [],
   };
+};
+
+// Helper functions for tickets
+const formatTicketPrice = (price: number, currency: string = 'NGN'): string => {
+  if (price === 0) return 'Free';
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: price % 1 === 0 ? 0 : 2,
+  });
+  return formatter.format(price);
+};
+
+const formatCompactPrice = (price: number, currency: string = 'NGN'): string => {
+  if (price === 0) return 'Free';
+
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+
+  if (price >= 1000000) {
+    return formatter.format(price / 1000000).replace(currency, '').trim() + 'M';
+  }
+  if (price >= 1000) {
+    return formatter.format(price / 1000).replace(currency, '').trim() + 'K';
+  }
+
+  return formatTicketPrice(price, currency);
+};
+
+const deriveTicketBenefits = (ticket: EventTicket): string[] => {
+  if (ticket.benefits && ticket.benefits.length > 0) {
+    return ticket.benefits;
+  }
+
+  const label = ticket.title?.toLowerCase() ?? '';
+  const benefits = new Set<string>();
+
+  if (label.includes('vip') || label.includes('premium')) {
+    benefits.add('Priority check-in lane');
+    benefits.add('Complimentary welcome drink');
+    benefits.add('Exclusive lounge seating');
+  }
+
+  if (label.includes('table') || label.includes('booth')) {
+    benefits.add('Reserved table with bottle service');
+    benefits.add('Dedicated host for your group');
+  }
+
+  if (label.includes('early') || label.includes('pre-sale')) {
+    benefits.add('Early venue access');
+    benefits.add('Limited edition merch drop access');
+  }
+
+  if (label.includes('backstage')) {
+    benefits.add('Backstage meet & greet');
+  }
+
+  if (label.includes('general') || label.includes('standard') || label.includes('regular') || benefits.size === 0) {
+    benefits.add('Guaranteed entry to the event');
+    benefits.add('Access to all main stage performances');
+  }
+
+  if (ticket.price === 0) {
+    benefits.add('No payment required at entry');
+  }
+
+  return Array.from(benefits);
+};
+
+const deriveAvailabilityStatus = (ticket: EventTicket, index: number): AvailabilityStatus => {
+  const label = ticket.title?.toLowerCase() ?? '';
+  if (label.includes('sold out')) return 'Sold Out';
+  if (ticket.price === 0 || label.includes('free') || label.includes('general') || label.includes('standard') || label.includes('regular')) {
+    return 'Available';
+  }
+  if (label.includes('vip') || label.includes('table') || ticket.price >= 200) {
+    return 'Limited Spots';
+  }
+  if (label.includes('early') || label.includes('pre-sale')) {
+    return 'Almost Sold Out';
+  }
+  const AVAILABILITY_SEQUENCE: AvailabilityStatus[] = ['Available', 'Limited Spots', 'Almost Sold Out'];
+  return AVAILABILITY_SEQUENCE[index % AVAILABILITY_SEQUENCE.length];
+};
+
+const AVAILABILITY_BADGE_CLASSES: Record<AvailabilityStatus, string> = {
+  Available: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'Almost Sold Out': 'border-amber-200 bg-amber-50 text-amber-700',
+  'Limited Spots': 'border-orange-200 bg-orange-50 text-orange-700',
+  'Sold Out': 'border-rose-200 bg-rose-50 text-rose-700',
 };
 
 const CreateEvent = () => {
@@ -96,6 +258,99 @@ const CreateEvent = () => {
   // Mobile modal states
   const [showMobileUploadOptions, setShowMobileUploadOptions] = useState(false);
   const [showMobileGallery, setShowMobileGallery] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'details' | 'preview'>('details');
+
+  // Ticket management state
+  const [showTicketForm, setShowTicketForm] = useState(false);
+  const [editingTicketId, setEditingTicketId] = useState<string | null>(null);
+  const [ticketForm, setTicketForm] = useState<{
+    title: string;
+    price: string;
+    currency: string;
+    benefits: string;
+    colorTheme: TicketTheme;
+  }>({
+    title: '',
+    price: '',
+    currency: 'NGN',
+    benefits: '',
+    colorTheme: 'silver',
+  });
+
+  // Ticket handlers
+  const handleAddTicket = () => {
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver' });
+    setEditingTicketId(null);
+    setMobileTab('details');
+    setShowTicketForm(true);
+  };
+
+  const handleEditTicket = (ticket: EventTicket) => {
+    setTicketForm({
+      title: ticket.title,
+      price: ticket.price.toString(),
+      currency: ticket.currency,
+      benefits: ticket.benefits.join('\n'),
+      colorTheme: ticket.colorTheme || 'silver',
+    });
+    setEditingTicketId(ticket.id);
+    setMobileTab('details');
+    setShowTicketForm(true);
+  };
+
+  const handleSaveTicket = () => {
+    if (!ticketForm.title.trim()) {
+      toastError('Please enter a ticket title');
+      return;
+    }
+
+    const price = parseFloat(ticketForm.price) || 0;
+    const benefits = ticketForm.benefits
+      .split('\n')
+      .map(b => b.trim())
+      .filter(Boolean);
+
+    if (editingTicketId) {
+      // Update existing ticket
+      setForm(prev => ({
+        ...prev,
+        tickets: prev.tickets.map(t =>
+          t.id === editingTicketId
+            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, colorTheme: ticketForm.colorTheme }
+            : t
+        ),
+      }));
+    } else {
+      // Add new ticket
+      const newTicket: EventTicket = {
+        id: `ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        title: ticketForm.title,
+        price,
+        currency: ticketForm.currency,
+        benefits,
+        colorTheme: ticketForm.colorTheme,
+      };
+      setForm(prev => ({ ...prev, tickets: [...prev.tickets, newTicket] }));
+    }
+
+    setShowTicketForm(false);
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver' });
+    setEditingTicketId(null);
+  };
+
+  const handleDeleteTicket = (ticketId: string) => {
+    setForm(prev => ({
+      ...prev,
+      tickets: prev.tickets.filter(t => t.id !== ticketId),
+    }));
+  };
+
+  const handleCancelTicketForm = () => {
+    setShowTicketForm(false);
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '' });
+    setEditingTicketId(null);
+  };
+
 
   // Helper to extract average color from image
   const getAverageColor = async (imageUrl: string): Promise<{ r: number; g: number; b: number } | null> => {
@@ -285,12 +540,11 @@ const CreateEvent = () => {
     try {
       const insertPayload = {
         title: trimmedTitle,
-        summary: form.summary.trim() || null,
         description: form.description.trim() || null,
         start_time: startTime.toISOString(),
         end_time: endTimeIso,
-        venue: form.venue.trim() || null,
-        city: form.city.trim() || null,
+        venue: form.locationType === 'online' ? 'Amptive App' : (form.venue.trim() || null),
+        city: form.locationType === 'online' ? 'Online' : (form.city.trim() || null),
         cover_image: form.coverImage.trim() || null,
         user_id: userId,
         details_url: null,
@@ -312,6 +566,26 @@ const CreateEvent = () => {
       if (!data?.id) {
         toastError('Event was created but we could not retrieve its ID.');
         return;
+      }
+
+      // Insert tickets if any
+      if (form.tickets.length > 0) {
+        const ticketInserts = form.tickets.map(ticket => ({
+          event_id: data.id,
+          label: ticket.title,
+          price: ticket.price,
+          currency: ticket.currency,
+          benefits: ticket.benefits,
+        }));
+
+        const { error: ticketError } = await supabase
+          .from('tickets')
+          .insert(ticketInserts);
+
+        if (ticketError) {
+          console.error('Failed to create tickets', ticketError);
+          toastError('Event created but tickets could not be saved.');
+        }
       }
 
       toastSuccess('Event created successfully!');
@@ -362,46 +636,17 @@ const CreateEvent = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white selection:bg-blue-100 selection:text-blue-900 font-sans">
+    <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">
       {/* Background Elements */}
-      <div className="fixed inset-0 -z-10 pointer-events-none transition-opacity duration-1000">
-        <div
-          className="absolute top-0 left-0 w-full h-full transition-colors duration-1000"
-          style={{
-            background: dominantColor
-              ? `radial-gradient(circle at 50% 0%, rgba(${dominantColor.r},${dominantColor.g},${dominantColor.b},0.15), transparent 50%)`
-              : 'radial-gradient(circle at 50% 0%, rgba(120,119,198,0.1), transparent 50%)'
-          }}
-        />
-        <div
-          className="absolute bottom-0 right-0 w-full h-full transition-colors duration-1000"
-          style={{
-            background: dominantColor
-              ? `radial-gradient(circle at 100% 100%, rgba(${dominantColor.r},${dominantColor.g},${dominantColor.b},0.25), transparent 50%)`
-              : 'radial-gradient(circle at 100% 100%, rgba(74,222,128,0.25), transparent 50%)'
-          }}
-        />
-        <div
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full blur-3xl animate-pulse transition-colors duration-1000"
-          style={{
-            animationDuration: '8s',
-            background: dominantColor
-              ? `linear-gradient(to top right, rgba(${dominantColor.r},${dominantColor.g},${dominantColor.b},0.25), rgba(${dominantColor.r},${dominantColor.g},${dominantColor.b},0.15))`
-              : 'linear-gradient(to top right, rgba(224, 231, 255, 0.3), rgba(255, 228, 230, 0.3))'
-          }}
-        />
-      </div>
+      <div className="fixed inset-0 -z-10 pointer-events-none transition-colors duration-1000"
+        style={{
+          backgroundColor: dominantColor
+            ? `rgba(${dominantColor.r},${dominantColor.g},${dominantColor.b},0.08)`
+            : '#ffffff'
+        }}
+      />
 
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8 lg:py-12 pt-20 lg:pt-24">
-
-
-        <header className="relative mb-4 lg:mb-12">
-          <h1 className="flex items-center gap-3 text-2xl lg:text-[32px] font-bold tracking-tight text-gray-900">
-            <Sparkles className="h-6 w-6 lg:h-8 lg:w-8 text-blue-500" style={{ fill: 'currentColor' }} />
-            Create your Event
-          </h1>
-        </header>
-
         <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-24 items-start">
           {/* Left column - Form Fields */}
           <main className="flex-1 max-w-2xl w-full">
@@ -413,7 +658,7 @@ const CreateEvent = () => {
                 <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
                   {/* Header removed */}
 
-                  <div className="space-y-6 px-2">
+                  <div className="space-y-6 lg:px-2">
                     <div className="relative">
                       <input
                         type="text"
@@ -437,12 +682,12 @@ const CreateEvent = () => {
 
                 {/* Schedule */}
                 <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 mx-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
                     <Calendar className="h-4 w-4 text-rose-500" />
                     Schedule
                   </div>
 
-                  <div className="grid gap-6 sm:grid-cols-2 px-2">
+                  <div className="grid gap-6 sm:grid-cols-2 lg:px-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Start</label>
                       <input
@@ -471,21 +716,124 @@ const CreateEvent = () => {
                   </div>
                 </section>
 
+
                 {/* Location */}
                 <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 mx-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
                     <MapPin className="h-4 w-4 text-emerald-500" />
                     Location
                   </div>
 
-                  <div className="px-2">
-                    <LocationPicker
-                      initialVenue={form.venue}
-                      initialCity={form.city}
-                      onLocationSelect={(venue, city) => {
-                        setForm(prev => ({ ...prev, venue, city }));
-                      }}
-                    />
+                  <div className="lg:px-2">
+                    <div className="flex p-1.5 bg-gray-100/80 rounded-2xl mb-6 relative isolate">
+                      {/* Sliding Background */}
+                      <div
+                        className={`absolute inset-y-1.5 left-1.5 right-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out -z-10 ${form.locationType === 'online' ? 'translate-x-[calc(100%+3px)]' : 'translate-x-0'
+                          }`}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, locationType: 'physical' }))}
+                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300 ${form.locationType === 'physical' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                      >
+                        <MapPin className={`h-4 w-4 ${form.locationType === 'physical' ? 'text-emerald-500' : 'text-gray-400'}`} />
+                        Physical Location
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, locationType: 'online' }))}
+                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300 ${form.locationType === 'online' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                      >
+                        <img
+                          src="/images/amptive_logo.png"
+                          alt="Amptive"
+                          className={`h-5 w-5 object-contain transition-opacity filter invert ${form.locationType === 'online' ? 'opacity-100' : 'opacity-40'}`}
+                        />
+                        Amptive App
+                      </button>
+                    </div>
+
+                    {form.locationType === 'physical' ? (
+                      <LocationPicker
+                        initialVenue={form.venue}
+                        initialCity={form.city}
+                        onLocationSelect={(venue, city) => {
+                          setForm(prev => ({ ...prev, venue, city }));
+                        }}
+                      />
+                    ) : (
+                      <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-blue-700 text-sm font-medium flex items-center gap-3 animate-in fade-in zoom-in-95 duration-300">
+                        <div className="p-2 bg-white rounded-full shadow-sm">
+                          <Globe className="h-5 w-5 text-blue-500" />
+                        </div>
+                        Event will be hosted virtually on the Amptive App
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* Tickets */}
+                <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                    <Ticket className="h-4 w-4 text-blue-600" />
+                    Tickets
+                  </div>
+
+                  <div className="lg:px-2 space-y-4">
+                    {/* Tickets List */}
+                    {form.tickets.length > 0 && (
+                      <div className="grid gap-3">
+                        {form.tickets.map((ticket) => (
+                          <div
+                            key={ticket.id}
+                            className="group flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 hover:shadow-md transition-all duration-300"
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <h5 className="font-bold text-gray-900">{ticket.title}</h5>
+                                <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
+                                  {formatTicketPrice(ticket.price, ticket.currency)}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                                {deriveTicketBenefits(ticket).join(' • ')}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={() => handleEditTicket(ticket)}
+                                className="p-2 rounded-xl text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTicket(ticket.id)}
+                                className="p-2 rounded-xl text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add Button */}
+                    <button
+                      type="button"
+                      onClick={handleAddTicket}
+                      className={`w-full flex items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-gray-200 text-gray-500 font-medium hover:border-blue-200 hover:bg-blue-50/50 hover:text-blue-600 transition-all duration-300 ${form.tickets.length === 0 ? 'py-8' : ''}`}
+                    >
+                      <div className={`p-2 rounded-full ${form.tickets.length === 0 ? 'bg-gray-100 text-gray-400' : 'bg-transparent'}`}>
+                        <Plus className="h-5 w-5" />
+                      </div>
+                      {form.tickets.length === 0 ? 'Create your first ticket' : 'Add another ticket type'}
+                    </button>
                   </div>
                 </section>
 
@@ -542,15 +890,17 @@ const CreateEvent = () => {
                     </div>
                   )}
 
-                  <input
-                    id={coverInputId}
-                    type="file"
-                    accept="image/*"
-                    ref={fileInputRef}
-                    onChange={handleCoverFileChange}
-                    className="hidden"
-                  />
+
                 </label>
+
+                <input
+                  id={coverInputId}
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleCoverFileChange}
+                  className="hidden"
+                />
 
                 {/* Remove Button - Inside Container */}
                 {form.coverImage && (
@@ -633,104 +983,380 @@ const CreateEvent = () => {
                 </span>
               </button>
             </div>
+
+
           </div>
-        </div>
-      </div>
+        </div >
+      </div >
 
       {/* Mobile Upload Options Modal */}
-      {showMobileUploadOptions && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-6 space-y-4 animate-in slide-in-from-bottom-10 duration-300">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-bold text-gray-900">Add Cover Image</h3>
-              <button
-                onClick={() => setShowMobileUploadOptions(false)}
-                className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
-              >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-
-            <button
-              onClick={() => {
-                setShowMobileUploadOptions(false);
-                fileInputRef.current?.click();
-              }}
-              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-blue-50 text-blue-700 font-medium hover:bg-blue-100 transition-colors"
-            >
-              <div className="p-2 bg-white rounded-full shadow-sm">
-                <Upload className="h-5 w-5 text-blue-600" />
-              </div>
-              Upload from Device
-            </button>
-
-            <button
-              onClick={() => {
-                setShowMobileUploadOptions(false);
-                setShowMobileGallery(true);
-              }}
-              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-purple-50 text-purple-700 font-medium hover:bg-purple-100 transition-colors"
-            >
-              <div className="p-2 bg-white rounded-full shadow-sm">
-                <ImageIcon className="h-5 w-5 text-purple-600" />
-              </div>
-              Choose from Gallery
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Mobile Gallery Modal */}
-      {showMobileGallery && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-6 h-[80vh] flex flex-col animate-in slide-in-from-bottom-10 duration-300">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-bold text-gray-900">Cover Gallery</h3>
-              <div className="flex items-center gap-2">
+      {
+        showMobileUploadOptions && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-sm bg-white rounded-3xl p-6 space-y-4 animate-in fade-in duration-300 mx-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold text-gray-900">Add Cover Image</h3>
                 <button
-                  type="button"
-                  onClick={handleGalleryRefresh}
-                  className="p-2 rounded-full text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-all"
-                >
-                  <RefreshCw className="h-5 w-5" />
-                </button>
-                <button
-                  onClick={() => setShowMobileGallery(false)}
+                  onClick={() => setShowMobileUploadOptions(false)}
                   className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
                 >
                   <X className="h-5 w-5 text-gray-500" />
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (fileInputRef.current) {
+                    fileInputRef.current.click();
+                  }
+                  setShowMobileUploadOptions(false);
+                }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl bg-blue-50 text-blue-700 font-medium hover:bg-blue-100 transition-colors active:scale-95"
+              >
+                <div className="p-2 bg-white rounded-full shadow-sm">
+                  <Upload className="h-5 w-5 text-blue-600" />
+                </div>
+                Upload from Device
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileUploadOptions(false);
+                  setShowMobileGallery(true);
+                }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl bg-purple-50 text-purple-700 font-medium hover:bg-purple-100 transition-colors"
+              >
+                <div className="p-2 bg-white rounded-full shadow-sm">
+                  <ImageIcon className="h-5 w-5 text-purple-600" />
+                </div>
+                Choose from Gallery
+              </button>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Mobile Gallery Modal */}
+      {
+        showMobileGallery && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-white rounded-3xl p-6 h-[80vh] flex flex-col animate-in fade-in duration-300 mx-4">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-900">Cover Gallery</h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGalleryRefresh}
+                    className="p-2 rounded-full text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-all"
+                  >
+                    <RefreshCw className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => setShowMobileGallery(false)}
+                    className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+                  >
+                    <X className="h-5 w-5 text-gray-500" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 overflow-y-auto p-1">
+                {visibleGalleryImages.map((url, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      handleGallerySelect(url);
+                      setShowMobileGallery(false);
+                    }}
+                    className="relative aspect-square overflow-hidden rounded-xl ring-offset-2 transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-black/20"
+                  >
+                    <img
+                      src={url}
+                      alt="Gallery option"
+                      className="h-full w-full object-cover"
+                    />
+                    {form.coverImage === url && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="h-3 w-3 rounded-full bg-white shadow-sm" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Ticket Modal */}
+      {showTicketForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-5xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between mb-4 lg:mb-6">
+              <h4 className="text-lg font-bold text-gray-900">
+                {editingTicketId ? 'Edit Ticket' : 'New Ticket'}
+              </h4>
+              <button
+                type="button"
+                onClick={handleCancelTicketForm}
+                className="p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 overflow-y-auto p-1">
-              {visibleGalleryImages.map((url, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    handleGallerySelect(url);
-                    setShowMobileGallery(false);
-                  }}
-                  className="relative aspect-square overflow-hidden rounded-xl ring-offset-2 transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-black/20"
-                >
-                  <img
-                    src={url}
-                    alt="Gallery option"
-                    className="h-full w-full object-cover"
-                  />
-                  {form.coverImage === url && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <div className="h-3 w-3 rounded-full bg-white shadow-sm" />
+            {/* Mobile Tabs */}
+            <div className="flex lg:hidden border-b border-gray-100 mb-6">
+              <button
+                type="button"
+                onClick={() => setMobileTab('details')}
+                className={`flex-1 pb-3 text-sm font-medium transition-colors ${mobileTab === 'details' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Details
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileTab('preview')}
+                className={`flex-1 pb-3 text-sm font-medium transition-colors ${mobileTab === 'preview' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Preview
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto overflow-x-hidden px-2">
+              <div className="grid lg:grid-cols-2 gap-8 h-full">
+                {/* Left: Form */}
+                <div className={`space-y-6 pb-4 px-2 ${mobileTab === 'details' ? 'block' : 'hidden lg:block'}`}>
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Ticket Type *
+                      </label>
+                      <input
+                        type="text"
+                        value={ticketForm.title}
+                        onChange={(e) => setTicketForm(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="e.g., Regular, VIP, VVIP"
+                        className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                      />
                     </div>
-                  )}
-                </button>
-              ))}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Price (₦) *
+                      </label>
+                      <input
+                        type="number"
+                        value={ticketForm.price}
+                        onChange={(e) => setTicketForm(prev => ({ ...prev, price: e.target.value }))}
+                        placeholder="0 for free"
+                        min="0"
+                        step="0.01"
+                        className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Color Theme Picker */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      Ticket Theme
+                    </label>
+                    <div className="flex flex-wrap gap-3 pb-8">
+                      {(Object.entries(TICKET_THEMES) as [TicketTheme, typeof TICKET_THEMES[TicketTheme]][]).map(([key, theme]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setTicketForm(prev => ({ ...prev, colorTheme: key }))}
+                          className={`group relative w-12 h-12 rounded-full transition-all duration-200 ${ticketForm.colorTheme === key ? 'ring-2 ring-offset-2 ring-blue-500 scale-110' : 'hover:scale-105'}`}
+                        >
+                          <div className={`absolute inset-0 rounded-full ${theme.gradient} shadow-sm border border-black/5`} />
+                          {ticketForm.colorTheme === key && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-2 h-2 bg-white rounded-full shadow-sm" />
+                            </div>
+                          )}
+                          <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] font-medium text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                            {theme.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Access & Benefits
+                      <span className="text-xs text-gray-500 ml-2">(one per line)</span>
+                    </label>
+                    <textarea
+                      value={ticketForm.benefits}
+                      onChange={(e) => setTicketForm(prev => ({ ...prev, benefits: e.target.value }))}
+                      placeholder="Priority check-in&#10;Complimentary welcome drink&#10;Exclusive lounge access"
+                      rows={4}
+                      className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 resize-none"
+                    />
+                    <p className="mt-2 text-xs text-gray-500">
+                      Leave empty to auto-generate benefits based on ticket title
+                    </p>
+                  </div>
+
+                  {/* Physical Ticket Delivery Option */}
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-gray-50 border border-gray-200">
+                    <input
+                      type="checkbox"
+                      id="physicalTickets"
+                      disabled
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-not-allowed opacity-50"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <label htmlFor="physicalTickets" className="text-sm font-medium text-gray-700 cursor-not-allowed flex items-center gap-2 flex-wrap">
+                        <span>Enable Physical Ticket Delivery</span>
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wider">
+                          Coming Soon
+                        </span>
+                      </label>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        Allow attendees to receive physical tickets at their address
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveTicket}
+                      className="flex-1 px-6 py-3.5 rounded-xl bg-black text-white text-sm font-semibold hover:bg-gray-900 transition-transform active:scale-[0.98]"
+                    >
+                      {editingTicketId ? 'Update Ticket' : 'Save Ticket'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelTicketForm}
+                      className="px-6 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right: Live Preview */}
+                <div className={`flex flex-col items-center justify-center ${mobileTab === 'preview' ? 'block' : 'hidden lg:flex'} lg:bg-gray-50 lg:rounded-3xl lg:p-6 lg:border lg:border-gray-100`}>
+                  <h5 className="hidden text-xs font-bold text-gray-400 uppercase tracking-wider mb-6 lg:block">Live Preview</h5>
+
+                  {/* Card Preview */}
+                  <div className="group relative w-full max-w-[360px] sm:max-w-[420px] min-h-[15rem] [perspective:1600px]">
+                    {(() => {
+                      const theme = TICKET_THEMES[ticketForm.colorTheme || 'silver'];
+                      // Generate preview ticket ID
+                      const previewTicketId = `PREVIEW-${Date.now().toString(36).toUpperCase()}`;
+                      const qrData = JSON.stringify({
+                        ticketId: previewTicketId,
+                        eventName: form.title || 'Event Name',
+                        ticketType: ticketForm.title || 'Ticket Type',
+                        price: parseFloat(ticketForm.price) || 0,
+                        preview: true
+                      });
+
+                      const previewTicket = {
+                        id: 'preview',
+                        title: ticketForm.title || 'Ticket Title',
+                        price: parseFloat(ticketForm.price) || 0,
+                        currency: 'NGN',
+                        quantity: 100,
+                        sold: 0,
+                        status: 'on_sale',
+                        benefits: ticketForm.benefits ? ticketForm.benefits.split('\n').filter(Boolean) : [],
+                        created_at: new Date().toISOString()
+                      };
+
+                      const benefits = previewTicket.benefits.length > 0
+                        ? previewTicket.benefits
+                        : (ticketForm.title ? ['General Access', 'Event Entry'] : ['Benefit 1', 'Benefit 2']);
+
+                      return (
+                        <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
+                          {/* Front */}
+                          <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 backdrop-blur-sm shadow-xl [backface-visibility:hidden]`}>
+                            <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-white/50`} aria-hidden="true" />
+                            <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+                            <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+
+                            <div className="relative z-10 flex items-start justify-between gap-3">
+                              <div className="space-y-1.5 flex-1 min-w-0">
+                                <p className={`text-xs uppercase tracking-[0.28em] ${theme.text} opacity-60`}>Ticket Type</p>
+                                <p className={`text-lg font-semibold ${theme.text} line-clamp-2 break-words`}>{previewTicket.title}</p>
+                              </div>
+                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${theme.badge} ${theme.badgeText} flex-shrink-0`}>
+                                ON SALE
+                              </span>
+                            </div>
+
+                            <div className="relative z-10 mt-6 flex items-baseline justify-between gap-2">
+                              <span className={`text-3xl font-bold ${theme.text} truncate`}>
+                                {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
+                              </span>
+                              <span className={`text-xs uppercase tracking-[0.24em] ${theme.text} opacity-60 flex-shrink-0`}>Per guest</span>
+                            </div>
+                          </div>
+
+                          {/* Back */}
+                          <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 shadow-xl [backface-visibility:hidden] [transform:rotateY(180deg)]`}>
+                            <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-white/50`} aria-hidden="true" />
+                            <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+                            <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+
+                            <div className="relative z-10 space-y-4">
+                              <div className="space-y-2">
+                                <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Access & Benefits</p>
+                                <ul className={`space-y-2 text-sm ${theme.text} opacity-90 list-disc list-inside`}>
+                                  {benefits.map((benefit, i) => (
+                                    <li key={i} className="leading-snug">
+                                      {benefit}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+
+                            <div className="relative z-10 mt-4 flex items-center justify-between">
+                              <span className={`text-xl font-semibold ${theme.text}`}>
+                                {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
+                              </span>
+                            </div>
+
+                            {/* QR Code & Ticket ID - Bottom Right */}
+                            <div className={`absolute bottom-4 right-4 z-20 flex flex-col items-end gap-1 ${theme.text}`}>
+                              <div className={ticketForm.colorTheme === 'obsidian' ? 'bg-white p-1 rounded' : ''}>
+                                <QRCodeSVG
+                                  value={qrData}
+                                  size={48}
+                                  level="M"
+                                  includeMargin={false}
+                                  fgColor={ticketForm.colorTheme === 'obsidian' ? '#000000' : 'currentColor'}
+                                  bgColor="transparent"
+                                />
+                              </div>
+                              <p className="text-[9px] font-mono opacity-60">{previewTicketId}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <p className="hidden mt-6 text-xs text-gray-400 text-center max-w-[200px] lg:block">
+                    Hover over the card to see the back with benefits
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
-    </div >
+    </div>
   );
 };
 
