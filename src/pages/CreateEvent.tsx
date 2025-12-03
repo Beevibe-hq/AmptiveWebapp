@@ -165,7 +165,7 @@ const formatCompactPrice = (price: number, currency: string = 'NGN'): string => 
   if (price >= 1000000) {
     return formatter.format(price / 1000000).replace(currency, '').trim() + 'M';
   }
-  if (price >= 1000) {
+  if (price >= 100000) {
     return formatter.format(price / 1000).replace(currency, '').trim() + 'K';
   }
 
@@ -308,13 +308,9 @@ const CreateEvent = () => {
       return;
     }
 
-    if (!ticketForm.quantity || parseInt(ticketForm.quantity) < 1) {
-      toastError('Please enter a valid quantity (minimum 1)');
-      return;
-    }
-
     const price = parseFloat(ticketForm.price) || 0;
-    const quantity = parseInt(ticketForm.quantity) || undefined;
+    // Parse quantity - undefined means unlimited
+    const quantity = ticketForm.quantity ? parseInt(ticketForm.quantity) : undefined;
     const benefits = ticketForm.benefits
       .split('\n')
       .map(b => b.trim())
@@ -554,19 +550,23 @@ const CreateEvent = () => {
         description: form.description.trim() || null,
         start_time: startTime.toISOString(),
         end_time: endTimeIso,
-        venue: form.locationType === 'online' ? 'Amptive App' : (form.venue.trim() || null),
-        city: form.locationType === 'online' ? 'Online' : (form.city.trim() || null),
+        location_type: form.locationType,
+        venue: form.locationType === 'online' ? null : (form.venue.trim() || null),
+        city: form.locationType === 'online' ? null : (form.city.trim() || null),
         cover_image: form.coverImage.trim() || null,
         user_id: userId,
-        details_url: null,
-        manage_url: null,
-      } as const;
+        status: 'published',
+      };
+
+      console.log('Submitting event payload:', insertPayload);
 
       const { data, error } = await supabase
         .from('events')
         .insert(insertPayload)
         .select('id')
         .maybeSingle();
+
+      console.log('Supabase insert response:', { data, error });
 
       if (error) {
         console.error('Failed to create event', error);
@@ -586,11 +586,14 @@ const CreateEvent = () => {
           label: ticket.title,
           price: ticket.price,
           currency: ticket.currency,
+          quantity: ticket.quantity,
           benefits: ticket.benefits,
+          color_theme: ticket.colorTheme,
+          is_physical: false,
         }));
 
         const { error: ticketError } = await supabase
-          .from('tickets')
+          .from('event_tickets')
           .insert(ticketInserts);
 
         if (ticketError) {
@@ -1170,21 +1173,33 @@ const CreateEvent = () => {
                       />
                     </div>
 
-                    <div>
+                    <div className="w-full sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Quantity Available *
+                        Quantity Available (Optional)
                       </label>
                       <input
                         type="number"
                         value={ticketForm.quantity}
                         onChange={(e) => setTicketForm(prev => ({ ...prev, quantity: e.target.value }))}
-                        placeholder="e.g., 100"
+                        placeholder="Leave empty for unlimited"
                         min="1"
                         step="1"
                         className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                       />
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {[100, 500, 1000, 5000, 10000].map(num => (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setTicketForm(prev => ({ ...prev, quantity: num.toString() }))}
+                            className="px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                          >
+                            {num.toLocaleString()}
+                          </button>
+                        ))}
+                      </div>
                       <p className="mt-2 text-xs text-gray-500">
-                        Total number of tickets available for this type
+                        Leave empty for unlimited tickets, or click a quick number above
                       </p>
                     </div>
                   </div>
@@ -1273,7 +1288,7 @@ const CreateEvent = () => {
                 </div>
 
                 {/* Right: Live Preview */}
-                <div className={`flex flex-col items-center justify-center ${mobileTab === 'preview' ? 'block' : 'hidden lg:flex'} lg:bg-gray-50 lg:rounded-3xl lg:p-6 lg:border lg:border-gray-100`}>
+                <div className={`flex flex-col items-center justify-center lg:justify-start ${mobileTab === 'preview' ? 'block' : 'hidden lg:flex'} lg:bg-gray-50 lg:rounded-3xl lg:px-6 lg:pb-2 lg:pt-[100px] lg:border lg:border-gray-100`}>
                   <h5 className="hidden text-xs font-bold text-gray-400 uppercase tracking-wider mb-6 lg:block">Live Preview</h5>
 
                   {/* Card Preview */}
@@ -1316,19 +1331,19 @@ const CreateEvent = () => {
 
                             <div className="relative z-10 flex items-start justify-between gap-3">
                               <div className="space-y-1.5 flex-1 min-w-0">
-                                <p className={`text-xs uppercase tracking-[0.28em] ${theme.text} opacity-60`}>Ticket Type</p>
+                                <p className={`text-xs uppercase tracking-[0.28em] ${theme.text} opacity-60`}>{form.title || 'Event Name'}</p>
                                 <p className={`text-lg font-semibold ${theme.text} line-clamp-2 break-words`}>{previewTicket.title}</p>
                               </div>
-                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${theme.badge} ${theme.badgeText} flex-shrink-0`}>
-                                ON SALE
-                              </span>
+
                             </div>
 
                             <div className="relative z-10 mt-6 flex items-baseline justify-between gap-2">
                               <span className={`text-3xl font-bold ${theme.text} truncate`}>
                                 {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
                               </span>
-                              <span className={`text-xs uppercase tracking-[0.24em] ${theme.text} opacity-60 flex-shrink-0`}>Per guest</span>
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
+                                Per guest
+                              </span>
                             </div>
                           </div>
 
@@ -1342,11 +1357,16 @@ const CreateEvent = () => {
                               <div className="space-y-2">
                                 <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Access & Benefits</p>
                                 <ul className={`space-y-2 text-sm ${theme.text} opacity-90 list-disc list-inside`}>
-                                  {benefits.map((benefit, i) => (
+                                  {benefits.slice(0, 3).map((benefit, i) => (
                                     <li key={i} className="leading-snug">
                                       {benefit}
                                     </li>
                                   ))}
+                                  {benefits.length > 3 && (
+                                    <li className="list-none text-xs opacity-75 pt-1 pl-1 font-medium">
+                                      and {benefits.length - 3} more...
+                                    </li>
+                                  )}
                                 </ul>
                               </div>
                             </div>

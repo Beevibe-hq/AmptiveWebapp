@@ -4,6 +4,7 @@ import { ArrowLeft, Calendar, Clock, Coins, MapPin, Share2, Ticket } from 'lucid
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { createClient } from '@/lib/supabase/client';
 import { extractDominantColors } from '@/utils/colorExtractor';
+import { QRCodeSVG } from 'qrcode.react';
 
 type EventRecord = {
   id: string;
@@ -25,6 +26,9 @@ type EventTicket = {
   label: string;
   price: number;
   currency?: string | null;
+  quantity?: number | null;
+  benefits?: string[];
+  color_theme?: string | null;
 };
 
 type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
@@ -50,6 +54,56 @@ const GOOGLE_MAP_STYLE_PARAMS = [
   'feature:transit|visibility:off',
   'feature:water|element:geometry.fill|color:0x71d3f4',
 ];
+
+const TICKET_THEMES: Record<string, {
+  name: string;
+  gradient: string;
+  border: string;
+  text: string;
+  badge: string;
+  badgeText: string;
+}> = {
+  silver: {
+    name: 'Silver',
+    gradient: 'bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200',
+    border: 'border-gray-200',
+    text: 'text-gray-900',
+    badge: 'bg-gray-100 border-gray-200',
+    badgeText: 'text-gray-700'
+  },
+  bronze: {
+    name: 'Bronze',
+    gradient: 'bg-gradient-to-br from-orange-50 via-orange-100 to-orange-200',
+    border: 'border-orange-200',
+    text: 'text-orange-900',
+    badge: 'bg-orange-100 border-orange-200',
+    badgeText: 'text-orange-800'
+  },
+  gold: {
+    name: 'Gold',
+    gradient: 'bg-gradient-to-br from-yellow-50 via-yellow-100 to-yellow-200',
+    border: 'border-yellow-200',
+    text: 'text-yellow-900',
+    badge: 'bg-yellow-100 border-yellow-200',
+    badgeText: 'text-yellow-800'
+  },
+  platinum: {
+    name: 'Platinum',
+    gradient: 'bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200',
+    border: 'border-slate-200',
+    text: 'text-slate-900',
+    badge: 'bg-slate-100 border-slate-200',
+    badgeText: 'text-slate-700'
+  },
+  obsidian: {
+    name: 'Obsidian',
+    gradient: 'bg-gradient-to-br from-gray-800 via-gray-900 to-black',
+    border: 'border-gray-700',
+    text: 'text-white',
+    badge: 'bg-gray-800 border-gray-700',
+    badgeText: 'text-gray-300'
+  }
+};
 
 const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
   const normalized = hex.replace('#', '');
@@ -358,23 +412,23 @@ const EventDetail = () => {
         const [ticketRes, relatedRes, organizerRes] = await Promise.all([
           supabase
             .from('event_tickets')
-            .select('id, label, price, currency')
+            .select('id, label, price, currency, quantity, benefits, color_theme')
             .eq('event_id', id),
           eventRecord.user_id
             ? supabase
-                .from('events')
-                .select('id, title, start_time, venue, city, cover_image')
-                .eq('user_id', eventRecord.user_id)
-                .neq('id', id)
-                .order('start_time', { ascending: true })
-                .limit(4)
+              .from('events')
+              .select('id, title, start_time, venue, city, cover_image')
+              .eq('user_id', eventRecord.user_id)
+              .neq('id', id)
+              .order('start_time', { ascending: true })
+              .limit(4)
             : Promise.resolve({ data: [] as EventRecord[], error: null }),
           eventRecord.user_id
             ? supabase
-                .from('profiles')
-                .select('username, full_name, avatar_url')
-                .eq('user_id', eventRecord.user_id)
-                .maybeSingle()
+              .from('profiles')
+              .select('username, full_name, avatar_url')
+              .eq('user_id', eventRecord.user_id)
+              .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
         ]);
 
@@ -389,6 +443,9 @@ const EventDetail = () => {
               label: ticket.label ?? 'General Admission',
               price: Number(ticket.price) || 0,
               currency: ticket.currency,
+              quantity: ticket.quantity,
+              benefits: ticket.benefits || [],
+              color_theme: ticket.color_theme,
             }))
           );
           setRelatedEvents((relatedRes.data ?? []) as EventRecord[]);
@@ -502,7 +559,7 @@ const EventDetail = () => {
   const summaryText = event.summary && event.summary.trim().length > 0
     ? event.summary.trim()
     : descriptionText ??
-      'Experience this curated event featuring emerging talent, intimate energy, and a carefully designed atmosphere for fans.';
+    'Experience this curated event featuring emerging talent, intimate energy, and a carefully designed atmosphere for fans.';
   const summaryWordCount = summaryText.trim().split(/\s+/).length;
   const hasLongSummary = summaryText.length > 220 || summaryWordCount > 40;
 
@@ -515,8 +572,8 @@ const EventDetail = () => {
   const ticketPriceLabel = tickets.length === 0
     ? 'Free'
     : cheapestTicket
-    ? formatTicketPrice(cheapestTicket.price, cheapestTicket.currency)
-    : 'Free';
+      ? formatTicketPrice(cheapestTicket.price, cheapestTicket.currency)
+      : 'Free';
   const hasAnnouncedLocation = locationLabel !== 'Location to be announced';
   const mapQuery = hasAnnouncedLocation ? encodeURIComponent(locationLabel) : null;
   const mapStyleQuery = GOOGLE_MAP_STYLE_PARAMS.map((param) => `style=${encodeURIComponent(param)}`).join('&');
@@ -554,9 +611,8 @@ const EventDetail = () => {
                 </span>
                 <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white">
                   <span
-                    className={`inline-block h-2 w-2 rounded-full ${
-                      status === 'Past' ? 'bg-gray-400' : 'bg-emerald-400'
-                    }`}
+                    className={`inline-block h-2 w-2 rounded-full ${status === 'Past' ? 'bg-gray-400' : 'bg-emerald-400'
+                      }`}
                   />
                   {status}
                 </span>
@@ -604,7 +660,7 @@ const EventDetail = () => {
                 <span>{ticketPriceLabel === 'Free' ? 'Free event' : `Tickets from ${ticketPriceLabel}`}</span>
               </div>
 
-              
+
             </div>
 
             <div className="order-1 flex flex-col gap-6 lg:order-2 lg:sticky lg:top-32">
@@ -622,21 +678,10 @@ const EventDetail = () => {
           <div className="space-y-24">
             <section className="space-y-4">
               <h3 className="text-2xl font-bold text-gray-900">About Event</h3>
-              <p
-                className="text-[20px] text-gray-600 leading-relaxed whitespace-pre-line"
-                style={
-                  hasLongSummary && !isSummaryExpanded
-                    ? {
-                        display: '-webkit-box',
-                        WebkitLineClamp: 4,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }
-                    : undefined
-                }
-              >
-                {summaryText}
-              </p>
+              <div
+                className="text-[20px] text-gray-600 leading-relaxed [&>h1]:text-3xl [&>h1]:font-bold [&>h1]:text-gray-900 [&>h1]:mb-4 [&>h2]:text-2xl [&>h2]:font-bold [&>h2]:text-gray-900 [&>h2]:mb-3 [&>h2]:mt-6 [&>p]:mb-4 [&>ul]:list-disc [&>ul]:pl-5 [&>ul]:mb-4 [&>ol]:list-decimal [&>ol]:pl-5 [&>ol]:mb-4 [&>img]:rounded-2xl [&>img]:my-6 [&>img]:w-full [&>img]:object-cover"
+                dangerouslySetInnerHTML={{ __html: summaryText }}
+              />
               {hasLongSummary && (
                 <button
                   type="button"
@@ -765,65 +810,89 @@ const EventDetail = () => {
 
               <div className="grid gap-6 sm:grid-cols-2">
                 {ticketsToDisplay.map((ticket, index) => {
-                    const availabilityStatus = deriveAvailabilityStatus(ticket, index);
-                    const badgeClasses = AVAILABILITY_BADGE_CLASSES[availabilityStatus];
-                    const benefits = deriveTicketBenefits(ticket);
+                  const availabilityStatus = deriveAvailabilityStatus(ticket, index);
+                  const badgeClasses = AVAILABILITY_BADGE_CLASSES[availabilityStatus];
+                  // Use benefits from database, or derive if empty
+                  const benefits = ticket.benefits && ticket.benefits.length > 0
+                    ? ticket.benefits
+                    : deriveTicketBenefits(ticket);
+                  // Get theme from database or default to silver
+                  const theme = TICKET_THEMES[ticket.color_theme || 'silver'] || TICKET_THEMES.silver;
 
-                    return (
-                      <div key={ticket.id} className="group relative min-h-[15rem] [perspective:1600px]">
-                        <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
-                          <div className="absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border border-gray-200 bg-gradient-to-br from-blue-50/70 via-white/80 to-blue-100/60 px-6 py-6 backdrop-blur-sm shadow-[0_18px_40px_rgba(15,23,42,0.08)] [backface-visibility:hidden]">
-                            <span className="pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border border-gray-200 bg-gray-50" aria-hidden="true" />
-                            <span className="pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-gray-300" aria-hidden="true" />
-                            <span className="pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-gray-300" aria-hidden="true" />
-                            <div className="relative z-10 flex items-start justify-between gap-3">
-                              <div className="space-y-1.5">
-                                <p className="text-xs uppercase tracking-[0.28em] text-gray-400">Ticket Type</p>
-                                <p className="text-lg font-semibold text-gray-900">{ticket.label}</p>
-                              </div>
-                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${badgeClasses}`}>
-                                {availabilityStatus}
-                              </span>
-                            </div>
-                            <div className="relative z-10 mt-6 flex items-baseline justify-between">
-                              <span className="text-3xl font-bold text-gray-900">
-                                {ticket.price === 0 ? 'Free' : formatTicketPrice(ticket.price, ticket.currency)}
-                              </span>
-                              <span className="text-xs uppercase tracking-[0.24em] text-gray-400">Per guest</span>
+                  return (
+                    <div key={ticket.id} className="group relative min-h-[15rem] [perspective:1600px]">
+                      <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
+                        {/* Front of card */}
+                        <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 backdrop-blur-sm shadow-xl [backface-visibility:hidden]`}>
+                          <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-white/50`} aria-hidden="true" />
+                          <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+                          <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+
+                          <div className="relative z-10 flex items-start justify-between gap-3">
+                            <div className="space-y-1.5 flex-1 min-w-0">
+                              <p className={`text-xs uppercase tracking-[0.28em] ${theme.text} opacity-60`}>{event?.title || 'Event Name'}</p>
+                              <p className={`text-lg font-semibold ${theme.text} line-clamp-2 break-words`}>{ticket.label}</p>
                             </div>
                           </div>
 
-                          <div className="absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border border-blue-400 bg-gradient-to-br from-slate-900/95 via-indigo-900/85 to-blue-900/80 px-6 py-6 text-white shadow-[0_22px_60px_rgba(8,15,40,0.45)] [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                            <span className="pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border border-blue-500/40 bg-slate-900/70" aria-hidden="true" />
-                            <span className="pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-blue-500/40" aria-hidden="true" />
-                            <span className="pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed border-blue-500/40" aria-hidden="true" />
+                          <div className="relative z-10 mt-6 flex items-baseline justify-between gap-2">
+                            <span className={`text-3xl font-bold ${theme.text} truncate`}>
+                              {ticket.price === 0 ? 'Free' : formatTicketPrice(ticket.price, ticket.currency)}
+                            </span>
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
+                              Per guest
+                            </span>
+                          </div>
+                        </div>
 
-                            <div className="relative z-10 space-y-4">
-                              <div className="space-y-2">
-                                <p className="text-xs uppercase tracking-[0.32em] text-blue-200/80">Access & Benefits</p>
-                                <ul className="space-y-2 text-sm text-white/85">
-                                  {benefits.map((benefit) => (
-                                    <li key={benefit} className="flex items-start gap-2">
-                                      <span className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-blue-300" />
-                                      <span className="leading-snug">{benefit}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </div>
+                        {/* Back of card */}
+                        <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 shadow-xl [backface-visibility:hidden] [transform:rotateY(180deg)]`}>
+                          <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-white/50`} aria-hidden="true" />
+                          <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+                          <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
 
-                            <div className="relative z-10 mt-4 flex items-center justify-between">
-                              <span className="text-xl font-semibold text-white/90">
-                                {ticket.price === 0 ? 'Free' : formatTicketPrice(ticket.price, ticket.currency)}
-                              </span>
-                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${badgeClasses}`}>
-                                {availabilityStatus}
-                              </span>
+                          <div className="relative z-10 space-y-4">
+                            <div className="space-y-2">
+                              <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Access & Benefits</p>
+                              <ul className={`space-y-2 text-sm ${theme.text} opacity-90 list-disc list-inside`}>
+                                {benefits.slice(0, 3).map((benefit, i) => (
+                                  <li key={i} className="leading-snug">
+                                    {benefit}
+                                  </li>
+                                ))}
+                                {benefits.length > 3 && (
+                                  <li className="list-none text-xs opacity-75 pt-1 pl-1 font-medium">
+                                    and {benefits.length - 3} more...
+                                  </li>
+                                )}
+                              </ul>
                             </div>
+                          </div>
+
+                          <div className="relative z-10 mt-4 flex items-center justify-between">
+                            <span className={`text-xl font-semibold ${theme.text}`}>
+                              {ticket.price === 0 ? 'Free' : formatTicketPrice(ticket.price, ticket.currency)}
+                            </span>
+                          </div>
+
+                          {/* QR Code & Ticket ID - Bottom Right */}
+                          <div className={`absolute bottom-4 right-4 z-20 flex flex-col items-end gap-1 ${theme.text}`}>
+                            <QRCodeSVG
+                              value={`PREVIEW-${ticket.id}`}
+                              size={72}
+                              level="M"
+                              includeMargin={false}
+                              fgColor="currentColor"
+                              bgColor="transparent"
+                            />
+                            <p className="text-[9px] font-mono opacity-60">
+                              PREVIEW-{ticket.id.slice(0, 8).toUpperCase()}
+                            </p>
                           </div>
                         </div>
                       </div>
-                    );
+                    </div>
+                  );
                 })}
               </div>
             </section>
