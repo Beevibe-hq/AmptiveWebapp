@@ -67,6 +67,7 @@ type EventTicket = {
   currency: string;
   benefits: string[];
   colorTheme?: TicketTheme;
+  quantity?: number;
 };
 
 type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
@@ -269,17 +270,19 @@ const CreateEvent = () => {
     currency: string;
     benefits: string;
     colorTheme: TicketTheme;
+    quantity: string;
   }>({
     title: '',
     price: '',
     currency: 'NGN',
+    quantity: '',
     benefits: '',
     colorTheme: 'silver',
   });
 
   // Ticket handlers
   const handleAddTicket = () => {
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
     setEditingTicketId(null);
     setMobileTab('details');
     setShowTicketForm(true);
@@ -292,6 +295,7 @@ const CreateEvent = () => {
       currency: ticket.currency,
       benefits: ticket.benefits.join('\n'),
       colorTheme: ticket.colorTheme || 'silver',
+      quantity: ticket.quantity?.toString() || '',
     });
     setEditingTicketId(ticket.id);
     setMobileTab('details');
@@ -304,7 +308,13 @@ const CreateEvent = () => {
       return;
     }
 
+    if (!ticketForm.quantity || parseInt(ticketForm.quantity) < 1) {
+      toastError('Please enter a valid quantity (minimum 1)');
+      return;
+    }
+
     const price = parseFloat(ticketForm.price) || 0;
+    const quantity = parseInt(ticketForm.quantity) || undefined;
     const benefits = ticketForm.benefits
       .split('\n')
       .map(b => b.trim())
@@ -316,7 +326,7 @@ const CreateEvent = () => {
         ...prev,
         tickets: prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, colorTheme: ticketForm.colorTheme }
+            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, colorTheme: ticketForm.colorTheme, quantity }
             : t
         ),
       }));
@@ -329,12 +339,13 @@ const CreateEvent = () => {
         currency: ticketForm.currency,
         benefits,
         colorTheme: ticketForm.colorTheme,
+        quantity,
       };
       setForm(prev => ({ ...prev, tickets: [...prev.tickets, newTicket] }));
     }
 
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
 
@@ -1158,6 +1169,24 @@ const CreateEvent = () => {
                         className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                       />
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Quantity Available *
+                      </label>
+                      <input
+                        type="number"
+                        value={ticketForm.quantity}
+                        onChange={(e) => setTicketForm(prev => ({ ...prev, quantity: e.target.value }))}
+                        placeholder="e.g., 100"
+                        min="1"
+                        step="1"
+                        className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                      />
+                      <p className="mt-2 text-xs text-gray-500">
+                        Total number of tickets available for this type
+                      </p>
+                    </div>
                   </div>
 
                   {/* Color Theme Picker */}
@@ -1330,16 +1359,14 @@ const CreateEvent = () => {
 
                             {/* QR Code & Ticket ID - Bottom Right */}
                             <div className={`absolute bottom-4 right-4 z-20 flex flex-col items-end gap-1 ${theme.text}`}>
-                              <div className={ticketForm.colorTheme === 'obsidian' ? 'bg-white p-1 rounded' : ''}>
-                                <QRCodeSVG
-                                  value={qrData}
-                                  size={48}
-                                  level="M"
-                                  includeMargin={false}
-                                  fgColor={ticketForm.colorTheme === 'obsidian' ? '#000000' : 'currentColor'}
-                                  bgColor="transparent"
-                                />
-                              </div>
+                              <QRCodeSVG
+                                value={qrData}
+                                size={72}
+                                level="M"
+                                includeMargin={false}
+                                fgColor="currentColor"
+                                bgColor="transparent"
+                              />
                               <p className="text-[9px] font-mono opacity-60">{previewTicketId}</p>
                             </div>
                           </div>

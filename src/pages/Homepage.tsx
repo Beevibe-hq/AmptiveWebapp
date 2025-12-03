@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Calendar } from 'lucide-react';
 import QRCodeGenerator from '../components/QRCodeGenerator';
+import { createClient } from '@/lib/supabase/client';
 
 
 // Type definition for Trending Card
@@ -18,26 +19,26 @@ interface TrendingCardProps {
 }
 
 // Trending Card Component
-const TrendingCard: React.FC<TrendingCardProps> = ({ 
-  title, 
-  description, 
-  image, 
-  gradient, 
+const TrendingCard: React.FC<TrendingCardProps> = ({
+  title,
+  description,
+  image,
+  gradient,
   avatars,
-  type 
+  type
 }) => (
-  <div 
+  <div
     className="flex-shrink-0 w-[280px] sm:w-auto rounded-xl border border-gray-200 hover:shadow-md transition-shadow overflow-hidden relative"
     style={{ background: gradient }}
   >
     <div className="p-4 flex flex-col h-full relative z-10">
       <div className="flex justify-between items-center mb-3">
-        <img 
+        <img
           src={image}
           alt={title}
           className="w-12 h-12 rounded-md object-cover"
         />
-        <button 
+        <button
           className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-900 text-xs font-medium rounded-full transition-colors whitespace-nowrap"
           type="button"
         >
@@ -51,7 +52,7 @@ const TrendingCard: React.FC<TrendingCardProps> = ({
       <div className="mt-auto">
         <div className="flex -space-x-2">
           {avatars.map((avatar, index) => (
-            <img 
+            <img
               key={index}
               src={avatar}
               alt={`Host ${index + 1}`}
@@ -123,12 +124,12 @@ interface HeroSlideProps {
   isSecondSlide?: boolean;
 }
 
-const HeroSlide: React.FC<HeroSlideProps> = ({ 
+const HeroSlide: React.FC<HeroSlideProps> = ({
   title,
-  description, 
-  ctaText, 
-  ctaLink, 
-  videoSrc, 
+  description,
+  ctaText,
+  ctaLink,
+  videoSrc,
   shadowColor = 'rgba(0, 0, 0, 0.5)',
   bgColor,
   backgroundImage,
@@ -156,7 +157,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
 
   const onTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
-    
+
     const distance = touchStart - touchEnd;
     const isLeftSwipe = distance > minSwipeDistance;
     const isRightSwipe = distance < -minSwipeDistance;
@@ -167,9 +168,9 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
       onSwipeLeft();
     }
   };
-  
+
   return (
-    <div 
+    <div
       className={`relative rounded-2xl w-[95vw] max-w-[95vw] md:w-[92vw] md:max-w-[92vw] lg:w-[95vw] lg:max-w-[95vw] flex items-start justify-center overflow-hidden bg-gray-100 mt-20 mx-auto py-0 md:py-16 lg:py-20 xl:py-24 ${className}`}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -178,7 +179,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
       {/* Background - Image for all slides */}
       <div className="absolute inset-0 w-full h-full">
         {isFirstSlide ? (
-          <div 
+          <div
             className="absolute inset-0 w-full h-full"
             style={{
               backgroundImage: 'url(/images/OC%2011.webp)',
@@ -190,7 +191,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
         ) : (
           <>
             {backgroundImage && (
-              <div 
+              <div
                 className="absolute inset-0 w-full h-full"
                 style={{
                   backgroundImage: `url(${backgroundImage})`,
@@ -201,16 +202,16 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               />
             )}
             {bgColor && (
-              <div 
+              <div
                 className="absolute inset-0 w-full h-full"
-                style={{ 
+                style={{
                   backgroundColor: bgColor,
                   opacity: backgroundImage ? 0.6 : 1 // Slightly transparent if there's a background image
                 }}
               />
             )}
             {!backgroundImage && !bgColor && shadowColor && (
-              <div 
+              <div
                 className="absolute inset-0 w-full h-full"
                 style={{
                   background: `linear-gradient(135deg, ${shadowColor.replace('0.4', '0.1')}, ${shadowColor.replace('0.4', '0.3')})`
@@ -220,7 +221,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
           </>
         )}
       </div>
-      
+
       <div className={`w-full relative z-20 ${textColor}`}>
         <div className="flex flex-col lg:flex-row items-center justify-center pt-8 lg:pt-0 mx-auto w-full max-w-[calc(620px+550px+6rem)] gap-8 lg:gap-16 px-4 sm:px-6 lg:px-8 pb-8 lg:pb-0">
           {/* Video Column - Responsive size */}
@@ -228,19 +229,19 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
             <div className="w-full max-w-[620px] h-[40vh] md:h-[50vh] lg:h-[70vh] min-w-0 animate-slide-up transition-all duration-500" style={{
               width: 'min(100%, max(350px, calc(100vw - 100px)))' // Adjusted for better tablet display
             }}>
-              <div 
+              <div
                 className="relative w-full h-full rounded-2xl overflow-hidden bg-gray-100"
-                style={{ 
-                  boxShadow: isSecondSlide 
+                style={{
+                  boxShadow: isSecondSlide
                     ? `0 0 60px ${shadowColor}`  // Larger shadow for second slide
                     : `0 0 40px ${shadowColor}`  // Default shadow for other slides
                 }}
               >
-                <video 
+                <video
                   ref={videoRef}
-                  autoPlay 
-                  loop 
-                  muted 
+                  autoPlay
+                  loop
+                  muted
                   playsInline
                   className="w-full h-full object-cover"
                 >
@@ -250,7 +251,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               </div>
             </div>
           </div>
-          
+
           {/* Content Column - Fixed max width with min-width */}
           <div className="w-full lg:min-w-[350px] max-w-[550px] lg:max-w-[550px] text-center lg:text-left">
             <h1 className="text-2xl md:text-[36px] font-extrabold mb-4 md:mb-6 leading-tight text-white">
@@ -288,8 +289,8 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 description
               )}
             </p>
-            
-            
+
+
             {/* Button - Hidden on desktop only for first slide, visible on mobile for all slides */}
             <div className={isFirstSlide ? 'md:hidden' : ''}>
               <div className="flex md:block justify-center">
@@ -301,18 +302,18 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 </Link>
               </div>
             </div>
-            
+
             {/* QR Code - Desktop Only - First Slide */}
             {isFirstSlide && (
               <div className="hidden md:block">
                 <div className="flex items-center gap-2 mb-8 p-2 bg-black/10 rounded-lg">
                   <div className="flex-shrink-0">
                     <div className="bg-white p-1 rounded flex items-center justify-center" style={{ width: '80px', height: '80px' }}>
-                      <QRCodeGenerator 
-                      value="https://www.amptiveapp.com/downloads" 
-                      size={72}
-                      className="w-[72px] h-[72px]"
-                    />
+                      <QRCodeGenerator
+                        value="https://www.amptiveapp.com/downloads"
+                        size={72}
+                        className="w-[72px] h-[72px]"
+                      />
                     </div>
                   </div>
                   <div className="ml-1">
@@ -322,19 +323,19 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 </div>
                 <div className="mt 2 text-white/80 text-sm">
                   Available on{' '}
-                  <a 
-                    href="https://apps.apple.com/app/amptivelive/id1234567890" 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
+                  <a
+                    href="https://apps.apple.com/app/amptivelive/id1234567890"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-white font-medium hover:underline"
                   >
                     iOS
                   </a>{' '}
                   and{' '}
-                  <a 
-                    href="https://play.google.com/store/apps/details?id=com.amptivelive.app" 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
+                  <a
+                    href="https://play.google.com/store/apps/details?id=com.amptivelive.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-white font-medium hover:underline"
                   >
                     Android
@@ -388,11 +389,17 @@ const Homepage: React.FC = () => {
     const styleTag = document.createElement('style');
     styleTag.textContent = techConferenceCardStyles;
     document.head.appendChild(styleTag);
-    
+
     return () => {
       document.head.removeChild(styleTag);
     };
   }, []);
+
+  // Initialize Supabase client
+  const supabase = useMemo(() => createClient(), []);
+
+  // Initialize navigation
+  const navigate = useNavigate();
 
   // State for filter dropdowns
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -404,10 +411,12 @@ const Homepage: React.FC = () => {
     priceRange: { min: '', max: '' },
     dateRange: { start: '', end: '' },
   });
-  
+
   // State for active tab in Trending section
   const [activeTab, setActiveTab] = useState<'shows' | 'events'>('shows');
   const [filteredEvents, setFilteredEvents] = useState<EventType[]>([]);
+  const [dbEvents, setDbEvents] = useState<EventType[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
 
   // Get user's country on component mount
   useEffect(() => {
@@ -432,6 +441,78 @@ const Homepage: React.FC = () => {
 
     fetchUserCountry();
   }, []);
+
+  // Fetch events from database
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        setLoadingEvents(true);
+
+        // Get start of today to include events that started earlier today
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const { data, error } = await supabase
+          .from('events')
+          .select('*')
+          .gte('start_time', startOfToday.toISOString())
+          .order('start_time', { ascending: true })
+          .limit(20);
+
+        if (error) {
+          console.error('Error fetching events:', error);
+          setLoadingEvents(false);
+          return;
+        }
+
+        // Transform database events to match EventType interface
+        const transformedEvents: EventType[] = (data || []).map((event: any) => {
+          // Determine status based on start time
+          const eventDate = new Date(event.start_time);
+          const now = new Date();
+          const isLiveNow = eventDate <= now && eventDate >= new Date(now.getTime() - 3 * 60 * 60 * 1000); // Within 3 hours
+
+          // Get price from tickets
+          let price: number | Array<{ type: string; price: number }> = 0;
+          if (event.tickets && event.tickets.length > 0) {
+            if (event.tickets.length === 1) {
+              price = event.tickets[0].price;
+            } else {
+              price = event.tickets.map((t: any) => ({
+                type: t.label,
+                price: t.price
+              }));
+            }
+          }
+
+          return {
+            id: event.id,
+            title: event.title,
+            location: event.venue || 'Online',
+            country: event.city || 'Nigeria',
+            status: isLiveNow ? 'Live Now' : 'Upcoming',
+            price,
+            date: event.start_time,
+            media: {
+              type: 'image' as const,
+              src: event.cover_image || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30',
+              alt: event.title
+            }
+          };
+        });
+
+        console.log('Fetched events from database:', transformedEvents.length, transformedEvents);
+        setDbEvents(transformedEvents);
+        setFilteredEvents(transformedEvents);
+        setLoadingEvents(false);
+      } catch (error) {
+        console.error('Unexpected error fetching events:', error);
+        setLoadingEvents(false);
+      }
+    };
+
+    fetchEvents();
+  }, [supabase]);
 
 
   // Data for Trending section
@@ -684,54 +765,57 @@ const Homepage: React.FC = () => {
     }
   ];
 
-  // Initialize filtered events with all events
+  // Initialize filtered events with database events
   useEffect(() => {
-    setFilteredEvents(events);
-  }, []);
+    if (!loadingEvents && dbEvents.length > 0) {
+      console.log('Initializing filteredEvents with dbEvents:', dbEvents.length);
+      setFilteredEvents(dbEvents);
+    }
+  }, [dbEvents, loadingEvents]);
 
   // Filter events based on filters
   const applyFilters = () => {
-    let result = [...events];
-    
+    let result = [...dbEvents];
+
     // Filter by status
     if (filters.status === 'Ticket on sale') {
       // Show only events that are not sold out
       result = result.filter(event => event.status !== 'Sold Out');
     }
     // If status is 'ALL', show all events including sold out
-    
+
     // Filter by country
     if (filters.country) {
-      result = result.filter(event => 
+      result = result.filter(event =>
         event.country.toLowerCase().includes(filters.country.toLowerCase())
       );
     }
-    
+
     // Filter by price range
     if (filters.priceRange.min || filters.priceRange.max) {
       const minPrice = filters.priceRange.min ? parseFloat(filters.priceRange.min) : 0;
       const maxPrice = filters.priceRange.max ? parseFloat(filters.priceRange.max) : Infinity;
-      
+
       result = result.filter(event => {
-        const eventPrice = Array.isArray(event.price) 
+        const eventPrice = Array.isArray(event.price)
           ? Math.min(...event.price.map(p => p.price))
           : event.price;
         return eventPrice >= minPrice && eventPrice <= maxPrice;
       });
     }
-    
+
     // Filter by date range
     if (filters.dateRange.start || filters.dateRange.end) {
       const startDate = filters.dateRange.start ? new Date(filters.dateRange.start) : null;
       const endDate = filters.dateRange.end ? new Date(filters.dateRange.end) : null;
-      
+
       if (startDate) {
         startDate.setHours(0, 0, 0, 0);
       }
       if (endDate) {
         endDate.setHours(23, 59, 59, 999);
       }
-      
+
       result = result.filter(event => {
         const eventDate = new Date(event.date);
         if (startDate && endDate) {
@@ -744,7 +828,7 @@ const Homepage: React.FC = () => {
         return true;
       });
     }
-    
+
     setFilteredEvents(result);
     setIsFilterOpen(false);
   };
@@ -774,12 +858,12 @@ const Homepage: React.FC = () => {
       priceRange: { min: '', max: '' },
       dateRange: { start: '', end: '' },
     });
-    setFilteredEvents(events);
+    setFilteredEvents(dbEvents);
   };
 
   // Close filter when clicking outside
   const filterRef = useRef<HTMLDivElement>(null);
-  
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
@@ -803,7 +887,7 @@ const Homepage: React.FC = () => {
   const sliderRef = useRef<HTMLDivElement>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const resumeTimeout = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Handle slide change
   const goToSlide = (index: number) => {
     // Only reset the current slide's progress when navigating directly to a specific slide
@@ -814,7 +898,7 @@ const Homepage: React.FC = () => {
     });
     setCurrentSlide(index);
   };
-  
+
   // Go to next slide
   const nextSlide = () => {
     // Reset current slide's progress before moving to the next
@@ -823,22 +907,22 @@ const Homepage: React.FC = () => {
       newProgress[currentSlide] = 0; // Reset current slide's progress
       return newProgress;
     });
-    
+
     // Move to next slide
     const nextSlideIndex = (currentSlide + 1) % SLIDES.length;
     setCurrentSlide(nextSlideIndex);
   };
-  
+
   // Go to previous slide
   const prevSlide = () => {
     goToSlide((currentSlide - 1 + SLIDES.length) % SLIDES.length);
   };
-  
+
   const cardsContainerRef = useRef<HTMLDivElement>(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
-  
+
   // Define colors for each card with matching border colors
   const cardColors = [
     'bg-purple-50 border-purple-100',
@@ -856,38 +940,38 @@ const Homepage: React.FC = () => {
   const checkScroll = () => {
     const container = cardsContainerRef.current;
     if (!container) return;
-    
+
     const { scrollLeft, scrollWidth, clientWidth } = container;
     setShowLeftArrow(scrollLeft > 0);
     setShowRightArrow(scrollLeft < scrollWidth - clientWidth - 1);
-    
+
     // Find which card is most visible on the left
     const cards = container.querySelectorAll('.community-card');
     let mostVisibleIndex = 0;
     let maxVisibleArea = 0;
     const containerRect = container.getBoundingClientRect();
-    
+
     cards.forEach((card, index) => {
       const rect = card.getBoundingClientRect();
-      
+
       // Calculate visible area
       const visibleLeft = Math.max(rect.left, containerRect.left);
       const visibleRight = Math.min(rect.right, containerRect.right);
       const visibleWidth = Math.max(0, visibleRight - visibleLeft);
-      
+
       // If this card has more visible area than the current max, update
       if (visibleWidth > maxVisibleArea) {
         maxVisibleArea = visibleWidth;
         mostVisibleIndex = index;
       }
     });
-    
+
     setActiveCardIndex(mostVisibleIndex);
   };
 
   const scrollCards = (direction: 'left' | 'right') => {
     if (!cardsContainerRef.current) return;
-    
+
     const scrollAmount = direction === 'left' ? -300 : 300;
     cardsContainerRef.current.scrollBy({
       left: scrollAmount,
@@ -900,7 +984,7 @@ const Homepage: React.FC = () => {
     const handleResize = () => {
       checkScroll();
     };
-    
+
     if (container) {
       container.addEventListener('scroll', checkScroll);
       window.addEventListener('resize', handleResize);
@@ -908,7 +992,7 @@ const Homepage: React.FC = () => {
       const timer = setTimeout(() => {
         checkScroll();
       }, 100);
-      
+
       return () => {
         container.removeEventListener('scroll', checkScroll);
         window.removeEventListener('resize', handleResize);
@@ -921,20 +1005,20 @@ const Homepage: React.FC = () => {
   const togglePause = () => {
     const newPausedState = !isPaused;
     setIsPaused(newPausedState);
-    
+
     // Clear any pending resume timeout when manually toggling pause/play
     if (resumeTimeout.current) {
       clearTimeout(resumeTimeout.current);
       resumeTimeout.current = null;
     }
-    
+
     // If pausing, don't schedule auto-resume
     if (newPausedState) return;
-    
+
     // If unpausing, schedule the next auto-slide
     scheduleAutoResume();
   };
-  
+
   // Schedule auto-resume of the slider
   const scheduleAutoResume = () => {
     // Clear any existing timeout
@@ -942,7 +1026,7 @@ const Homepage: React.FC = () => {
       clearTimeout(resumeTimeout.current);
       resumeTimeout.current = null;
     }
-    
+
     // Set a new timeout to resume auto-sliding after 5 seconds of inactivity
     resumeTimeout.current = setTimeout(() => {
       if (isPaused) {
@@ -950,7 +1034,7 @@ const Homepage: React.FC = () => {
       }
     }, 5000); // 5 seconds delay before resuming
   };
-  
+
   // Auto-advance slides with smooth progress
   useEffect(() => {
     // Clear any existing interval
@@ -958,44 +1042,44 @@ const Homepage: React.FC = () => {
       clearInterval(progressInterval.current);
       progressInterval.current = null;
     }
-    
+
     if (isPaused) {
       return;
     }
-    
+
     // Update progress every 50ms for smoother animation (10s total = 100%)
     progressInterval.current = setInterval(() => {
       setProgressBars(prev => {
         const newProgress = [...prev];
         const currentProgress = newProgress[currentSlide] + (100 / 200); // 1% every 50ms = 100% in 10s
-        
+
         if (currentProgress >= 100) {
           // Move to next slide when current progress reaches 100%
           const nextSlide = (currentSlide + 1) % SLIDES.length;
           setCurrentSlide(nextSlide);
           return newProgress.fill(0); // Reset all progress bars
         }
-        
+
         // Only update the current slide's progress
         newProgress[currentSlide] = currentProgress;
         return newProgress;
       });
     }, 50);
-    
+
     return () => {
       if (progressInterval.current) {
         clearInterval(progressInterval.current);
       }
     };
   }, [isPaused, currentSlide]);
-  
+
   // Handle slide change with smooth transition
   useEffect(() => {
     if (sliderRef.current) {
       // Force reflow to ensure smooth transition
       sliderRef.current.style.transition = 'transform 500ms ease-in-out';
     }
-    
+
     // Cleanup function
     return () => {
       if (sliderRef.current) {
@@ -1018,7 +1102,7 @@ const Homepage: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        
+
         <button
           onClick={nextSlide}
           className="hidden md:flex absolute right-4 top-[55%] -translate-y-1/2 z-10 w-8 h-8 md:w-10 md:h-10 rounded-full bg-white hover:bg-white text-gray-800 items-center justify-center shadow-[0_4px_12px_rgba(0,0,0,0.15)] hover:shadow-[0_6px_16px_rgba(0,0,0,0.2)] transition-all duration-200 opacity-100 focus:outline-none"
@@ -1028,10 +1112,10 @@ const Homepage: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>
-        <div 
+        <div
           ref={sliderRef}
           className="flex transition-transform duration-500 ease-in-out"
-          style={{ 
+          style={{
             transform: `translateX(-${currentSlide * 100}%)`,
             cursor: 'grab'
           }}
@@ -1074,10 +1158,10 @@ const Homepage: React.FC = () => {
             </div>
           ))}
         </div>
-        
+
         {/* Progress Bar - Moved inside hero section but at the bottom */}
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20 z-20">
-          <div 
+          <div
             className="h-full bg-white transition-all duration-1000 ease-linear"
             style={{
               width: isPaused ? '0%' : '100%',
@@ -1087,7 +1171,7 @@ const Homepage: React.FC = () => {
           />
         </div>
       </div>
-      
+
       {/* Carousel Controls */}
       <div className="mt-4 flex items-center justify-center">
         {/* Play/Pause Button */}
@@ -1097,18 +1181,18 @@ const Homepage: React.FC = () => {
           aria-label={isPaused ? 'Play' : 'Pause'}
         >
           {isPaused ? (
-            <svg 
-              className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" 
-              fill="currentColor" 
+            <svg
+              className="h-4 w-4 transition-transform duration-200 group-hover:scale-110"
+              fill="currentColor"
               viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
             >
               <path d="M8 5v14l11-7z" />
             </svg>
           ) : (
-            <svg 
-              className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" 
-              fill="currentColor" 
+            <svg
+              className="h-4 w-4 transition-transform duration-200 group-hover:scale-110"
+              fill="currentColor"
               viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
             >
@@ -1116,12 +1200,12 @@ const Homepage: React.FC = () => {
             </svg>
           )}
         </button>
-        
+
         {/* Progress Bars */}
         <div className="flex items-center space-x-1">
           {SLIDES.map((_, index) => {
             const isActive = index === currentSlide;
-            
+
             return (
               <button
                 key={index}
@@ -1130,9 +1214,9 @@ const Homepage: React.FC = () => {
                 aria-label={`Go to slide ${index + 1}`}
               >
                 <div className="relative h-full w-full overflow-hidden">
-                  <div 
+                  <div
                     className="absolute top-0 left-0 h-full transition-all duration-100 ease-linear"
-                    style={{ 
+                    style={{
                       backgroundColor: 'black',
                       width: isActive ? `${progressBars[index]}%` : '0%',
                       transitionDuration: isPaused || !isActive ? '0s' : '50ms',
@@ -1146,13 +1230,13 @@ const Homepage: React.FC = () => {
           })}
         </div>
       </div>
-      
+
       {/* Upcoming Events Section */}
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-xl md:text-2xl font-bold text-black">Upcoming Events</h2>
           <div className="relative" ref={filterRef}>
-            <button 
+            <button
               onClick={toggleFilter}
               className="flex items-center space-x-1 text-gray-600 hover:text-gray-800 transition-colors"
             >
@@ -1161,58 +1245,58 @@ const Homepage: React.FC = () => {
               </svg>
               <span className="text-sm font-medium">Filter</span>
             </button>
-            
+
 
 
             {/* Upcoming Events Filter Panel */}
             {isFilterOpen && (
               <div className="fixed inset-0 z-50 flex justify-end backdrop-blur-sm" onClick={() => setIsFilterOpen(false)}>
-                <div 
+                <div
                   className="h-full w-full md:w-[380px] md:h-[95vh] bg-white flex flex-col overflow-y-auto md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-4px_0_15px_rgba(0,0,0,0.1)]"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* Header with search and close button */}
                   <div className="flex items-center justify-between p-4 border-b border-gray-100">
                     <form className="relative flex-1 mr-2">
-                      <input 
-                        type="text" 
-                        className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent" 
-                        placeholder="Search for events..." 
+                      <input
+                        type="text"
+                        className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent"
+                        placeholder="Search for events..."
                       />
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        width="24" 
-                        height="24" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                         className="lucide lucide-search absolute left-3 top-2.5 w-4 h-4 text-gray-400"
                       >
                         <circle cx="11" cy="11" r="8"></circle>
                         <path d="m21 21-4.3-4.3"></path>
                       </svg>
                     </form>
-                    <button 
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setIsFilterOpen(false);
                       }}
-                      className="p-2 text-gray-500 hover:text-gray-700" 
+                      className="p-2 text-gray-500 hover:text-gray-700"
                       aria-label="Close menu"
                     >
-                      <svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        width="24" 
-                        height="24" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round" 
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                         className="lucide lucide-x w-6 h-6"
                       >
                         <path d="M18 6 6 18"></path>
@@ -1295,11 +1379,10 @@ const Homepage: React.FC = () => {
                             key={status}
                             type="button"
                             onClick={() => handleFilterChange('status', status)}
-                            className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
-                              filters.status === status
-                                ? 'bg-white text-gray-900 shadow-sm'
-                                : 'text-gray-500 hover:text-gray-700'
-                            }`}
+                            className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 ${filters.status === status
+                              ? 'bg-white text-gray-900 shadow-sm'
+                              : 'text-gray-500 hover:text-gray-700'
+                              }`}
                           >
                             {status}
                           </button>
@@ -1350,13 +1433,13 @@ const Homepage: React.FC = () => {
 
                   {/* Footer with action buttons */}
                   <div className="p-4 space-y-3 border-t border-gray-100">
-                    <button 
+                    <button
                       onClick={clearFilters}
                       className="w-full px-4 py-2.5 text-center text-base font-medium text-gray-800 hover:bg-gray-50 rounded-full border border-gray-200"
                     >
                       Clear All
                     </button>
-                    <button 
+                    <button
                       onClick={applyFilters}
                       className="w-full px-4 py-2.5 text-center text-base font-bold text-white bg-black hover:bg-gray-800 rounded-full"
                     >
@@ -1368,7 +1451,7 @@ const Homepage: React.FC = () => {
             )}
           </div>
         </div>
-        
+
         {/* Events Grid - Horizontal scroll on desktop, single row */}
         <div className="relative">
           {/* Desktop/Tablet - Single row with horizontal scroll */}
@@ -1376,47 +1459,51 @@ const Homepage: React.FC = () => {
             <div className="relative">
               {/* Left padding gradient */}
               <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
-              
+
               {/* Scrollable content */}
               <div className="overflow-x-auto pb-6">
                 <div className="flex space-x-6 w-max min-w-full pl-4 pr-4">
-                {filteredEvents.length > 0 ? (
-                  filteredEvents.map(event => (
-                    <div key={event.id} className="w-72 flex-shrink-0">
-                      <EventCard
-                        title={event.title}
-                        location={event.location}
-                        status={event.status}
-                        price={event.price}
-                        date={event.date}
-                        media={event.media}
-                      />
+                  {filteredEvents.length > 0 ? (
+                    filteredEvents.map(event => (
+                      <div
+                        key={event.id}
+                        onClick={() => navigate(`/events/${event.id}`)}
+                        className="w-72 flex-shrink-0 cursor-pointer"
+                      >
+                        <EventCard
+                          title={event.title}
+                          location={event.location}
+                          status={event.status}
+                          price={event.price}
+                          date={event.date}
+                          media={event.media}
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <div className="w-full flex flex-col items-center justify-center py-12 col-span-full">
+                      <div className="bg-gray-100 p-6 rounded-full mb-4">
+                        <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-1">No events found</h3>
+                      <p className="text-gray-500 text-center max-w-md">Try adjusting your filters or check back later for new events.</p>
+                      <button
+                        onClick={clearFilters}
+                        className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        Clear all filters
+                      </button>
                     </div>
-                  ))
-                ) : (
-                  <div className="w-full flex flex-col items-center justify-center py-12 col-span-full">
-                    <div className="bg-gray-100 p-6 rounded-full mb-4">
-                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-1">No events found</h3>
-                    <p className="text-gray-500 text-center max-w-md">Try adjusting your filters or check back later for new events.</p>
-                    <button 
-                      onClick={clearFilters}
-                      className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-                    >
-                      Clear all filters
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
+
+              {/* Right padding gradient */}
+              <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
             </div>
-            
-            {/* Right padding gradient */}
-            <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
-          </div>
-            
+
             {/* Show More Button for Desktop */}
             <div className="mt-10 w-full px-6">
               <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
@@ -1424,7 +1511,7 @@ const Homepage: React.FC = () => {
               </button>
             </div>
           </div>
-          
+
           {/* Mobile Layout */}
           <div className="sm:hidden">
             {filteredEvents.length > 0 ? (
@@ -1433,7 +1520,11 @@ const Homepage: React.FC = () => {
                 <div className="-mx-2 px-4 overflow-x-auto pb-4">
                   <div className="flex space-x-3 w-max">
                     {filteredEvents.map((event, index) => (
-                      <div key={index} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
+                      <div
+                        key={index}
+                        onClick={() => navigate(`/events/${event.id}`)}
+                        className="w-[calc(50vw-1.5rem)] flex-shrink-0 cursor-pointer"
+                      >
                         <EventCard
                           title={event.title}
                           location={event.location}
@@ -1446,7 +1537,7 @@ const Homepage: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                
+
                 {/* Show More Button for Mobile */}
                 <div className="mt-2 w-full px-4">
                   <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
@@ -1463,7 +1554,7 @@ const Homepage: React.FC = () => {
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-1">No events found</h3>
                 <p className="text-gray-500 mb-4">Try adjusting your filters or check back later for new events.</p>
-                <button 
+                <button
                   onClick={clearFilters}
                   className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
                 >
@@ -1481,7 +1572,7 @@ const Homepage: React.FC = () => {
           <h2 className="text-xl md:text-2xl font-bold text-black">Top Events</h2>
           {/* Filter button and modal removed as per user request */}
         </div>
-        
+
         {/* Desktop Table Layout */}
         <div className="hidden sm:block overflow-x-auto">
           <div className="min-w-full">
@@ -1494,52 +1585,65 @@ const Homepage: React.FC = () => {
               <div>Status</div>
               <div>Date</div>
             </div>
-            
+
             {/* Table Rows */}
             <div className="space-y-3">
-              {events.slice(0, showAllTopEvents ? events.length : 6).map((event, index) => (
-                <div key={event.id} className="grid grid-cols-[40px,minmax(300px,2fr),minmax(180px,1.5fr),minmax(100px,1fr),minmax(120px,1fr),minmax(100px,1fr)] gap-8 items-center px-4 py-4 hover:bg-gray-50 rounded-lg">
-                  <div className="w-8 text-center text-gray-500 font-medium">{index + 1}</div>
-                  <div className="flex items-center space-x-3">
-                    {event.media && (event.media.type === 'image' || event.media.type === 'gif') && (
-                      <img 
-                        src={event.media.src} 
-                        alt={event.media.alt || event.title} 
-                        className="w-10 h-10 rounded-md object-cover"
-                      />
-                    )}
-                    <span className="font-medium text-gray-900 truncate">{event.title}</span>
-                  </div>
-                  <div className="text-gray-600 truncate" title={event.location}>{event.location}</div>
-                  <div className="font-medium">
-                    {Array.isArray(event.price) 
-                      ? `₦${Math.min(...event.price.map(p => p.price)).toLocaleString()}+` 
-                      : event.price === 0 ? 'Free' : `₦${event.price.toLocaleString()}`}
-                  </div>
-                  <div>
-                    <div className="inline-block">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        event.status === 'Sold Out' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800'
-                      }`}>
-                        {event.status === 'Sold Out' ? 'Sold out' : 'Ticket on sale'}
-                      </span>
+              {loadingEvents ? (
+                <div className="text-center py-12 text-gray-500">
+                  Loading events...
+                </div>
+              ) : filteredEvents.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  No upcoming events found
+                </div>
+              ) : (
+                filteredEvents.slice(0, showAllTopEvents ? filteredEvents.length : 6).map((event, index) => (
+                  <div
+                    key={event.id}
+                    onClick={() => navigate(`/events/${event.id}`)}
+                    className="grid grid-cols-[40px,minmax(300px,2fr),minmax(180px,1.5fr),minmax(100px,1fr),minmax(120px,1fr),minmax(100px,1fr)] gap-8 items-center px-4 py-4 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                  >
+                    <div className="w-8 text-center text-gray-500 font-medium">{index + 1}</div>
+                    <div className="flex items-center space-x-3">
+                      {event.media && (event.media.type === 'image' || event.media.type === 'gif') && (
+                        <img
+                          src={event.media.src}
+                          alt={event.media.alt || event.title}
+                          className="w-10 h-10 rounded-md object-cover"
+                        />
+                      )}
+                      <span className="font-medium text-gray-900 truncate">{event.title}</span>
+                    </div>
+                    <div className="text-gray-600 truncate" title={event.location}>{event.location}</div>
+                    <div className="font-medium">
+                      {Array.isArray(event.price)
+                        ? `₦${Math.min(...event.price.map(p => p.price)).toLocaleString()}+`
+                        : event.price === 0 ? 'Free' : `₦${event.price.toLocaleString()}`}
+                    </div>
+                    <div>
+                      <div className="inline-block">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${event.status === 'Sold Out' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800'
+                          }`}>
+                          {event.status === 'Sold Out' ? 'Sold out' : 'Ticket on sale'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {new Date(event.date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
                     </div>
                   </div>
-                  <div className="text-sm text-gray-500">
-                    {new Date(event.date).toLocaleDateString('en-US', { 
-                      month: 'short', 
-                      day: 'numeric',
-                      year: 'numeric'
-                    })}
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
-            
+
             {/* Show More Button */}
-            {events.length > 6 && (
+            {!loadingEvents && filteredEvents.length > 6 && (
               <div className="mt-10 w-full hidden sm:block">
-                <button 
+                <button
                   onClick={() => setShowAllTopEvents(!showAllTopEvents)}
                   className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200"
                   style={{ paddingLeft: '2rem', paddingRight: '2rem' }}
@@ -1550,28 +1654,42 @@ const Homepage: React.FC = () => {
             )}
           </div>
         </div>
-        
+
         {/* Mobile Layout */}
         <div className="sm:hidden">
           <div className="-mx-2 px-4 overflow-x-auto pb-2">
             <div className="flex space-x-3 w-max">
-              {events
-                .slice(0, showAllTopEvents ? events.length : 6)
-                .map((event) => (
-                  <div key={event.id} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
-                    <EventCard
-                      title={event.title}
-                      location={event.location}
-                      status={event.status}
-                      price={event.price}
-                      date={event.date}
-                      media={event.media}
-                    />
-                  </div>
-                ))}
+              {loadingEvents ? (
+                <div className="text-center py-12 text-gray-500">
+                  Loading events...
+                </div>
+              ) : filteredEvents.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  No upcoming events found
+                </div>
+              ) : (
+                filteredEvents
+                  .slice(0, showAllTopEvents ? filteredEvents.length : 6)
+                  .map((event) => (
+                    <div
+                      key={event.id}
+                      onClick={() => navigate(`/events/${event.id}`)}
+                      className="w-[calc(50vw-1.5rem)] flex-shrink-0 cursor-pointer"
+                    >
+                      <EventCard
+                        title={event.title}
+                        location={event.location}
+                        status={event.status}
+                        price={event.price}
+                        date={event.date}
+                        media={event.media}
+                      />
+                    </div>
+                  ))
+              )}
             </div>
           </div>
-          
+
           <div className="mt-4 w-full px-4">
             <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
               View more events
@@ -1595,15 +1713,15 @@ const Homepage: React.FC = () => {
               Explore Communities
             </button>
           </div>
-          
+
           {/* Community Cards */}
           <div className="flex-1 w-full overflow-hidden relative lg:pr-4">
             {/* Left Fade Effect */}
             <div className={`absolute left-0 top-0 bottom-0 w-12 md:w-20 bg-gradient-to-r ${cardColors[activeCardIndex].replace('bg-', 'from-')} to-transparent z-10 pointer-events-none transition-all duration-300 ${showLeftArrow ? 'opacity-100' : 'opacity-0'}`}></div>
-            
+
             {/* Navigation Arrows */}
             {showLeftArrow && (
-              <button 
+              <button
                 className="absolute left-0 md:left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-gray-100 transition-all duration-300"
                 onClick={() => scrollCards('left')}
               >
@@ -1611,68 +1729,68 @@ const Homepage: React.FC = () => {
               </button>
             )}
             {showRightArrow && (
-              <button 
+              <button
                 className="absolute right-0 md:right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-gray-100 transition-all duration-300"
                 onClick={() => scrollCards('right')}
               >
                 <ChevronRight className="w-6 h-6" />
               </button>
             )}
-            
+
             {/* Right Fade Effect */}
             <div className={`absolute right-0 top-0 bottom-0 w-12 md:w-20 bg-gradient-to-l ${cardColors[activeCardIndex].replace('bg-', 'from-')} to-transparent z-10 pointer-events-none transition-all duration-300 ${showRightArrow ? 'opacity-100' : 'opacity-0'}`}></div>
-            
+
             {/* Cards Container */}
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 hide-scrollbar px-4" ref={cardsContainerRef} style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               {[
-                { 
+                {
                   title: "Music",
                   image: communityMusicImage
                 },
-                { 
+                {
                   title: "Food & Drink",
                   image: communityFoodImage
                 },
-                { 
+                {
                   title: "Art & Culture",
                   image: communityArtImage
                 },
-                { 
+                {
                   title: "Technology",
                   image: communityTechImage
                 },
-                { 
+                {
                   title: "Sports",
                   image: communitySportsImage
                 },
-                { 
+                {
                   title: "Fashion",
                   image: communityFashionImage
                 },
-                { 
+                {
                   title: "Gaming",
                   image: communityGamingImage
                 },
-                { 
+                {
                   title: "Health & Wellness",
                   image: communityHealthImage
                 },
-                { 
+                {
                   title: "Education",
                   image: communityEducationImage
                 },
-                { 
+                {
                   title: "Travel",
                   image: communityTravelImage
                 }
               ].map((community, index) => (
-                <div 
+                <div
                   key={index}
                   className="community-card flex-shrink-0 w-[280px] h-[200px] bg-white rounded-xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
                   data-index={index}
                 >
-                  <img 
-                    src={community.image} 
+                  <img
+                    src={community.image}
                     alt={community.title}
                     className="w-full h-full object-cover rounded-xl"
                   />
@@ -1690,23 +1808,21 @@ const Homepage: React.FC = () => {
           <div className="flex space-x-1 bg-gray-100 p-0.5 rounded-full w-fit">
             <button
               onClick={() => setActiveTab('shows')}
-              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
-                activeTab === 'shows' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${activeTab === 'shows' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               Shows
             </button>
             <button
               onClick={() => setActiveTab('events')}
-              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
-                activeTab === 'events' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${activeTab === 'events' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               Events
             </button>
           </div>
         </div>
-        
+
         <div className="flex flex-nowrap gap-4 overflow-x-auto pb-4 -mx-4 px-4 sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:gap-4 sm:overflow-visible sm:mx-0 sm:px-0">
           {trendingData[activeTab].map((item) => (
             <TrendingCard
@@ -1727,7 +1843,7 @@ const Homepage: React.FC = () => {
       <div className="hidden w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-6 px-3">
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Latest Events</h2>
-          <button 
+          <button
             className="flex items-center space-x-1 text-gray-600 hover:text-gray-800 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
@@ -1736,7 +1852,7 @@ const Homepage: React.FC = () => {
             <span className="text-sm font-medium">Filter</span>
           </button>
         </div>
-        
+
         <div className="-mx-4 px-4 overflow-x-auto pb-4">
           <div className="flex space-x-4 md:space-x-8 w-max">
             {/* Card 1 */}
@@ -1770,10 +1886,10 @@ const Homepage: React.FC = () => {
             <div className="w-64 flex-shrink-0">
               <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
                 <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
-                  <img 
-                    src="https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp" 
-                    alt="Clinton Flames" 
-                    className="w-full h-full object-cover rounded-lg" 
+                  <img
+                    src="https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp"
+                    alt="Clinton Flames"
+                    className="w-full h-full object-cover rounded-lg"
                   />
                 </div>
                 <div className="p-3">
@@ -1801,10 +1917,10 @@ const Homepage: React.FC = () => {
             <div className="w-64 flex-shrink-0">
               <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
                 <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
-                  <img 
-                    src="/images/1mouth-analog-v2.gif" 
-                    alt="1analog Girl" 
-                    className="w-full h-full object-cover rounded-lg" 
+                  <img
+                    src="/images/1mouth-analog-v2.gif"
+                    alt="1analog Girl"
+                    className="w-full h-full object-cover rounded-lg"
                   />
                 </div>
                 <div className="p-3">
@@ -1832,10 +1948,10 @@ const Homepage: React.FC = () => {
             <div className="w-64 flex-shrink-0">
               <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
                 <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
-                  <img 
-                    src="https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp" 
-                    alt="Reekado Banks Live In Abuja" 
-                    className="w-full h-full object-cover rounded-lg" 
+                  <img
+                    src="https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp"
+                    alt="Reekado Banks Live In Abuja"
+                    className="w-full h-full object-cover rounded-lg"
                   />
                 </div>
                 <div className="p-3">
@@ -1863,10 +1979,10 @@ const Homepage: React.FC = () => {
             <div className="w-64 flex-shrink-0">
               <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
                 <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
-                  <img 
-                    src="https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp" 
-                    alt="Tech Conference" 
-                    className="w-full h-full object-cover rounded-lg" 
+                  <img
+                    src="https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp"
+                    alt="Tech Conference"
+                    className="w-full h-full object-cover rounded-lg"
                   />
                 </div>
                 <div className="p-3">
@@ -1891,7 +2007,7 @@ const Homepage: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         {/* View More Button */}
         <div className="mt-8">
           <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200" style={{ paddingLeft: '2rem', paddingRight: '2rem' }}>
@@ -1919,7 +2035,7 @@ const Homepage: React.FC = () => {
                 event
               </span>
             </h2>
-            <a 
+            <a
               href="/generate"
               className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 w-max"
               style={{
@@ -1936,7 +2052,7 @@ const Homepage: React.FC = () => {
               </span>
             </a>
           </div>
-          
+
           {/* Right Column - Cards with Infinite Scroll */}
           <div className="w-full md:w-full lg:w-[80%] overflow-hidden pb-4 relative group">
             <style>{`
@@ -2000,17 +2116,17 @@ const Homepage: React.FC = () => {
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
                   ];
-                  
+
                   return (
-                    <div 
+                    <div
                       key={`card-${i}`}
                       className="card-item"
-                      style={{ 
+                      style={{
                         backgroundColor: colors[i % 10],
                       }}
                     >
                       <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
-                        <img 
+                        <img
                           src={images[i % 10]}
                           alt={`Event ${i + 1}`}
                           className="w-full h-full object-cover"
@@ -2026,7 +2142,7 @@ const Homepage: React.FC = () => {
                     </div>
                   );
                 })}
-                
+
                 {/* Duplicate set for seamless looping */}
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => {
                   const colors = ['#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6'];
@@ -2042,17 +2158,17 @@ const Homepage: React.FC = () => {
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
                   ];
-                  
+
                   return (
-                    <div 
+                    <div
                       key={`duplicate-${i}`}
                       className="card-item"
-                      style={{ 
+                      style={{
                         backgroundColor: colors[i % 10],
                       }}
                     >
                       <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
-                        <img 
+                        <img
                           src={images[i % 10]}
                           alt={`Event ${i + 1}`}
                           className="w-full h-full object-cover"
@@ -2086,15 +2202,15 @@ const Homepage: React.FC = () => {
           </a>
         </div>
         <div className="border-b border-gray-200 mt-4 mb-6"></div>
-        
+
         <div className="flex flex-col lg:flex-row justify-between gap-8">
           {/* First Column - Original size */}
           <div className="space-y-8 pt-2">
             {/* First Blog Post */}
             <div className="group w-full max-w-[700px] flex flex-col gap-6">
               <a href="/blog/how-to-host-successful-virtual-events" className="block w-full overflow-hidden lg:max-w-[800px] lg:mx-auto" style={{ aspectRatio: '16/9' }}>
-                <img 
-                  src="/images/Overview (1).png" 
+                <img
+                  src="/images/Overview (1).png"
                   alt="Event overview"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2111,17 +2227,17 @@ const Homepage: React.FC = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Mobile-only divider between first and second posts */}
           <div className="block sm:hidden w-full border-t border-gray-200 my-4"></div>
-          
+
           {/* Second Column - Aligned to right edge */}
           <div className="lg:ml-auto space-y-8">
             {/* Second Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/event-marketing-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img 
-                  src="/images/Overview.png" 
+                <img
+                  src="/images/Overview.png"
                   alt="Marketing insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2134,14 +2250,14 @@ const Homepage: React.FC = () => {
                 </a>
               </div>
             </div>
-            
+
             <div className="border-t border-gray-200 my-6"></div>
-            
+
             {/* Third Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/audio-quality-tips" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img 
-                  src="/images/Overview (2).png" 
+                <img
+                  src="/images/Overview (2).png"
                   alt="Amptive platform features"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2156,13 +2272,13 @@ const Homepage: React.FC = () => {
             </div>
 
             <div className="border-t border-gray-200 my-6"></div>
-            
+
             {/* Fourth Blog Post */}
             {/* Fourth Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/future-of-live-audio" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img 
-                  src="/images/Overview.png" 
+                <img
+                  src="/images/Overview.png"
                   alt="Audio insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2175,14 +2291,14 @@ const Homepage: React.FC = () => {
                 </a>
               </div>
             </div>
-            
+
             <div className="border-t border-gray-200 my-6"></div>
-            
+
             {/* Fifth Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/engaging-audience" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img 
-                  src="/images/Overview.png" 
+                <img
+                  src="/images/Overview.png"
                   alt="Audience engagement insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2195,14 +2311,14 @@ const Homepage: React.FC = () => {
                 </a>
               </div>
             </div>
-            
+
             <div className="border-t border-gray-200 my-6"></div>
-            
+
             {/* Sixth Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
               <a href="/blog/monetization-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img 
-                  src="/images/Overview (2).png" 
+                <img
+                  src="/images/Overview (2).png"
                   alt="Amptive monetization"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
@@ -2218,9 +2334,9 @@ const Homepage: React.FC = () => {
           </div>
         </div>
       </div>
-      
+
       {/* Toast Notifications */}
-      <Toaster 
+      <Toaster
         position="top-center"
         toastOptions={{
           duration: 3000,
@@ -2255,7 +2371,7 @@ const Homepage: React.FC = () => {
           },
         }}
       />
-      
+
       {/* Global styles for toast notifications */}
       <style dangerouslySetInnerHTML={{
         __html: `
@@ -2274,7 +2390,7 @@ const Homepage: React.FC = () => {
           }
         `
       }} />
-      
+
       {/* Newsletter Signup Section */}
       <div className="w-[95vw] mx-auto my-12 relative">
         <div className="absolute inset-0 overflow-hidden rounded-xl">
@@ -2286,34 +2402,34 @@ const Homepage: React.FC = () => {
             <h3 className="text-[32px] font-semibold text-gray-900">Never miss out</h3>
             <p className="text-[32px] font-semibold text-gray-900/60 -mt-1">Get the latest updates</p>
           </div>
-          
+
           {/* Right Column - Email Form */}
           <div className="w-full lg:w-1/2">
             <form onSubmit={(e) => {
               e.preventDefault();
               const form = e.target as HTMLFormElement;
               const email = (form.elements.namedItem('email') as HTMLInputElement).value;
-              
+
               // Basic email validation
               const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
               if (!emailRegex.test(email)) {
                 toast.error('Please enter a valid email address');
                 return;
               }
-              
+
               // Show loading state
               const loadingToast = toast.loading('Subscribing...');
-              
+
               // Simulate API call
               setTimeout(() => {
                 // Here you would typically send the email to your server
                 console.log('Submitting email:', email);
-                
+
                 // On success
                 toast.dismiss(loadingToast);
                 toast.success('Thanks for subscribing!');
                 form.reset();
-                
+
                 // In a real app, you would handle errors like this:
                 // .catch(error => {
                 //   toast.dismiss(loadingToast);
@@ -2329,7 +2445,7 @@ const Homepage: React.FC = () => {
                   placeholder="Enter your email"
                   className="flex-1 max-w-md pl-6 pr-4 py-4 bg-black/5 border border-transparent rounded-full hover:border-black/40 focus:border-black/60 focus:outline-none placeholder-gray-500 text-sm transition-all"
                 />
-                <button 
+                <button
                   type="submit"
                   className="px-6 py-3 bg-black text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors whitespace-nowrap"
                 >
