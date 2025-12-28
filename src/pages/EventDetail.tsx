@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, MapPin, Share2, Ticket, Globe, X, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import amptiveLogo from '@/assets/amptivelogo.svg';
@@ -148,6 +148,28 @@ const EventDetail = () => {
   const [error, setError] = useState<string | null>(null);
   const [dominantColor, setDominantColor] = useState<{ r: number; g: number; b: number } | null>(null);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [showStickyButton, setShowStickyButton] = useState(false);
+  const mobileCtaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // Show sticky button when inline button is NOT intersecting (scrolled past)
+        // We check boundingClientRect.top to ensure it's scrolled *above* (negative top), not below.
+        // But simply "not intersecting" is a good start. 
+        // Better: only show if we've scrolled PAST it. 
+        // If entry.isIntersecting turned to false, check if it went up.
+        setShowStickyButton(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+      },
+      { threshold: 0 }
+    );
+
+    if (mobileCtaRef.current) {
+      observer.observe(mobileCtaRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [loading]); // Re-run when loading finishes so ref exists
 
   const displayProfile = organizerProfile || {
     username: 'Event Host',
@@ -315,6 +337,59 @@ const EventDetail = () => {
     `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(event.venue + (event.city ? `, ${event.city}` : ''))}`
     : null;
 
+  const renderActionContent = (mobile = false) => {
+    const isOrganizer = currentUser?.id === event.user_id;
+    const isEventEnded = event.end_time && new Date(event.end_time) < new Date();
+    const hasTickets = tickets.length > 0;
+
+    // Base classes
+    const baseClasses = mobile
+      ? "w-full rounded-xl py-3 text-center font-bold shadow-lg active:scale-[0.98]"
+      : "w-full rounded-2xl py-4 text-center font-bold transition-transform hover:scale-[1.02] active:scale-[0.98]";
+
+    if (isOrganizer) {
+      return {
+        button: (
+          <Link to={`/events/${event.id}/manage`} className={`${baseClasses} bg-black text-white block`}>
+            Manage Event
+          </Link>
+        ),
+        footerText: "Manage your event dashboard"
+      };
+    }
+
+    if (isEventEnded) {
+      return {
+        button: (
+          <button disabled className={`${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`}>
+            Event Ended
+          </button>
+        ),
+        footerText: null
+      };
+    }
+
+    if (!hasTickets) {
+      return {
+        button: (
+          <button disabled className={`${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`}>
+            No Tickets Available
+          </button>
+        ),
+        footerText: null
+      };
+    }
+
+    return {
+      button: (
+        <button className={`${baseClasses} bg-black text-white`}>
+          Get Tickets
+        </button>
+      ),
+      footerText: "Secure checkout powered by Flutterwave"
+    };
+  };
+
   return (
     <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">
       {/* Dynamic Background */}
@@ -421,6 +496,22 @@ const EventDetail = () => {
                     </div>
                   </div>
                 </section>
+              </div>
+
+              {/* Inline CTA Button (Mobile Only) */}
+              <div ref={mobileCtaRef} className="lg:hidden w-full pb-2">
+                <div className="rounded-2xl border border-gray-200 bg-white/50 p-1">
+                  <div className="p-4">
+                    <div className="w-full">
+                      {renderActionContent(true).button}
+                    </div>
+                    {renderActionContent(true).footerText && (
+                      <div className="mt-4 text-center text-xs text-gray-900">
+                        {renderActionContent(true).footerText}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Description */}
@@ -641,57 +732,33 @@ const EventDetail = () => {
               </button>
             </div>
 
-            {/* Quick Actions / CTA */}
+            {/* Quick Actions / CTA (Desktop) */}
             <div className="hidden lg:block space-y-4">
-              {(() => {
-                const isOrganizer = currentUser?.id === event.user_id;
-                const isEventEnded = event.end_time && new Date(event.end_time) < new Date();
-                const hasTickets = tickets.length > 0;
-
-                if (isOrganizer) {
-                  return (
-                    <Link to={`/events/${event.id}/manage`} className="block w-full rounded-2xl bg-black py-4 text-center font-bold text-white transition-transform hover:scale-[1.02] active:scale-[0.98]">
-                      Manage Event
-                    </Link>
-                  );
-                }
-
-                if (isEventEnded) {
-                  return (
-                    <button disabled className="w-full rounded-2xl bg-gray-100 py-4 text-center font-bold text-gray-400 cursor-not-allowed">
-                      Event Ended
-                    </button>
-                  );
-                }
-
-                if (!hasTickets) {
-                  return (
-                    <button disabled className="w-full rounded-2xl bg-gray-100 py-4 text-center font-bold text-gray-400 cursor-not-allowed">
-                      No Tickets Available
-                    </button>
-                  );
-                }
-
-                return (
-                  <button className="w-full rounded-2xl bg-black py-4 text-center font-bold text-white transition-transform hover:scale-[1.02] active:scale-[0.98]">
-                    Get Tickets
-                  </button>
-                );
-              })()}
-              <p className="mt-3 text-center text-xs font-medium text-black">
-                Secure checkout powered by Flutterwave
-              </p>
+              {renderActionContent(false).button}
+              {renderActionContent(false).footerText && (
+                <p className="mt-3 text-center text-xs font-medium text-black">
+                  {renderActionContent(false).footerText}
+                </p>
+              )}
             </div>
 
-            {/* Organizer - Desktop Sidebar (Hidden but kept for structure) */}
-
-            {/* More Events Widget */}
-
+            {/* Mobile Sticky Action Bar */}
+            <div className={`fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white/80 backdrop-blur-xl p-4 lg:hidden safe-area-pb transition-transform duration-300 ${showStickyButton ? 'translate-y-0' : 'translate-y-full'}`}>
+              {renderActionContent(true).button}
+              {renderActionContent(true).footerText && (
+                <div className="mt-2 text-center text-xs text-gray-900">
+                  {renderActionContent(true).footerText}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Organizer - Desktop Sidebar (Hidden but kept for structure) */}
+
+          {/* More Events Widget */}
+
         </div>
-
-
-      </div >
+      </div>
     </div >
   );
 };
