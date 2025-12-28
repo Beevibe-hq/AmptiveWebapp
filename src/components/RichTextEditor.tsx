@@ -5,6 +5,7 @@ import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import { useState } from 'react';
 import { toastError } from '@/lib/ui/toast';
+import { createClient } from '@/lib/supabase/client';
 import {
     Heading1,
     Heading2,
@@ -86,8 +87,8 @@ export default function RichTextEditor({
         setUploading(true);
 
         try {
-            // Add a small delay to show the spinner for better UX
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // Initialize Supabase client
+            const supabase = createClient();
 
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
@@ -106,15 +107,35 @@ export default function RichTextEditor({
                     continue;
                 }
 
-                // Create local URL for the file (no upload to Supabase)
-                const localUrl = URL.createObjectURL(file);
+                // Upload to Supabase Storage
+                // Sanitize filename and add timestamp to avoid collisions
+                // Upload to event-attachments folder as required by RLS policies
+                const fileName = `event-attachments/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('event-assets') // Using user-provided bucket name
+                    .upload(fileName, file, {
+                        cacheControl: '3600',
+                        upsert: false
+                    });
+
+                if (uploadError) {
+                    console.error('Upload error:', uploadError);
+                    toastError(`Failed to upload ${file.name}: ${uploadError.message}`);
+                    continue;
+                }
+
+                // Get Public URL
+                const { data: { publicUrl } } = supabase.storage
+                    .from('event-assets')
+                    .getPublicUrl(fileName);
 
                 // Insert into editor
                 const isImage = file.type.startsWith('image/');
 
                 if (isImage) {
                     // Insert image (styling handled by extension config)
-                    editor.chain().focus().setImage({ src: localUrl }).run();
+                    editor.chain().focus().setImage({ src: publicUrl }).run();
                 } else {
                     // Create a placeholder SVG for the file
                     const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
@@ -131,7 +152,7 @@ export default function RichTextEditor({
                         .chain()
                         .focus()
                         .setImage({ src: base64Svg, alt: file.name, title: file.name })
-                        .setLink({ href: localUrl })
+                        .setLink({ href: publicUrl })
                         .run();
                 }
             }

@@ -1,10 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   body {
-    @apply bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen;
+    @apply bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen font-sans;
   }
 
   input,

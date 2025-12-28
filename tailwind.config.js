@@ -17,7 +17,7 @@ export default {
         '22': '5.5rem',
       },
       fontFamily: {
-        'inter': ['Inter', 'sans-serif'],
+        sans: ['Inter', 'sans-serif'],
       },
       colors: {
         primary: {

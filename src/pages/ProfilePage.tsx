@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { createClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
 import { ProfileRow, getProfileById, updateProfileAvatar } from '@/lib/supabase/profiles';
@@ -148,6 +148,7 @@ const mapEventRows = (
     });
 
 const ProfilePage = () => {
+  const { id: urlUserId } = useParams<{ id: string }>();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -271,17 +272,45 @@ const ProfilePage = () => {
   useEffect(() => {
     let cancelled = false;
     const loadProfile = async () => {
-      if (!user?.id) { setProfileLoading(false); return; }
+      // Determine the target user ID:
+      // 1. URL param (public view)
+      // 2. Authenticated user (private view)
+      const targetId = urlUserId || user?.id;
+
+      if (!targetId) {
+        setProfileLoading(false);
+        return;
+      }
+
       try {
         setProfileLoading(true);
-        const profileData = await getProfileById(user.id);
+
+        // If it's a UUID, fetch by ID. If it's a username, we might need a different query or logic.
+        // Assuming urlUserId is the user ID for now as per current routing.
+        // If your routing passes username, you need to resolve username -> ID first.
+        // But the previous component uses `displayProfile.username || event.user_id` in the link.
+        // If it is a UUID, getProfileById works. If it is a username, we need to fetch by username.
+
+        let profileData: ProfileRow | null = null;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+
+        if (isUuid) {
+          profileData = await getProfileById(targetId);
+        } else {
+          // Fetch by username
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', targetId)
+            .single();
+          if (!error) profileData = data;
+        }
+
         if (!cancelled) {
           setProfile(profileData);
-          // Only set avatar URL if it's from our database
           if (profileData?.avatar_url) {
             setProfileAvatarUrl(profileData.avatar_url);
           } else {
-            // Clear any previous avatar URL to ensure we don't show provider avatars
             setProfileAvatarUrl(null);
           }
         }
@@ -293,7 +322,7 @@ const ProfilePage = () => {
     };
     loadProfile();
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [user?.id, urlUserId]); // Depend on urlUserId too
 
   // Update profile when avatar URL changes (only if it's a new URL)
   useEffect(() => {
@@ -313,18 +342,23 @@ const ProfilePage = () => {
     return () => { cancelled = true; };
   }, [profileAvatarUrl, user?.id, profile]);
 
+  // Load Events
   useEffect(() => {
     let cancelled = false;
     let intervalId: number | undefined;
 
     const run = async () => {
-      if (!user?.id) {
+      const targetId = profile?.user_id || (urlUserId ? undefined : user?.id); // Use profile.user_id if profile loaded, else falback
+
+      // Wait for profile to load if we are using a username URL
+      if (!targetId) {
         setUpcomingEvents([]);
         setPastEvents([]);
         return;
       }
+
       try {
-        const { upcoming, past } = await loadEvents(user.id);
+        const { upcoming, past } = await loadEvents(targetId);
         if (!cancelled) {
           setUpcomingEvents(upcoming);
           setPastEvents(past);
@@ -345,7 +379,7 @@ const ProfilePage = () => {
       cancelled = true;
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [user?.id, loadEvents]);
+  }, [user?.id, urlUserId, profile?.user_id, loadEvents]); // Updated dependencies
 
   const renderEventCard = useCallback(
     (
@@ -825,23 +859,29 @@ const ProfilePage = () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const u = session?.user ?? null;
-        if (!u) {
+
+        // If no user and NOT viewing a public profile, redirect to login
+        if (!u && !urlUserId) {
           navigate('/login');
           return;
         }
-        setUser(u);
+
+        // If user exists, set user. If not, user remains null (public view state)
+        if (u) {
+          setUser(u);
+        }
       } catch (error) {
         console.error('Error hydrating user session:', error);
-        navigate('/login');
+        if (!urlUserId) navigate('/login');
       } finally {
         setLoading(false);
       }
     };
 
     hydrateUser();
-  }, [navigate]);
+  }, [navigate, urlUserId]);
 
-  if (loading || (profileLoading && !!user?.id)) {
+  if (loading || profileLoading) {
     return (
       <div className="min-h-screen bg-white">
         {/* Blur Background */}
@@ -950,35 +990,39 @@ const ProfilePage = () => {
           </h1>
           <p className="mt-1 text-gray-600 text-center">@{profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</p>
           <div className="mt-7 flex flex-row flex-wrap items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/profile/edit')}
-              className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold border border-gray-300 hover:bg-gray-100 transition-all duration-200"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth="1.5"
-                stroke="currentColor"
-                className="w-4 h-4"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-                />
-              </svg>
-              Edit Profile
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/events/create')}
-              className="bg-black text-white px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold hover:bg-gray-900 transition-all duration-200"
-            >
-              Create Event
-            </button>
+            {user?.id && profile?.user_id && user.id === profile.user_id && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate('/profile/edit')}
+                  className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold border border-gray-300 hover:bg-gray-100 transition-all duration-200"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="1.5"
+                    stroke="currentColor"
+                    className="w-4 h-4"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
+                    />
+                  </svg>
+                  Edit Profile
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/events/create')}
+                  className="bg-black text-white px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold hover:bg-gray-900 transition-all duration-200"
+                >
+                  Create Event
+                </button>
+              </>
+            )}
           </div>
 
           <div className="mt-20">
@@ -989,8 +1033,8 @@ const ProfilePage = () => {
                   type="button"
                   onClick={() => setActiveEventTab('upcoming')}
                   className={`px-4 py-2 rounded-full border text-sm font-semibold transition whitespace-nowrap ${activeEventTab === 'upcoming'
-                      ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
-                      : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
+                    ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
+                    : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
                     }`}
                 >
                   Upcoming
@@ -999,8 +1043,8 @@ const ProfilePage = () => {
                   type="button"
                   onClick={() => setActiveEventTab('past')}
                   className={`px-4 py-2 rounded-full border text-sm font-semibold transition whitespace-nowrap ${activeEventTab === 'past'
-                      ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
-                      : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
+                    ? 'bg-[#F8F7F4] text-gray-900 border-[#F8F7F4]'
+                    : 'bg-white text-gray-600 border-transparent hover:bg-gray-50'
                     }`}
                 >
                   Past
@@ -1035,10 +1079,10 @@ const ProfilePage = () => {
                   <>
                     <div
                       className={`relative flex flex-col items-stretch gap-4 sm:gap-0 sm:items-center transition-opacity duration-200 ease-in-out ${pastFadeState === 'out'
-                          ? 'opacity-0'
-                          : pastFadeState === 'in'
-                            ? 'opacity-100'
-                            : 'opacity-100'
+                        ? 'opacity-0'
+                        : pastFadeState === 'in'
+                          ? 'opacity-100'
+                          : 'opacity-100'
                         }`}
                     >
                       {displayedPastEvents.map((event, index) =>

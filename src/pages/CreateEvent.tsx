@@ -80,6 +80,8 @@ type FormState = {
   endDateTime: string;
   venue: string;
   city: string;
+  latitude?: number | null;
+  longitude?: number | null;
   coverImage: string;
   locationType: 'physical' | 'online';
   tickets: EventTicket[];
@@ -135,6 +137,8 @@ const buildInitialFormState = (): FormState => {
     endDateTime: end,
     venue: '',
     city: '',
+    latitude: null,
+    longitude: null,
     coverImage: '',
     locationType: 'physical',
     tickets: [],
@@ -553,6 +557,8 @@ const CreateEvent = () => {
         location_type: form.locationType,
         venue: form.locationType === 'online' ? null : (form.venue.trim() || null),
         city: form.locationType === 'online' ? null : (form.city.trim() || null),
+        latitude: form.locationType === 'online' ? null : form.latitude,
+        longitude: form.locationType === 'online' ? null : form.longitude,
         cover_image: form.coverImage.trim() || null,
         user_id: userId,
         status: 'published',
@@ -774,8 +780,14 @@ const CreateEvent = () => {
                       <LocationPicker
                         initialVenue={form.venue}
                         initialCity={form.city}
-                        onLocationSelect={(venue, city) => {
-                          setForm(prev => ({ ...prev, venue, city }));
+                        onLocationSelect={(venue, city, lat, lng) => {
+                          setForm(prev => ({
+                            ...prev,
+                            venue,
+                            city,
+                            latitude: lat,
+                            longitude: lng
+                          }));
                         }}
                       />
                     ) : (

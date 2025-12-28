@@ -1,7 +1,9 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Homepage from './pages/Homepage';
+import Explore from './pages/Explore';
 import Events from './pages/Events';
 import CreateEvent from './pages/CreateEvent';
 import EventDetail from './pages/EventDetail';
@@ -27,6 +29,7 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
+        <ScrollToTop />
         <Routes>
           <Route path="*" element={<MainLayout />} />
         </Routes>
@@ -34,6 +37,17 @@ function App() {
       </Router>
     </ThemeProvider>
   );
+}
+
+// Helper component to scroll to top on route change
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  React.useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
 }
 
 // MainLayout component that includes Navbar and conditionally renders Footer
@@ -54,6 +68,7 @@ function MainLayout() {
       <main className={location.pathname === '/events/create' ? '' : 'bg-white'}>
         <Routes>
           <Route path="/" element={<Homepage />} />
+          <Route path="/explore" element={<Explore />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/create" element={<CreateEvent />} />
           <Route path="/events/:id" element={<EventDetail />} />
@@ -70,6 +85,7 @@ function MainLayout() {
           <Route path="/complete-profile" element={<CompleteProfilePage />} />
           <Route path="/auth/callback" element={<OAuthCallback />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/:id" element={<ProfilePage />} />
         </Routes>
       </main>
       {!hideFooter && <Footer />}
