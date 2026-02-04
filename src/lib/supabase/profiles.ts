@@ -7,6 +7,7 @@ export type ProfileRow = {
   dob?: string | null; // ISO date string YYYY-MM-DD
   avatar_url?: string | null;
   preferences?: any | null;
+  email?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -54,4 +55,22 @@ export function isProfileComplete(p?: ProfileRow | null): boolean {
   const hasFullName = typeof p.full_name === 'string' && p.full_name.trim().length > 0;
   const hasDob = typeof p.dob === 'string' && p.dob.trim().length > 0;
   return hasUsername && hasFullName && hasDob;
+}
+
+export async function checkUsernameAvailability(username: string, currentUserId: string): Promise<boolean> {
+  if (username.length < 3) return false;
+
+  const supabase = createClient();
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('username', username)
+    .neq('user_id', currentUserId); // Exclude current user
+
+  if (error) {
+    console.error('Error checking username:', error);
+    return false; // Assume unavailable on error to be safe, or handle differently
+  }
+
+  return count === 0;
 }

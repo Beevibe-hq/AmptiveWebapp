@@ -1,15 +1,17 @@
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import SignupForm from '@/components/auth/SignupForm';
 
 export default function SignupPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const params = new URLSearchParams(location.search);
   const initialEmail = params.get('email') || undefined;
+  const redirectTo = searchParams.get('redirect');
 
   const handleSignupSuccess = () => {
-    // Redirect to home on successful signup (or to a verify page if you add one)
-    navigate('/');
+    // Redirect to the provided path or home on successful signup
+    navigate(redirectTo || '/');
   };
 
   return (
@@ -21,9 +23,12 @@ export default function SignupPage() {
           </h2>
           <p className="mt-1 text-center text-sm text-gray-600">
             Already have an account?{' '}
-            <a href="/login" className="font-medium text-black hover:underline">
+            <Link
+              to={redirectTo ? `/login?redirect=${encodeURIComponent(redirectTo)}` : "/login"}
+              className="font-medium text-black hover:underline"
+            >
               Sign in
-            </a>
+            </Link>
           </p>
         </div>
         <div className="bg-white py-4 px-4 sm:rounded-lg sm:px-10">

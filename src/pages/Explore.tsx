@@ -3,6 +3,8 @@ import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, MoreHorizo
 import { createClient } from '@/lib/supabase/client';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { Link, useNavigate } from 'react-router-dom';
+import ReactCalendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
 
 // Types
 interface Event {
@@ -35,17 +37,37 @@ const mapContainerStyle = { w: '100%', h: '100%' };
 const defaultCenter = { lat: 6.5244, lng: 3.3792 };
 
 export default function Explore() {
-    const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-    const [searchQuery, setSearchQuery] = useState('');
+    const [viewMode, setViewMode] = useState<'list' | 'map'>(() => sessionStorage.getItem('explore_viewMode') as 'list' | 'map' || 'list');
+    const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('explore_searchQuery') || '');
     const [events, setEvents] = useState<Event[]>([]);
     const [loading, setLoading] = useState(true);
     const [map, setMap] = useState<google.maps.Map | null>(null);
 
-    // Filter States
-    const [dateFilter, setDateFilter] = useState('All Upcoming');
-    const [locFilter, setLocFilter] = useState('Nigeria');
-    const [communityFilter, setCommunityFilter] = useState('All Communities');
-    const [priceFilter, setPriceFilter] = useState<string[]>([]);
+    // Filter States - Persisted
+    const [dateFilter, setDateFilter] = useState(() => sessionStorage.getItem('explore_dateFilter') || 'All Upcoming');
+    const [locFilter, setLocFilter] = useState(() => sessionStorage.getItem('explore_locFilter') || 'Nigeria');
+    const [communityFilter, setCommunityFilter] = useState(() => sessionStorage.getItem('explore_communityFilter') || 'All Communities');
+    const [priceFilter, setPriceFilter] = useState<string[]>(() => {
+        const stored = sessionStorage.getItem('explore_priceFilter');
+        return stored ? JSON.parse(stored) : [];
+    });
+    // Custom Date Range State
+    const [customStartDate, setCustomStartDate] = useState(() => sessionStorage.getItem('explore_customStartDate') || '');
+    const [customEndDate, setCustomEndDate] = useState(() => sessionStorage.getItem('explore_customEndDate') || '');
+    const [showCustomDate, setShowCustomDate] = useState(false);
+
+    // Persist effect
+    useEffect(() => {
+        sessionStorage.setItem('explore_viewMode', viewMode);
+        sessionStorage.setItem('explore_searchQuery', searchQuery);
+        sessionStorage.setItem('explore_dateFilter', dateFilter);
+        sessionStorage.setItem('explore_locFilter', locFilter);
+        sessionStorage.setItem('explore_communityFilter', communityFilter);
+        sessionStorage.setItem('explore_priceFilter', JSON.stringify(priceFilter));
+        sessionStorage.setItem('explore_customStartDate', customStartDate);
+        sessionStorage.setItem('explore_customEndDate', customEndDate);
+    }, [viewMode, searchQuery, dateFilter, locFilter, communityFilter, priceFilter, customStartDate, customEndDate]);
+
     const navigate = useNavigate();
 
     const supabase = createClient();
@@ -56,9 +78,9 @@ export default function Explore() {
 
     const fetchEvents = async () => {
         setLoading(true);
+        // Step 1: Fetch Events
         let query = supabase
             .from('events')
-            //.select('*, tickets(price)')
             .select('*')
             .order('start_time', { ascending: true });
 
@@ -66,19 +88,33 @@ export default function Explore() {
             query = query.ilike('title', `%${searchQuery}%`);
         }
 
-        const { data, error } = await query;
-        console.log('Fetch Events Debug:', { data, error, searchQuery, dateFilter, locFilter, communityFilter, priceFilter });
+        const { data: eventsData, error: eventsError } = await query;
+        console.log('Fetch Events Debug:', { eventsData, eventsError });
 
-        if (!error && data) {
+        if (!eventsError && eventsData) {
+            // Step 2: Fetch Tickets for these events (Client-side join workaround for 400 error)
+            const eventIds = eventsData.map(e => e.id);
+            const { data: ticketsData, error: ticketsError } = await supabase
+                .from('event_tickets')
+                .select('event_id, price')
+                .in('event_id', eventIds);
+
+            console.log('Fetch Tickets Debug:', { ticketsData, ticketsError });
+
             // Enrich with real price min from tickets
-            const enriched = data.map(e => {
-                const prices = e.tickets?.map((t: any) => t.price) || [];
+            const enriched = eventsData.map(e => {
+                const eventTickets = ticketsData?.filter((t: any) => t.event_id === e.id) || [];
+                const prices = eventTickets.map((t: any) => Number(t.price)).filter((p: number) => !isNaN(p) && p >= 0) || [];
+                // Default to 0 (Free) if no tickets, as per user request
                 const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
                 return {
                     ...e,
+                    tickets: eventTickets,
                     price_min: minPrice
                 };
             });
+
+            // console.log('Enriched Events:', enriched.map(e => ({ title: e.title, price_min: e.price_min })));
 
             let filtered = enriched;
 
@@ -90,7 +126,11 @@ export default function Explore() {
             const dayAfter = new Date(today);
             dayAfter.setDate(dayAfter.getDate() + 2);
 
-            if (dateFilter === 'Today') {
+
+            if (dateFilter === 'All Upcoming') {
+                const now = new Date();
+                filtered = filtered.filter(e => new Date(e.start_time) >= now);
+            } else if (dateFilter === 'Today') {
                 filtered = filtered.filter(e => {
                     const d = new Date(e.start_time);
                     return d >= today && d < tomorrow;
@@ -101,44 +141,65 @@ export default function Explore() {
                     return d >= tomorrow && d < dayAfter;
                 });
             } else if (dateFilter === 'This Weekend') {
-                // Simple logic: upcoming Friday to Sunday
-                // For now just show all future as placeholder or implement moment.js logic 
-                // Using simple future check for "weekend" context
                 const d = new Date();
                 const day = d.getDay();
-                const diff = 5 - day; // days until Friday
-                // ... (simplified to just next 7 days for demo if needed, but keeping as All Upcoming fallback for now if complex)
-                // Actually let's just leave it as 'All Upcoming' logic for "This Weekend" unless we have robust date lib
+                // Calc next Friday
+                const diff = (day <= 5) ? (5 - day) : (12 - day); // if Saturday(6), next Friday is +6 days. If Sunday(0), +5. If Friday(5), +0.
+
+                const nextFriday = new Date(d);
+                nextFriday.setDate(d.getDate() + diff);
+                nextFriday.setHours(0, 0, 0, 0);
+
+                const nextSunday = new Date(nextFriday);
+                nextSunday.setDate(nextSunday.getDate() + 2); // Friday + 2 = Sunday
+                nextSunday.setHours(23, 59, 59, 999);
+
+                filtered = filtered.filter(e => {
+                    const evtDate = new Date(e.start_time);
+                    return evtDate >= nextFriday && evtDate <= nextSunday;
+                });
+            } else if (dateFilter === 'Custom' && customStartDate && customEndDate) {
+                const start = new Date(customStartDate);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(customEndDate);
+                end.setHours(23, 59, 59, 999);
+
+                filtered = filtered.filter(e => {
+                    const d = new Date(e.start_time);
+                    return d >= start && d <= end;
+                });
             }
 
             // Location Filter
             if (locFilter === 'Near Me') {
-                // Mock: no op or filter by lat/long if user pos known
-            } else if (locFilter !== 'Nigeria') { // Assuming 'Nigeria' shows all/default
-                // If specific location selected
-                if (locFilter === 'United States') filtered = filtered.filter(e => e.city?.includes('USA') || e.city?.includes('New York')); // Mock logic
+                // Determine user location or show all if unavailable
+                // For now, keeping as placeholder or showing all
+            } else if (locFilter !== 'Nigeria') {
+                // Specific Location Logic
+                if (locFilter === 'United States') filtered = filtered.filter(e => e.city?.includes('USA') || e.city?.includes('New York') || e.venue?.includes('USA'));
                 if (locFilter === 'France') filtered = filtered.filter(e => e.city?.includes('Paris') || e.city?.includes('France'));
             }
 
-            // Community Filter (Mock: filter by title content)
+            // Community Filter
             if (communityFilter !== 'All Communities') {
-                // filtered = filtered.filter(e => e.title.toLowerCase().includes(communityFilter.toLowerCase()) || e.description?.toLowerCase().includes(communityFilter.toLowerCase()));
-                // Comments: Data doesn't have community tag yet, so we skip strictly filtering to show content.
+                filtered = filtered.filter(e =>
+                    e.title?.toLowerCase().includes(communityFilter.toLowerCase()) ||
+                    (e.description && e.description.toLowerCase().includes(communityFilter.toLowerCase()))
+                );
             }
 
             // Price Filter
             if (priceFilter.length > 0) {
+
                 filtered = filtered.filter(e => {
-                    const p = e.price_min || 0;
+                    // Ensure price is treated as a number
+                    const p = e.price_min;
+
                     if (priceFilter.includes('Free') && p === 0) return true;
-                    // Ranges in Naira (approximate conversion for logic)
-                    // Under ₦5,000
-                    if (priceFilter.includes('Under ₦5,000') && p > 0 && p < 5000) return true;
-                    // ₦5,000 - ₦20,000
-                    if (priceFilter.includes('₦5,000 - ₦20,000') && p >= 5000 && p < 20000) return true;
-                    // ₦20,000 - ₦50,000
-                    if (priceFilter.includes('₦20,000 - ₦50,000') && p >= 20000 && p < 50000) return true;
-                    // ₦50,000+
+                    // Ranges
+                    if (priceFilter.includes('Under ₦5,000') && p < 5000) return true;
+                    if (priceFilter.includes('₦5,000 - ₦20,000') && p >= 5000 && p <= 20000) return true;
+                    if (priceFilter.includes('₦20,000 - ₦50,000') && p >= 20000 && p <= 50000) return true;
                     if (priceFilter.includes('₦50,000+') && p >= 50000) return true;
                     return false;
                 });
@@ -217,13 +278,80 @@ export default function Explore() {
                                         key={label}
                                         label={label}
                                         active={dateFilter === label}
-                                        onClick={() => setDateFilter(label)}
+                                        onClick={() => {
+                                            setDateFilter(label);
+                                            setShowCustomDate(false);
+                                        }}
                                     />
                                 ))}
                             </div>
-                            <button className="flex items-center gap-2 text-gray-500 text-sm font-medium hover:text-black">
+
+
+                            {showCustomDate && (
+                                <>
+                                    {/* Backdrop */}
+                                    <div
+                                        className="fixed inset-0 bg-black/20 z-40"
+                                        onClick={() => setShowCustomDate(false)}
+                                    />
+
+                                    {/* Calendar Popup */}
+                                    <div className="fixed left-4 top-32 z-50 bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 max-w-md">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h4 className="font-bold text-gray-900">Select Date Range</h4>
+                                            <button
+                                                onClick={() => setShowCustomDate(false)}
+                                                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+
+                                        <ReactCalendar
+                                            selectRange={true}
+                                            onChange={(value: any) => {
+                                                if (Array.isArray(value) && value.length === 2) {
+                                                    const [start, end] = value;
+                                                    setCustomStartDate(start.toISOString().split('T')[0]);
+                                                    setCustomEndDate(end.toISOString().split('T')[0]);
+                                                    setDateFilter('Custom');
+                                                }
+                                            }}
+                                            value={
+                                                customStartDate && customEndDate
+                                                    ? [new Date(customStartDate), new Date(customEndDate)]
+                                                    : null
+                                            }
+                                            className="border-0 w-full"
+                                        />
+
+                                        <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                                            <div className="text-sm text-gray-600">
+                                                {customStartDate && customEndDate ? (
+                                                    <span>
+                                                        {new Date(customStartDate).toLocaleDateString()} - {new Date(customEndDate).toLocaleDateString()}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400">Select a date range</span>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={() => setShowCustomDate(false)}
+                                                className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            <button
+                                onClick={() => setShowCustomDate(!showCustomDate)}
+                                className={`flex items-center gap-2 text-sm font-medium hover:text-black ${dateFilter === 'Custom' ? 'text-black' : 'text-gray-500'}`}
+                            >
                                 Customize
-                                <ChevronDown className="w-4 h-4" />
+                                <ChevronDown className={`w-4 h-4 transition-transform ${showCustomDate ? 'rotate-180' : ''}`} />
                             </button>
                         </section>
 
@@ -334,7 +462,7 @@ export default function Explore() {
                                             <Marker
                                                 key={event.id}
                                                 position={{ lat: event.latitude!, lng: event.longitude! }}
-                                                onClick={() => navigate(`/event/${event.id}`)}
+                                                onClick={() => navigate(`/events/${event.id}`)}
                                             />
                                         ))}
                                     </GoogleMap>
@@ -344,9 +472,22 @@ export default function Explore() {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {events.length > 0 ? (
+                                {loading ? (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {events.map((event) => {
+                                        {[...Array(8)].map((_, i) => (
+                                            <div key={i} className="flex items-center gap-4 p-2 rounded-2xl w-full">
+                                                <div className="w-20 h-20 shrink-0 rounded-xl bg-gray-100 animate-pulse" />
+                                                <div className="flex-1 space-y-3 py-1">
+                                                    <div className="h-3 bg-gray-100 rounded w-24 animate-pulse" />
+                                                    <div className="h-5 bg-gray-100 rounded w-3/4 animate-pulse" />
+                                                    <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse" />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : events.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-both">
+                                        {events.map((event, index) => {
                                             const eventDate = new Date(event.start_time);
                                             const isToday = new Date().toDateString() === eventDate.toDateString();
                                             const isTomorrow = new Date(Date.now() + 86400000).toDateString() === eventDate.toDateString();
@@ -358,9 +499,14 @@ export default function Explore() {
                                             const timeDisplay = eventDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
                                             return (
-                                                <div key={event.id} className="group flex items-center gap-4 p-2 rounded-2xl hover:bg-gray-50 transition-colors w-full relative cursor-pointer" onClick={() => navigate(`/event/${event.id}`)}>
+                                                <Link
+                                                    key={event.id}
+                                                    to={`/events/${event.id}`}
+                                                    className="group flex items-center gap-4 p-2 rounded-2xl hover:bg-gray-50 transition-colors w-full relative cursor-pointer block"
+                                                    style={{ animationDelay: `${index * 50}ms` }}
+                                                >
                                                     {/* Cover Image */}
-                                                    <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 border border-gray-100">
+                                                    <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 border border-gray-100 group-hover:scale-[1.02] transition-transform duration-500">
                                                         {event.cover_image ? (
                                                             <img src={event.cover_image} alt={event.title} className="w-full h-full object-cover" />
                                                         ) : (
@@ -385,7 +531,7 @@ export default function Explore() {
                                                         </div>
 
                                                         {/* Title */}
-                                                        <h3 className="text-base font-bold text-gray-900 truncate">
+                                                        <h3 className="text-base font-bold text-gray-900 truncate group-hover:text-black transition-colors">
                                                             {event.title}
                                                         </h3>
 
@@ -394,10 +540,7 @@ export default function Explore() {
                                                             {event.venue || event.city || 'TBA'}
                                                         </div>
                                                     </div>
-
-                                                    {/* Price/Action (Optional but kept minimal as per Luma style) */}
-                                                    {/* Removed explicit button in favor of row click to keep it clean like the reference */}
-                                                </div>
+                                                </Link>
                                             );
                                         })}
                                     </div>

@@ -6,6 +6,7 @@ import Homepage from './pages/Homepage';
 import Explore from './pages/Explore';
 import Events from './pages/Events';
 import CreateEvent from './pages/CreateEvent';
+import CheckoutPage from './pages/CheckoutPage';
 import EventDetail from './pages/EventDetail';
 import Invest from './pages/Invest';
 import Shop from './pages/Shop';
@@ -21,8 +22,9 @@ import VerifyOtpPage from './pages/VerifyOtp';
 import CompleteProfilePage from './pages/CompleteProfile';
 import OAuthCallback from './pages/OAuthCallback';
 import ProfilePage from './pages/ProfilePage';
+import EditProfile from './pages/EditProfile';
+import MyTickets from './pages/MyTickets';
 import { Toaster } from 'sonner';
-
 import { ThemeProvider } from './contexts/ThemeContext';
 
 function App() {
@@ -58,12 +60,12 @@ function MainLayout() {
     location.pathname === '/chat-mode' ||
     location.pathname === '/login' ||
     location.pathname === '/signup' ||
-    location.pathname === '/verify-otp' ||
     location.pathname === '/complete-profile' ||
-    location.pathname === '/events/create';
+    location.pathname === '/events/create' ||
+    location.pathname === '/profile/edit';
 
   return (
-    <div className="min-h-screen font-inter">
+    <div className="min-h-screen font-sans">
       <Navbar />
       <main className={location.pathname === '/events/create' ? '' : 'bg-white'}>
         <Routes>
@@ -72,6 +74,7 @@ function MainLayout() {
           <Route path="/events" element={<Events />} />
           <Route path="/events/create" element={<CreateEvent />} />
           <Route path="/events/:id" element={<EventDetail />} />
+          <Route path="/events/:id/checkout" element={<CheckoutPage />} />
           <Route path="/invest" element={<Invest />} />
           <Route path="/shop" element={<Shop />} />
           <Route path="/community" element={<Community />} />
@@ -85,7 +88,9 @@ function MainLayout() {
           <Route path="/complete-profile" element={<CompleteProfilePage />} />
           <Route path="/auth/callback" element={<OAuthCallback />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/edit" element={<EditProfile />} />
           <Route path="/profile/:id" element={<ProfilePage />} />
+          <Route path="/my-tickets" element={<MyTickets />} />
         </Routes>
       </main>
       {!hideFooter && <Footer />}

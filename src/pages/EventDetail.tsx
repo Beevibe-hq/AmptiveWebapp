@@ -8,6 +8,7 @@ import { extractDominantColors } from '@/utils/colorExtractor';
 import { QRCodeSVG } from 'qrcode.react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 
+
 type EventRecord = {
   id: string;
   title?: string | null;
@@ -382,9 +383,12 @@ const EventDetail = () => {
 
     return {
       button: (
-        <button className={`${baseClasses} bg-black text-white`}>
+        <Link
+          to={`/events/${event.id}/checkout`}
+          className={`${baseClasses} bg-black text-white block`}
+        >
           Get Tickets
-        </button>
+        </Link>
       ),
       footerText: "Secure checkout powered by Flutterwave"
     };
@@ -569,13 +573,13 @@ const EventDetail = () => {
                 </div>
 
                 {tickets.length > 0 ? (
-                  <div className="flex overflow-x-auto pb-4 snap-x md:grid md:grid-cols-2 md:overflow-visible md:pb-0 gap-4 md:gap-6 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+                  <div className="flex overflow-x-auto pb-4 snap-x gap-4 md:gap-6 -mx-4 px-4 md:mx-0 md:px-0 hide-scrollbar">
                     {tickets.map((ticket, index) => {
                       const benefits = deriveTicketBenefits(ticket);
                       const theme = TICKET_THEMES[ticket.color_theme || 'silver'] || TICKET_THEMES.silver;
 
                       return (
-                        <div key={ticket.id} className="group relative min-h-[14rem] min-w-[300px] w-[85vw] md:w-full flex-shrink-0 snap-center [perspective:1600px]">
+                        <div key={ticket.id} className="group relative min-h-[14rem] flex-shrink-0 snap-center [perspective:1600px]" style={{ width: '85vw', maxWidth: '360px' }}>
                           <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
                             {/* Front */}
                             <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-3xl border ${theme.border} ${theme.gradient} px-6 py-6 backdrop-blur-sm shadow-md hover:shadow-lg transition-shadow [backface-visibility:hidden]`}>
@@ -659,7 +663,7 @@ const EventDetail = () => {
 
               {/* More Events Widget (Right Column - Desktop) */}
               {relatedEvents.length > 0 && (
-                <section className="hidden lg:block pt-12 border-t border-gray-100">
+                <section className="pt-12 border-t border-gray-100">
                   <h3 className="text-sm font-bold text-gray-900 mb-6 tracking-wider">
                     More from {displayProfile.username ? displayProfile.username.charAt(0).toUpperCase() + displayProfile.username.slice(1) : 'Host'}
                   </h3>

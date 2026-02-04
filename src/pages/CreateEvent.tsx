@@ -456,6 +456,10 @@ const CreateEvent = () => {
       setForm((current) => ({ ...current, [field]: event.target.value }));
     };
 
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+
+  // ... (existing state)
+
   const handleCoverFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -466,6 +470,7 @@ const CreateEvent = () => {
     filePreviewUrlRef.current = objectUrl;
     setForm(prev => ({ ...prev, coverImage: objectUrl }));
     setCoverPreview(objectUrl);
+    setCoverFile(file); // Store the file for upload
     setCoverPreviewError(false);
     event.target.value = '';
   };
@@ -512,6 +517,77 @@ const CreateEvent = () => {
     return { offsetLabel, timeZone: region };
   }, []);
 
+  const uploadCoverImage = async (file: File): Promise<string> => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    console.log('Upload Path:', filePath);
+
+    // Timeout Promise using a function so we can recreate it
+    const createTimeout = () => new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Upload timed out after 20 seconds')), 20000);
+    });
+
+    // Probe
+    console.log('Probing bucket access...');
+    try {
+      const listPromise = supabase.storage.from('event-covers').list();
+      const probeTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Probe timed out')), 5000));
+      const { data: listData, error: listError } = await Promise.race([listPromise, probeTimeout]) as any;
+
+      if (listError) {
+        console.error('PROBE FAILED:', listError);
+        throw new Error(`Bucket probe failed: ${listError.message}`);
+      }
+      console.log('PROBE SUCCESS. Found', listData?.length, 'files.');
+    } catch (error) {
+      console.error('Probe Exception:', error);
+      // Continue to upload attempt anyway
+    }
+
+    // Retry Loop
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      console.log(`Starting upload attempt ${attempts} of ${maxAttempts}...`);
+
+      try {
+        const uploadPromise = supabase.storage
+          .from('event-covers')
+          .upload(filePath, file, {
+            upsert: false
+          });
+
+        // Race upload vs timeout
+        const result = await Promise.race([uploadPromise, createTimeout()]) as any;
+
+        if (result.error) {
+          console.error(`Attempt ${attempts} Supabase error:`, result.error);
+          throw result.error;
+        }
+
+        console.log('UPLOAD SUCCESS:', result.data);
+        const { data } = supabase.storage.from('event-covers').getPublicUrl(filePath);
+        return data.publicUrl;
+
+      } catch (err: any) {
+        console.error(`Attempt ${attempts} Exception:`, err);
+
+        if (attempts >= maxAttempts) {
+          throw new Error(`Upload failed after ${maxAttempts} attempts: ${err.message}`);
+        }
+
+        console.log('Waiting 1s before retry...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    throw new Error('Upload failed unexpectedly');
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!userId) return;
@@ -549,6 +625,19 @@ const CreateEvent = () => {
 
     setSubmitting(true);
     try {
+      let coverImageUrl = form.coverImage;
+
+      // Upload image if a new file is selected
+      if (coverFile) {
+        try {
+          coverImageUrl = await uploadCoverImage(coverFile);
+        } catch (uploadError: any) {
+          toastError('Failed to upload cover image. Please try again.');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const insertPayload = {
         title: trimmedTitle,
         description: form.description.trim() || null,
@@ -559,7 +648,7 @@ const CreateEvent = () => {
         city: form.locationType === 'online' ? null : (form.city.trim() || null),
         latitude: form.locationType === 'online' ? null : form.latitude,
         longitude: form.locationType === 'online' ? null : form.longitude,
-        cover_image: form.coverImage.trim() || null,
+        cover_image: coverImageUrl.trim() || null,
         user_id: userId,
         status: 'published',
       };
@@ -610,6 +699,7 @@ const CreateEvent = () => {
 
       toastSuccess('Event created successfully!');
       setForm(buildInitialFormState());
+      setCoverFile(null);
       setActiveTheme(0);
       navigate(`/events/${data.id}`);
     } catch (error) {
