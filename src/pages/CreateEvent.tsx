@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, ArrowLeft, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
@@ -241,11 +241,13 @@ const AVAILABILITY_BADGE_CLASSES: Record<AvailabilityStatus, string> = {
 
 const CreateEvent = () => {
   const navigate = useNavigate();
+  const { id } = useParams();
   const supabase = useMemo(() => createClient(), []);
 
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitting, setSubmitting] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadingEvent, setLoadingEvent] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [coverPreviewError, setCoverPreviewError] = useState(false);
   const [coverPreview, setCoverPreview] = useState('');
@@ -439,6 +441,77 @@ const CreateEvent = () => {
       cancelled = true;
     };
   }, [navigate, supabase]);
+
+  useEffect(() => {
+    if (!ready || !id || !userId) return;
+
+    const fetchEventData = async () => {
+      // Helper for formatting DB dates to datetime-local input
+      const safeFormat = (iso: string | null | undefined) => {
+        if (!iso) return '';
+        try {
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return '';
+          // Ensure it's in the correct format for <input type="datetime-local" />
+          // Which is YYYY-MM-DDThh:mm (ISO localized)
+          const pad = (n: number) => n.toString().padStart(2, '0');
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        } catch (e) {
+          return '';
+        }
+      };
+
+      setLoadingEvent(true);
+      try {
+        const { data: event, error: eventError } = await supabase
+          .from('events')
+          .select('*, event_tickets(*)')
+          .eq('id', id)
+          .single();
+
+        if (eventError) throw eventError;
+
+        if (event) {
+          if (event.user_id !== userId) {
+            toastError("You don't have permission to edit this event.");
+            navigate('/dashboard/events');
+            return;
+          }
+
+          setForm({
+            title: event.title || '',
+            summary: event.summary || '',
+            description: event.description || '',
+            startDateTime: safeFormat(event.start_time),
+            endDateTime: safeFormat(event.end_time),
+            venue: event.venue || '',
+            city: event.city || '',
+            latitude: event.latitude,
+            longitude: event.longitude,
+            coverImage: event.cover_image || '',
+            locationType: event.location_type || 'physical',
+            tickets: (event.event_tickets || []).map((t: any) => ({
+              id: t.id,
+              title: t.label,
+              price: t.price,
+              currency: t.currency,
+              benefits: t.benefits || [],
+              colorTheme: t.color_theme,
+              quantity: t.quantity
+            }))
+          });
+          setCoverPreview(event.cover_image || '');
+        }
+      } catch (error) {
+        console.error('Error fetching event for edit:', error);
+        toastError('Failed to load event data.');
+      } finally {
+        setLoadingEvent(false);
+      }
+    };
+
+    fetchEventData();
+  }, [id, ready, userId, supabase, navigate]);
 
   useEffect(() => {
     setCoverPreview(form.coverImage);
@@ -655,29 +728,55 @@ const CreateEvent = () => {
 
       console.log('Submitting event payload:', insertPayload);
 
-      const { data, error } = await supabase
-        .from('events')
-        .insert(insertPayload)
-        .select('id')
-        .maybeSingle();
+      let eventId = id;
+      if (id) {
+        const { error } = await supabase
+          .from('events')
+          .update(insertPayload)
+          .eq('id', id);
 
-      console.log('Supabase insert response:', { data, error });
+        if (error) {
+          console.error('Failed to update event', error);
+          toastError(error.message || 'We could not update this event. Please try again.');
+          return;
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('events')
+          .insert(insertPayload)
+          .select('id')
+          .maybeSingle();
 
-      if (error) {
-        console.error('Failed to create event', error);
-        toastError(error.message || 'We could not create this event. Please try again.');
-        return;
+        if (error) {
+          console.error('Failed to create event', error);
+          toastError(error.message || 'We could not create this event. Please try again.');
+          return;
+        }
+
+        if (!data?.id) {
+          toastError('Event was created but we could not retrieve its ID.');
+          return;
+        }
+        eventId = data.id;
       }
 
-      if (!data?.id) {
-        toastError('Event was created but we could not retrieve its ID.');
-        return;
+      // Handle tickets
+      if (id) {
+        // In edit mode, first remove old tickets
+        const { error: deleteError } = await supabase
+          .from('event_tickets')
+          .delete()
+          .eq('event_id', id);
+
+        if (deleteError) {
+          console.error('Failed to clean up old tickets', deleteError);
+        }
       }
 
       // Insert tickets if any
       if (form.tickets.length > 0) {
         const ticketInserts = form.tickets.map(ticket => ({
-          event_id: data.id,
+          event_id: eventId,
           label: ticket.title,
           price: ticket.price,
           currency: ticket.currency,
@@ -692,16 +791,18 @@ const CreateEvent = () => {
           .insert(ticketInserts);
 
         if (ticketError) {
-          console.error('Failed to create tickets', ticketError);
-          toastError('Event created but tickets could not be saved.');
+          console.error('Failed to save tickets', ticketError);
+          toastError(id ? 'Event updated but tickets could not be saved.' : 'Event created but tickets could not be saved.');
         }
       }
 
-      toastSuccess('Event created successfully!');
-      setForm(buildInitialFormState());
-      setCoverFile(null);
-      setActiveTheme(0);
-      navigate(`/events/${data.id}`);
+      toastSuccess(id ? 'Event updated successfully!' : 'Event created successfully!');
+      if (!id) {
+        setForm(buildInitialFormState());
+        setCoverFile(null);
+        setActiveTheme(0);
+      }
+      navigate(`/dashboard/events`);
     } catch (error) {
       console.error('Unexpected error while creating event', error);
       toastError('Something went wrong. Please try again.');
@@ -737,7 +838,7 @@ const CreateEvent = () => {
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }, [form.startDateTime]);
 
-  if (!ready) {
+  if (!ready || loadingEvent) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-gray-400" aria-label="Loading" />
@@ -756,13 +857,21 @@ const CreateEvent = () => {
         }}
       />
 
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8 lg:py-12 pt-20 lg:pt-24">
-        <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-24 items-start">
+      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 py-4 lg:py-6 pt-6 lg:pt-8">
+        <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-16 items-start">
           {/* Left column - Form Fields */}
           <main className="flex-1 max-w-2xl w-full">
+            <div className="mb-6 lg:px-2">
+              <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+                {id ? 'Edit Event' : 'Create New Event'}
+              </h1>
+              <p className="mt-1 text-[15px] text-gray-600">
+                {id ? 'Update your event details and tickets.' : 'Fill in the details below to publish your event.'}
+              </p>
+            </div>
             <form onSubmit={handleSubmit} className="space-y-6 animate-in slide-in-from-bottom-4 duration-700 fade-in">
 
-              <div className="space-y-10">
+              <div className="space-y-6">
 
                 {/* Basic Info */}
                 <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
@@ -774,7 +883,7 @@ const CreateEvent = () => {
                         type="text"
                         value={form.title}
                         onChange={handleChange('title')}
-                        className="block w-full rounded-2xl px-5 py-4 text-lg font-medium text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                        className="block w-full rounded-2xl px-3.5 py-3 text-base font-medium text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                         placeholder="Event Name"
                         required
                       />
@@ -791,32 +900,32 @@ const CreateEvent = () => {
                 </section>
 
                 {/* Schedule */}
-                <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
                     <Calendar className="h-4 w-4 text-rose-500" />
                     Schedule
                   </div>
 
                   <div className="grid gap-6 sm:grid-cols-2 lg:px-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Start</label>
+                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start</label>
                       <input
                         type="datetime-local"
                         min={nowIsoLocal}
                         value={datetimeValue(form.startDateTime)}
                         onChange={handleChange('startDateTime')}
-                        className="block w-full rounded-2xl px-5 py-4 text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">End (Optional)</label>
+                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">End (Optional)</label>
                       <input
                         type="datetime-local"
                         min={datetimeValue(form.startDateTime)}
                         value={datetimeValue(form.endDateTime)}
                         onChange={handleChange('endDateTime')}
-                        className="block w-full rounded-2xl px-5 py-4 text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                       />
                     </div>
                   </div>
@@ -828,8 +937,8 @@ const CreateEvent = () => {
 
 
                 {/* Location */}
-                <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
                     <MapPin className="h-4 w-4 text-emerald-500" />
                     Location
                   </div>
@@ -964,10 +1073,10 @@ const CreateEvent = () => {
                   {submitting ? (
                     <span className="flex items-center justify-center gap-2">
                       <Loader2 className="h-5 w-5 animate-spin" />
-                      Publishing...
+                      {id ? 'Saving...' : 'Publishing...'}
                     </span>
                   ) : (
-                    'Create Event'
+                    id ? 'Save Changes' : 'Create Event'
                   )}
                 </button>
               </div>

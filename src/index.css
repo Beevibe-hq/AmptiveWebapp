@@ -100,6 +100,29 @@
   animation: pill-wave 2.2s ease-in-out infinite;
 }
 
+/* Tilt-and-return animation for sidebar icon */
+@keyframes tilt-snap {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  30% {
+    transform: rotate(-14deg);
+  }
+
+  60% {
+    transform: rotate(4deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-tilt-snap {
+  animation: tilt-snap 0.5s ease-in-out;
+}
+
 /* Tiptap Editor Styles */
 .ProseMirror {
   outline: none;

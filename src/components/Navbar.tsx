@@ -102,6 +102,7 @@ const Navbar = () => {
 
   // Navigation links for authenticated users
   const authLinks: NavLink[] = [
+    { name: 'My Dashboard', path: '/dashboard' },
     { name: 'Create Event', path: '/events' },
     { name: 'Explore', path: '/explore' },
     { name: 'My Tickets', path: '/my-tickets' },
@@ -109,6 +110,7 @@ const Navbar = () => {
       name: 'More',
       hasDropdown: true,
       dropdownItems: [
+        { name: 'My Dashboard', path: '/dashboard' },
         { name: 'View Profile', path: '/profile' },
         { name: 'Settings', path: '/settings' },
         { name: 'Community Task', path: '/community' },

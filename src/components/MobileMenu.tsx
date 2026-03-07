@@ -1,16 +1,17 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, 
-  Compass, 
-  PlusSquare, 
-  Ticket, 
-  User, 
-  Settings, 
-  Users, 
-  HelpCircle, 
+import {
+  X,
+  Compass,
+  PlusSquare,
+  Ticket,
+  User,
+  Settings,
+  Users,
+  HelpCircle,
   LogOut,
   ShoppingBag,
-  LogIn
+  LogIn,
+  LayoutDashboard
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -68,12 +69,12 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
     if (isOpen) {
       // Save current scroll position
       const scrollY = window.scrollY;
-      
+
       // Prevent body scroll
       document.body.style.position = 'fixed';
       document.body.style.top = `-${scrollY}px`;
       document.body.style.width = '100%';
-      
+
       // Cleanup function to restore scroll position when menu closes
       return () => {
         document.body.style.position = '';
@@ -86,49 +87,59 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
 
   // Navigation links for authenticated users with icons
   const authLinks: LinkItem[] = [
-    // First group (top 2 items)
     { 
-      name: 'Explore', 
+      name: 'My Dashboard', 
+      path: '/dashboard',
+      icon: <LayoutDashboard className="w-5 h-5 mr-3" />
+    },
+    // First group (top 2 items)
+    {
+      name: 'Explore',
       path: '/explore',
       icon: <Compass className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Create Event', 
+    {
+      name: 'Create Event',
       path: '/events',
       icon: <PlusSquare className="w-5 h-5 mr-3" />
     },
-    
+
     // Divider after first 2 items
     { name: 'divider-small', path: '#' },
-    
+
     // Second group (next 3 items)
-    { 
-      name: 'My Tickets', 
+    {
+      name: 'My Dashboard',
+      path: '/dashboard',
+      icon: <LayoutDashboard className="w-5 h-5 mr-3" />
+    },
+    {
+      name: 'My Tickets',
       path: '/my-tickets',
       icon: <Ticket className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'View Profile', 
+    {
+      name: 'View Profile',
       path: '/profile',
       icon: <User className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Settings', 
+    {
+      name: 'Settings',
       path: '/settings',
       icon: <Settings className="w-5 h-5 mr-3" />
     },
-    
+
     // Divider item (hidden, only used for visual separation)
     { name: 'divider', path: '#' },
-    
+
     // Second group (bottom 3 items)
-    { 
-      name: 'Community Task', 
+    {
+      name: 'Community Task',
       path: '/community',
       icon: <Users className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Help Center', 
+    {
+      name: 'Help Center',
       path: '/help',
       icon: <HelpCircle className="w-5 h-5 mr-3" />
     },
@@ -146,33 +157,33 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
 
   // Navigation links for unauthenticated users with icons
   const guestLinks: LinkItem[] = [
-    { 
-      name: 'Explore', 
+    {
+      name: 'Explore',
       path: '/explore',
       icon: <Compass className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Create Event', 
+    {
+      name: 'Create Event',
       path: '/events',
       icon: <PlusSquare className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Store', 
+    {
+      name: 'Store',
       path: '/store',
       icon: <ShoppingBag className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Community Task', 
+    {
+      name: 'Community Task',
       path: '/community',
       icon: <Users className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Help Center', 
+    {
+      name: 'Help Center',
       path: '/help',
       icon: <HelpCircle className="w-5 h-5 mr-3" />
     },
-    { 
-      name: 'Sign In', 
+    {
+      name: 'Sign In',
       path: '/login',
       icon: <LogIn className="w-5 h-5 mr-3" />
     }
@@ -199,7 +210,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
           >
-            <div 
+            <div
               className="fixed inset-0 z-40 h-screen w-full"
               onClick={onClose}
               style={{
@@ -218,7 +229,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
               <div className="absolute inset-0 backdrop-blur-lg" />
             </div>
           </motion.div>
-          
+
           {/* Menu Panel */}
           <motion.div
             initial={{ x: '100%' }}
@@ -262,16 +273,16 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
               </button>
             </div>
 
-{/* Menu Items */}
+            {/* Menu Items */}
             <div className="flex-1 overflow-y-auto pr-4">
-{links.map((link, index) => {
+              {links.map((link, index) => {
                 if (link.name === 'divider') {
                   return <div key="divider" className="h-6"></div>; // Larger space between main groups
                 }
                 if (link.name === 'divider-small') {
                   return <div key="divider-small" className="h-4"></div>; // Smaller space between first two and next three items
                 }
-                
+
                 // Regular link with icon
                 if (!('hasDropdown' in link)) {
                   return (
@@ -286,7 +297,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                     </Link>
                   );
                 }
-                
+
                 // Sign out button with onClick
                 if (link.onClick) {
                   return (
@@ -314,7 +325,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                           style={{ color: 'rgb(22, 22, 26)' }}
                         >
                           <span>{link.name}</span>
-                          <svg 
+                          <svg
                             className={`w-4 h-4 transition-transform ${activeDropdown === link.name ? 'transform rotate-180' : ''}`}
                             fill="none"
                             viewBox="0 0 24 24"
@@ -342,7 +353,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                     </div>
                   );
                 }
-                
+
                 return (
                   <div key={link.name}>
                     <Link

@@ -24,6 +24,7 @@ import OAuthCallback from './pages/OAuthCallback';
 import ProfilePage from './pages/ProfilePage';
 import EditProfile from './pages/EditProfile';
 import MyTickets from './pages/MyTickets';
+import Dashboard from './pages/Dashboard';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -33,6 +34,7 @@ function App() {
       <Router>
         <ScrollToTop />
         <Routes>
+          <Route path="/dashboard/*" element={<Dashboard />} />
           <Route path="*" element={<MainLayout />} />
         </Routes>
         <Toaster position="top-center" richColors closeButton expand={false} />
@@ -52,9 +54,10 @@ function ScrollToTop() {
   return null;
 }
 
-// MainLayout component that includes Navbar and conditionally renders Footer
 function MainLayout() {
   const location = useLocation();
+  const isDashboard = location.pathname.startsWith('/dashboard');
+
   const hideFooter =
     location.pathname === '/ai-chat' ||
     location.pathname === '/chat-mode' ||
@@ -62,12 +65,14 @@ function MainLayout() {
     location.pathname === '/signup' ||
     location.pathname === '/complete-profile' ||
     location.pathname === '/events/create' ||
-    location.pathname === '/profile/edit';
+    (location.pathname.startsWith('/dashboard/events/') && location.pathname.endsWith('/edit')) ||
+    location.pathname === '/profile/edit' ||
+    isDashboard;
 
   return (
     <div className="min-h-screen font-sans">
-      <Navbar />
-      <main className={location.pathname === '/events/create' ? '' : 'bg-white'}>
+      {!isDashboard && <Navbar />}
+      <main className={(location.pathname === '/events/create' || (location.pathname.startsWith('/dashboard/events/') && location.pathname.endsWith('/edit'))) ? '' : isDashboard ? '' : 'bg-white'}>
         <Routes>
           <Route path="/" element={<Homepage />} />
           <Route path="/explore" element={<Explore />} />
@@ -91,6 +96,7 @@ function MainLayout() {
           <Route path="/profile/edit" element={<EditProfile />} />
           <Route path="/profile/:id" element={<ProfilePage />} />
           <Route path="/my-tickets" element={<MyTickets />} />
+          <Route path="/dashboard/*" element={<Dashboard />} />
         </Routes>
       </main>
       {!hideFooter && <Footer />}
