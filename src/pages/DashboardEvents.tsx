@@ -23,7 +23,7 @@ export default function DashboardEvents() {
 
                 const { data, error } = await supabase
                     .from('events')
-                    .select('*, event_tickets(id)')
+                    .select('*, event_tickets(quantity)')
                     .eq('user_id', session.user.id)
                     .order('created_at', { ascending: false });
 
@@ -143,37 +143,64 @@ export default function DashboardEvents() {
 
             {/* Card Grid Structure */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 mb-8 max-w-6xl">
-                {paginatedEvents.map((event) => (
-                    <Link to={`/dashboard/events/${event.id}/edit`} key={event.id} className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm block group">
-                        <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl overflow-hidden">
-                            <img src={event.cover_image || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87'} alt={event.title} className="w-full h-full object-cover rounded-lg group-hover:scale-[1.02] transition-transform duration-300" />
+                {loading ? (
+                    // Skeleton Cards
+                    [1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                        <div key={i} className="bg-white rounded-lg overflow-hidden border border-gray-200 text-sm">
+                            <div className="relative aspect-square bg-gray-50 px-2 pt-2">
+                                <div className="skeleton-shimmer w-full h-full rounded-lg" />
+                                <div className="absolute top-4 right-4">
+                                    <div className="skeleton-shimmer w-10 h-5 rounded-full" />
+                                </div>
+                            </div>
+                            <div className="p-3 space-y-2">
+                                <div className="skeleton-shimmer h-3 w-1/2 rounded-full" />
+                                <div className="skeleton-shimmer h-4 w-3/4 rounded-full" />
+                                <div className="space-y-1">
+                                    <div className="skeleton-shimmer h-2 w-1/4 rounded-full" />
+                                    <div className="skeleton-shimmer h-3 w-1/2 rounded-full" />
+                                </div>
+                                <div className="pt-1">
+                                    <div className="skeleton-shimmer h-8 w-full rounded-lg" />
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    paginatedEvents.map((event) => (
+                        <Link to={`/dashboard/events/${event.id}/edit`} key={event.id} className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm block group">
+                            <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl overflow-hidden">
+                                <img src={event.cover_image || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87'} alt={event.title} className="w-full h-full object-cover rounded-lg group-hover:scale-[1.02] transition-transform duration-300" />
 
-                            {/* Ticket Count Pill */}
-                            <div className="absolute top-4 right-4">
-                                <div className="bg-white/90 backdrop-blur-sm text-black text-[10px] font-bold px-2 py-1 rounded-full border border-black/5 flex items-center gap-1 shadow-sm">
-                                    <Ticket className="w-3 h-3 text-black/70" />
-                                    <span className="text-black/70">{event.event_tickets?.length || 0}</span>
+                                {/* Ticket Count Pill */}
+                                <div className="absolute top-4 right-4">
+                                    <div className="bg-white/90 backdrop-blur-sm text-black text-[10px] font-bold px-2 py-1 rounded-full border border-black/5 flex items-center gap-1 shadow-sm">
+                                        <Ticket className="w-3 h-3 text-black/70" />
+                                        <span className="text-black/70">
+                                            {event.event_tickets?.length || 0}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="p-3">
-                            <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
-                                <CalendarDays className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" />
-                                <span>{event.start_time ? formatDate(event.start_time) : formatDate(event.created_at)}</span>
-                            </div>
-                            <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{event.title}</h3>
-                            <div className="flex flex-col mb-2 mt-1">
-                                <span className="text-xs text-gray-500">Location</span>
-                                <span className="font-medium text-sm text-gray-600 line-clamp-1">{event.venue || event.city || 'TBA'}</span>
-                            </div>
-                            <div className="mt-1.5 w-full">
-                                <div className="rounded-lg py-1.5 px-3 text-center w-full bg-[#F1F7FE] group-hover:bg-blue-100 transition-colors">
-                                    <span className="font-medium text-[13px] text-[#0C61D9]">Edit Event</span>
+                            <div className="p-3">
+                                <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
+                                    <CalendarDays className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" />
+                                    <span>{event.start_time ? formatDate(event.start_time) : formatDate(event.created_at)}</span>
+                                </div>
+                                <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{event.title}</h3>
+                                <div className="flex flex-col mb-2 mt-1">
+                                    <span className="text-xs text-gray-500">Location</span>
+                                    <span className="font-medium text-sm text-gray-600 line-clamp-1">{event.venue || event.city || 'TBA'}</span>
+                                </div>
+                                <div className="mt-1.5 w-full">
+                                    <div className="rounded-lg py-1.5 px-3 text-center w-full bg-[#F1F7FE] group-hover:bg-blue-100 transition-colors">
+                                        <span className="font-medium text-[13px] text-[#0C61D9]">Edit Event</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </Link>
-                ))}
+                        </Link>
+                    ))
+                )}
             </div>
 
             {!loading && filteredEvents.length === 0 && (

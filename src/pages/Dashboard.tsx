@@ -123,12 +123,21 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const [eventsLoading, setEventsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshCount, setRefreshCount] = useState(0);
+    const [realEvents, setRealEvents] = useState<any[]>([]);
 
     const [isPaused, setIsPaused] = useState(false);
     const [currentStatIndex, setCurrentStatIndex] = useState(0);
     const [progress, setProgress] = useState(0);
     const carouselRef = useRef<HTMLDivElement>(null);
     const CAROUSEL_DURATION = 5000;
+
+    const upcomingEvents = realEvents.filter(event =>
+        new Date(event.start_time || event.created_at) >= new Date()
+    ).slice(0, 3);
+
+    const upcomingCount = realEvents.filter(event =>
+        new Date(event.start_time || event.created_at) >= new Date()
+    ).length;
 
     const stats = [
         {
@@ -154,7 +163,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
         {
             title: "Upcoming Events",
             subtitle: "Upcoming",
-            value: 12,
+            value: upcomingCount,
             change: "+5%",
             icon: Calendar,
             bgColor: "bg-red-50",
@@ -219,17 +228,40 @@ function DashboardHome({ displayName }: { displayName: string }) {
         setIsRefreshing(true);
         setEventsLoading(true);
         setRefreshCount(prev => prev + 1);
-        // Mock a data fetch delay
+        fetchRealEvents();
+        // Mock a data fetch delay for counters
         setTimeout(() => {
             setEventsLoading(false);
             setIsRefreshing(false);
         }, 1500);
     };
 
+    const fetchRealEvents = async () => {
+        const supabase = createClient();
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) return;
+
+            const { data, error } = await supabase
+                .from('events')
+                .select('*, event_tickets(quantity)')
+                .eq('user_id', session.user.id)
+                .order('start_time', { ascending: true });
+
+            if (error) throw error;
+            setRealEvents(data || []);
+        } catch (error) {
+            console.error('Error fetching dashboard events:', error);
+        } finally {
+            setEventsLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const timer = setTimeout(() => setEventsLoading(false), 1500);
-        return () => clearTimeout(timer);
+        fetchRealEvents();
     }, []);
+
+
 
     const monthlyData: Record<string, { total: string; points: { cx: number; cy: number; label: string; amount: string }[] }> = {
         "Mar '26": {
@@ -297,15 +329,6 @@ function DashboardHome({ displayName }: { displayName: string }) {
                         from { stroke-dashoffset: 1500; }
                         to { stroke-dashoffset: 0; }
                     }
-                    @keyframes shimmer {
-                        0% { background-position: -400px 0; }
-                        100% { background-position: 400px 0; }
-                    }
-                    .skeleton-shimmer {
-                        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-                        background-size: 400px 100%;
-                        animation: shimmer 1.4s ease infinite;
-                    }
                     @keyframes fadeArea {
                         from { opacity: 0; }
                         to { opacity: 1; }
@@ -324,9 +347,11 @@ function DashboardHome({ displayName }: { displayName: string }) {
             <div className="px-4 md:px-8 pt-6 pb-8 md:pt-8 md:pb-12 flex flex-col items-center">
 
                 <header className="mb-4 md:mb-5 flex items-center justify-between w-full">
-                    <div>
-                        <h1 className="text-3xl font-bold tracking-tight text-black mb-1 leading-tight">
-                            Hello, {displayName} 👋
+                    <div className="min-w-0 flex-1">
+                        <h1 className="text-3xl font-bold tracking-tight text-black mb-1 leading-tight flex items-center min-w-0">
+                            <span className="shrink-0 whitespace-nowrap">Hello,&nbsp;</span>
+                            <span className="truncate">{displayName}</span>
+                            <span className="shrink-0 ml-1">👋</span>
                         </h1>
                         <p className="hidden sm:block text-[15px] text-black/40 font-sans mt-1">Here's what's happening with your events today.</p>
                     </div>
@@ -483,7 +508,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                 </div>
                             </div>
                             <div className="h-48 sm:h-64 lg:h-72 w-full mt-4">
-                                <svg key={activeMonth} className="w-full h-full overflow-visible" viewBox="-40 -20 460 250">
+                                <svg key={`${activeMonth}-${refreshCount}`} className="w-full h-full overflow-visible" viewBox="-40 -20 460 250">
                                     <defs>
                                         <linearGradient id="revenue-gradient" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="0%" stopColor="#2563eb" stopOpacity="0.25" />
@@ -758,56 +783,76 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                             </div>
                                         </div>
                                     ))
+                                ) : upcomingEvents.length === 0 ? (
+                                    <div className="py-12 text-center text-black/50 font-medium">
+                                        No upcoming events found.
+                                    </div>
                                 ) : (
                                     // Real event cards
-                                    [
-                                        { id: 1, title: 'Summer Music Festival', date: 'Aug 24', time: '4:00 PM', location: 'Central Park, NY', status: 'Published', sold: 450, total: 500 },
-                                        { id: 2, title: 'Tech Innovation Summit', date: 'Sep 12', time: '9:00 AM', location: 'Convention Center', status: 'Published', sold: 120, total: 300 },
-                                        { id: 3, title: 'Local Art Exhibition', date: 'Oct 05', time: '6:00 PM', location: 'Downtown Gallery', status: 'Draft', sold: 0, total: 100 },
-                                    ].map((event) => (
-                                        <div key={event.id} className="flex items-center justify-between p-4 border border-black/5 rounded-xl hover:border-black/10 transition-colors group/card">
-                                            <div className="flex items-center gap-4 min-w-0 flex-1">
-                                                {/* Date Box */}
-                                                <div className="bg-red-50 rounded-lg p-3 text-center min-w-[64px] shrink-0">
-                                                    <p className="text-[10px] font-bold uppercase text-red-600/50 mb-0.5">{event.date.split(' ')[0]}</p>
-                                                    <p className="text-xl font-bold text-red-600 leading-none">{event.date.split(' ')[1]}</p>
+                                    upcomingEvents.map((event) => {
+                                        const startDate = new Date(event.start_time || event.created_at);
+                                        const month = startDate.toLocaleString('default', { month: 'short' });
+                                        const day = startDate.getDate().toString().padStart(2, '0');
+                                        const time = startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                        const totalCapacity = event.event_tickets?.reduce((acc: number, t: any) => acc + (t.quantity || 0), 0) || 0;
+                                        // For demo purposes, we'll mock sold as a percentage of total capacity until real sales are linked
+                                        const sold = Math.floor(totalCapacity * 0.35);
+                                        const total = totalCapacity;
+
+                                        return (
+                                            <div key={event.id} className="flex items-center justify-between p-4 border border-black/5 rounded-xl hover:border-black/10 transition-colors group/card">
+                                                <div className="flex items-center gap-4 min-w-0 flex-1">
+                                                    {/* Date Box */}
+                                                    <div className="bg-red-50 rounded-lg p-3 text-center min-w-[64px] shrink-0">
+                                                        <p className="text-[10px] font-bold uppercase text-red-600/50 mb-0.5">{month}</p>
+                                                        <p className="text-xl font-bold text-red-600 leading-none">{day}</p>
+                                                    </div>
+
+                                                    {/* Info */}
+                                                    <div className="min-w-0 flex-1 pr-4">
+                                                        <div className="flex items-center gap-2 mb-1.5">
+                                                            <h4 className="font-bold text-[15px] text-black truncate">{event.title}</h4>
+                                                            <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${event.status?.toLowerCase() === 'published' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
+                                                                {event.status || 'Draft'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 text-black/40">
+                                                            <div className="flex items-center gap-1 text-[11px] font-medium tracking-tight">
+                                                                <Clock className="w-3.5 h-3.5 shrink-0" />
+                                                                <span>{time}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 text-[11px] font-medium truncate">
+                                                                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                                                                <span className="truncate">{event.venue || event.city || 'TBA'}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Mobile-only Sales Indicator */}
+                                                        <div className="sm:hidden mt-2.5 flex items-center gap-2">
+                                                            <div className="flex-1 h-1 bg-black/5 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-green-500 rounded-full transition-all duration-1000"
+                                                                    style={{ width: `${Math.min((sold / total) * 100, 100)}%` }}
+                                                                />
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-black/40 whitespace-nowrap">
+                                                                <span className="text-black/80">{sold}</span>/{total} sold
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
-                                                {/* Info */}
-                                                <div className="min-w-0 flex-1 pr-4">
-                                                    <div className="flex items-center gap-2 mb-1.5">
-                                                        <h4 className="font-bold text-[15px] text-black truncate">{event.title}</h4>
-                                                        <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${event.status === 'Published' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
-                                                            {event.status}
-                                                        </span>
+                                                {/* Sales Sidebar */}
+                                                <div className="hidden sm:flex items-center gap-4 pl-6 border-l border-black/5 shrink-0">
+                                                    <div className="flex flex-col items-end leading-tight">
+                                                        <span className="text-[15px] font-black text-black">{sold} sold</span>
+                                                        <span className="text-[10px] font-bold text-black/30 whitespace-nowrap">of {total}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-3 text-black/40">
-                                                        <div className="flex items-center gap-1 text-[11px] font-medium tracking-tight">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 256 256">
-                                                                <path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm56,112H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48a8,8,0,0,1,0,16Z"></path>
-                                                            </svg>
-                                                            <span>{event.time}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1 text-[11px] font-medium truncate">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 256 256">
-                                                                <path d="M200,224H150.54A266.56,266.56,0,0,0,174,200.25c27.45-31.57,42-64.85,42-96.25a88,88,0,0,0-176,0c0,31.4,14.51,64.68,42,96.25A266.56,266.56,0,0,0,105.46,224H56a8,8,0,0,0,0,16H200a8,8,0,0,0,0-16ZM128,72a32,32,0,1,1-32,32A32,32,0,0,1,128,72Z"></path>
-                                                            </svg>
-                                                            <span className="truncate">{event.location}</span>
-                                                        </div>
-                                                    </div>
+                                                    <SalesCircularProgress sold={sold} total={total} />
                                                 </div>
                                             </div>
-
-                                            {/* Sales Sidebar */}
-                                            <div className="hidden sm:flex items-center gap-4 pl-6 border-l border-black/5 shrink-0">
-                                                <div className="flex flex-col items-end leading-tight">
-                                                    <span className="text-[15px] font-black text-black">{event.sold} sold</span>
-                                                    <span className="text-[10px] font-bold text-black/30 whitespace-nowrap">of {event.total}</span>
-                                                </div>
-                                                <SalesCircularProgress sold={event.sold} total={event.total} />
-                                            </div>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </div>
                         </div>
@@ -817,23 +862,23 @@ function DashboardHome({ displayName }: { displayName: string }) {
                             <h3 className="text-[15px] font-bold text-black text-center sm:text-left">Quick Links</h3>
 
                             <div className="flex flex-wrap justify-center sm:justify-start gap-4">
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-3 py-2 rounded-full transition-colors group">
+                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
                                     <Plus className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Create event</span>
                                 </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-3 py-2 rounded-full transition-colors group">
+                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
                                     <Copy className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Duplicate event</span>
                                 </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-3 py-2 rounded-full transition-colors group">
+                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
                                     <Ticket className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">New ticket type</span>
                                 </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-3 py-2 rounded-full transition-colors group">
+                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
                                     <Share2 className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Share link</span>
                                 </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-3 py-2 rounded-full transition-colors group">
+                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
                                     <Download className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Download attendees</span>
                                 </button>
@@ -896,7 +941,7 @@ export default function Dashboard() {
         { name: 'Settings', path: '/dashboard/settings', icon: null as any, customIcon: 'settings' },
     ];
 
-    const displayName = profile?.display_name || profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Organizer';
+    const displayName = profile?.username || profile?.display_name || profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Organizer';
 
     const handleSignOut = async () => {
         await signOut();
@@ -927,7 +972,7 @@ export default function Dashboard() {
             {/* Sidebar */}
             <aside className={`
         fixed lg:static top-16 lg:top-0 left-0 h-[calc(100vh-4rem)] lg:h-screen w-64 bg-white border-r border-black/5 z-40
-        transform transition-transform duration-300 ease-in-out flex flex-col
+        transform transition-transform duration-300 ease-in-out flex flex-col overflow-hidden
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
                 <div className="hidden lg:block p-5">
@@ -943,7 +988,7 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+                <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1 min-h-0">
                     {navItems.map((item) => {
                         const Icon = item.icon;
                         const isEventEdit = location.pathname.startsWith('/dashboard/events/') && location.pathname.endsWith('/edit');
@@ -1013,7 +1058,7 @@ export default function Dashboard() {
                     })}
                 </nav>
 
-                <div className="p-4">
+                <div className="p-4 shrink-0 mt-auto border-t border-black/5">
                     <div className="flex items-center gap-2 bg-black/[0.04] rounded-full px-3 py-2">
                         <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
                             {profile?.avatar_url ? (
