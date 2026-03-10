@@ -15,9 +15,16 @@ export default function DashboardEvents() {
     useEffect(() => {
         const fetchEvents = async () => {
             try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) {
+                    setLoading(false);
+                    return;
+                }
+
                 const { data, error } = await supabase
                     .from('events')
                     .select('*, event_tickets(id)')
+                    .eq('user_id', session.user.id)
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
@@ -41,13 +48,24 @@ export default function DashboardEvents() {
         });
     };
 
-    const filteredEvents = events.filter((event) => {
-        if (activeFilter === 'All') return true;
-        if (activeFilter === 'Upcoming') return new Date(event.start_time || event.created_at) >= new Date();
-        if (activeFilter === 'Past') return new Date(event.start_time || event.created_at) < new Date();
-        if (activeFilter === 'Draft') return event.status === 'draft' || event.status === 'Draft';
-        return true;
-    });
+    const filteredEvents = events
+        .filter((event) => {
+            if (activeFilter === 'All') return true;
+            if (activeFilter === 'Upcoming') return new Date(event.start_time || event.created_at) >= new Date();
+            if (activeFilter === 'Past') return new Date(event.start_time || event.created_at) < new Date();
+            if (activeFilter === 'Draft') return event.status === 'draft' || event.status === 'Draft';
+            return true;
+        })
+        .sort((a, b) => {
+            if (activeFilter === 'Upcoming') {
+                return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+            }
+            if (activeFilter === 'Past') {
+                return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+            }
+            // Default to newest first for All/Drafts
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
 
     useEffect(() => {
         setCurrentPage(1);
@@ -73,17 +91,34 @@ export default function DashboardEvents() {
 
     return (
         <div className="px-4 md:px-8 py-8 w-full">
-            <header className="mb-4 md:mb-5 w-full">
+            <header className="mb-4 md:mb-5 w-full flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-black mb-1 leading-tight">
                         Events
                     </h1>
-                    <p className="text-[15px] text-black/40 font-sans mt-1">Manage and track all your events in one place.</p>
+                    <p className="hidden sm:block text-[15px] text-black/40 font-sans mt-1">Manage and track all your events in one place.</p>
+                </div>
+
+                <div className="flex items-center gap-2 md:gap-3 shrink-0 ml-4">
+                    <button className="p-2 md:p-2 bg-[#FDFDFD] border border-gray-200 text-black rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center disabled:opacity-50" title="Search Events">
+                        <Search className="w-4 h-4 text-black/70" />
+                    </button>
+                    <Link
+                        to="/events/create"
+                        className="bg-[#FDFDFD] border border-gray-200 text-black px-3 py-2 md:px-4 md:py-2 text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors shrink-0 rounded-xl"
+                        title="New Event"
+                    >
+                        <Plus className="w-4 h-4 text-black/70" />
+                        <span>
+                            <span className="md:hidden">New</span>
+                            <span className="hidden md:inline">New Event</span>
+                        </span>
+                    </Link>
                 </div>
             </header>
 
-            {/* Filter Pills and Actions */}
-            <div className="flex items-center justify-between mb-8 overflow-x-auto no-scrollbar">
+            {/* Filter Pills */}
+            <div className="flex items-center mb-8 overflow-x-auto no-scrollbar">
                 <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={() => setActiveFilter('Upcoming')}
@@ -103,23 +138,6 @@ export default function DashboardEvents() {
                     >
                         Drafts
                     </button>
-                </div>
-
-                <div className="flex items-center gap-2 md:gap-3 shrink-0 ml-4">
-                    <button className="p-2 md:p-2 bg-[#FDFDFD] border border-gray-200 text-black rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center disabled:opacity-50" title="Search Events">
-                        <Search className="w-4 h-4 text-black/70" />
-                    </button>
-                    <Link
-                        to="/events/create"
-                        className="bg-[#FDFDFD] border border-gray-200 text-black px-3 py-2 md:px-4 md:py-2 text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors shrink-0 rounded-xl"
-                        title="New Event"
-                    >
-                        <Plus className="w-4 h-4 text-black/70" />
-                        <span>
-                            <span className="md:hidden">New</span>
-                            <span className="hidden md:inline">New Event</span>
-                        </span>
-                    </Link>
                 </div>
             </div>
 
@@ -159,40 +177,50 @@ export default function DashboardEvents() {
             </div>
 
             {!loading && filteredEvents.length === 0 && (
-                <div className="bg-white border rounded-2xl py-12 text-center text-black/40 text-sm shadow-sm mb-8">
-                    No events found.
+                <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-16 mb-8 mt-4 bg-white shadow-sm">
+                    <div className="mx-auto mb-4 text-5xl">😮</div>
+                    <h3 className="text-lg font-semibold text-gray-700">No events found</h3>
+                    <p className="mt-2 text-sm text-gray-500">Create your first event or adjust your filters.</p>
+                    <Link
+                        to="/events/create"
+                        className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-black rounded-full hover:bg-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
+                    >
+                        <Plus className="w-4 h-4" />
+                        <span>Create event</span>
+                    </Link>
                 </div>
             )}
 
-            {/* Pagination Controls */}
-            {filteredEvents.length > eventsPerPage && (
-                <div className="w-full flex items-center justify-between pt-6 border-t border-black/5">
-                    <button
-                        onClick={handlePreviousPage}
-                        disabled={currentPage === 1}
-                        className="px-4 py-2 text-xs font-sans font-medium uppercase tracking-wider bg-white border border-black/10 rounded-lg text-black hover:bg-black/5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                        Previous
-                    </button>
-                    <span className="text-sm font-medium text-black/60">
-                        Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                        onClick={handleNextPage}
-                        disabled={currentPage === totalPages}
-                        className="px-4 py-2 text-xs font-sans font-medium uppercase tracking-wider bg-white border border-black/10 rounded-lg text-black hover:bg-black/5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                        Next
-                    </button>
+            {/* Pagination Controls & Status */}
+            {filteredEvents.length > 0 && (
+                <div className="w-full flex flex-col md:flex-row items-center justify-between pt-6 border-t border-black/5 gap-4">
+                    <div className="text-sm text-gray-500 font-medium order-2 md:order-1">
+                        Showing {startIndex + 1} to {endIndex} of {filteredEvents.length}
+                    </div>
+
+                    {totalPages > 1 && (
+                        <div className="flex items-center gap-4 order-1 md:order-2">
+                            <button
+                                onClick={handlePreviousPage}
+                                disabled={currentPage === 1}
+                                className="px-4 py-2 text-xs font-sans font-medium uppercase tracking-wider bg-white border border-black/10 rounded-lg text-black hover:bg-black/5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                                Previous
+                            </button>
+                            <span className="text-sm font-medium text-black/60 min-w-[80px] text-center">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                onClick={handleNextPage}
+                                disabled={currentPage === totalPages}
+                                className="px-4 py-2 text-xs font-sans font-medium uppercase tracking-wider bg-white border border-black/10 rounded-lg text-black hover:bg-black/5 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
-
-            <div className="mt-8 flex justify-center md:justify-between items-center text-xs font-sans font-medium uppercase tracking-[0.2em] text-black/30">
-                <div className="text-center md:text-left">
-                    Showing {filteredEvents.length > 0 ? startIndex + 1 : 0} to {endIndex} of {filteredEvents.length} total entries
-                </div>
-                <div className="hidden md:block">Amptive Event Feed</div>
-            </div>
         </div >
     );
 }

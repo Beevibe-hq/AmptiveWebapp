@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, ArrowLeft, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
+import { Loader2, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -762,37 +762,76 @@ const CreateEvent = () => {
 
       // Handle tickets
       if (id) {
-        // In edit mode, first remove old tickets
-        const { error: deleteError } = await supabase
+        // Find existing tickets in DB to determine which ones were deleted
+        const { data: currentTickets } = await supabase
           .from('event_tickets')
-          .delete()
+          .select('id')
           .eq('event_id', id);
 
-        if (deleteError) {
-          console.error('Failed to clean up old tickets', deleteError);
+        const currentTicketIds = (currentTickets || []).map(t => t.id);
+        const formTicketIds = new Set(form.tickets.map(t => t.id).filter(id => !id.startsWith('ticket-')));
+        const ticketsToDelete = currentTicketIds.filter(tid => !formTicketIds.has(tid));
+
+        if (ticketsToDelete.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('event_tickets')
+            .delete()
+            .in('id', ticketsToDelete);
+
+          if (deleteError) {
+            console.error('Failed to clean up removed tickets', deleteError);
+          }
         }
       }
 
-      // Insert tickets if any
+      // Insert or Update tickets
       if (form.tickets.length > 0) {
-        const ticketInserts = form.tickets.map(ticket => ({
-          event_id: eventId,
-          label: ticket.title,
-          price: ticket.price,
-          currency: ticket.currency,
-          quantity: ticket.quantity,
-          benefits: ticket.benefits,
-          color_theme: ticket.colorTheme,
-          is_physical: false,
-        }));
+        const newTickets = form.tickets.filter(t => t.id.startsWith('ticket-'));
+        const existingTickets = form.tickets.filter(t => !t.id.startsWith('ticket-'));
 
-        const { error: ticketError } = await supabase
-          .from('event_tickets')
-          .insert(ticketInserts);
+        // Insert new tickets
+        if (newTickets.length > 0) {
+          const ticketInserts = newTickets.map(ticket => ({
+            event_id: eventId,
+            label: ticket.title,
+            price: ticket.price,
+            currency: ticket.currency,
+            quantity: ticket.quantity,
+            benefits: ticket.benefits,
+            color_theme: ticket.colorTheme,
+            is_physical: false,
+          }));
 
-        if (ticketError) {
-          console.error('Failed to save tickets', ticketError);
-          toastError(id ? 'Event updated but tickets could not be saved.' : 'Event created but tickets could not be saved.');
+          const { error: insertError } = await supabase
+            .from('event_tickets')
+            .insert(ticketInserts);
+
+          if (insertError) {
+            console.error('Failed to save new tickets', insertError);
+            toastError('Some new tickets could not be saved.');
+          }
+        }
+
+        // Update existing tickets
+        if (existingTickets.length > 0) {
+          // We update them one by one to keep it simple, or we could upsert if we mapped all fields.
+          for (const ticket of existingTickets) {
+            const { error: updateError } = await supabase
+              .from('event_tickets')
+              .update({
+                label: ticket.title,
+                price: ticket.price,
+                currency: ticket.currency,
+                quantity: ticket.quantity,
+                benefits: ticket.benefits,
+                color_theme: ticket.colorTheme,
+              })
+              .eq('id', ticket.id);
+
+            if (updateError) {
+              console.error(`Failed to update ticket ${ticket.id}`, updateError);
+            }
+          }
         }
       }
 
@@ -857,16 +896,16 @@ const CreateEvent = () => {
         }}
       />
 
-      <div className="mx-auto w-full max-w-5xl px-4 md:px-6 py-4 lg:py-6 pt-6 lg:pt-8">
-        <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-16 items-start">
-          {/* Left column - Form Fields */}
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 py-4 lg:py-6 pt-6 lg:pt-8">
+        <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-12 items-start">
+
+          {/* Main Form Area */}
           <main className="flex-1 max-w-2xl w-full">
             <div className="mb-6 lg:px-2">
               <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
                 {id ? 'Edit Event' : 'Create New Event'}
               </h1>
               <p className="mt-1 text-[15px] text-gray-600">
-                {id ? 'Update your event details and tickets.' : 'Fill in the details below to publish your event.'}
               </p>
             </div>
             <form onSubmit={handleSubmit} className="space-y-6 animate-in slide-in-from-bottom-4 duration-700 fade-in">
@@ -1078,6 +1117,13 @@ const CreateEvent = () => {
                   ) : (
                     id ? 'Save Changes' : 'Create Event'
                   )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(-1)}
+                  className="w-full mt-3 rounded-full bg-gray-100 px-8 py-4 text-lg font-medium text-gray-900 transition-all hover:bg-gray-200 active:scale-[0.98]"
+                >
+                  {id ? 'Cancel Changes' : 'Cancel'}
                 </button>
               </div>
             </form>
