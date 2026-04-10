@@ -6,12 +6,9 @@ import Logo from './Logo';
 import TextLogo from './TextLogo';
 import MobileMenu from './MobileMenu';
 import UserAvatar from './UserAvatar';
-import { getCurrentUser, signOutSilent } from '@/lib/supabase/auth';
-import { getProfileById, isProfileComplete } from '@/lib/supabase/profiles';
-import { createClient } from '@/lib/supabase/client';
+import { getCurrentUser, logout } from '@/lib/api/auth';
+import { isProfileComplete } from '@/lib/api/profiles';
 import { useTheme } from '@/contexts/ThemeContext';
-
-const supabase = createClient();
 
 type MenuItem = {
   name: string;
@@ -47,9 +44,8 @@ const Navbar = () => {
           setUser(null);
           return;
         }
-        const profile = await getProfileById(currentUser.id);
-        if (!isProfileComplete(profile)) {
-          await signOutSilent();
+        if (!isProfileComplete(currentUser)) {
+          await logout();
           setUser(null);
         } else {
           setUser(currentUser);
@@ -62,27 +58,6 @@ const Navbar = () => {
     };
 
     checkUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const u = session?.user || null;
-      if (!u) { setUser(null); return; }
-      try {
-        const profile = await getProfileById(u.id);
-        if (!isProfileComplete(profile)) {
-          await signOutSilent();
-          setUser(null);
-        } else {
-          setUser(u);
-        }
-      } catch (e) {
-        console.error('Auth state profile check failed:', e);
-        setUser(null);
-      }
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
   }, []);
   const navigate = useNavigate();
   const location = useLocation();

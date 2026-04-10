@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { signOut } from '@/lib/supabase/auth';
+import { getCurrentUser, signOut } from '@/lib/supabase/auth';
 import { useNavigate } from 'react-router-dom';
-import { getProfileById } from '@/lib/supabase/profiles';
+import { updateProfileAvatar } from '@/lib/api/profiles';
 
 type SupaUser = {
   id?: string;
@@ -35,7 +35,7 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
         // Small delay to show the skeleton (for demo purposes)
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        const profile = await getProfileById(user.id);
+        const profile = await getCurrentUser();
         if (cancelled) return;
         
         // If no avatar in profile but we have one in user_metadata, update the profile

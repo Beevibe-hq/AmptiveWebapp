@@ -1,21 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate, Routes, Route } from 'react-router-dom';
 import {
-    LayoutDashboard,
     Calendar,
     Wallet,
     ShoppingCart,
-    LineChart,
-    Settings,
     LogOut,
-    ChevronRight,
     Menu,
     X,
     RefreshCw,
-    FileText,
-    Star,
     Users,
-    Eye,
     ChevronDown,
     Clock,
     MapPin,
@@ -23,18 +16,14 @@ import {
     Copy,
     Ticket,
     Share2,
-    Download,
-    ArrowLeft,
-    Play,
-    Pause
-} from 'lucide-react';
-import { getCurrentUser, signOut } from '@/lib/supabase/auth';
-import { getProfileById } from '@/lib/supabase/profiles';
-import { createClient } from '@/lib/supabase/client';
+    Download} from 'lucide-react';
+import { getCurrentUser, logout as apiSignOut } from '@/lib/api/auth';
+import { getEvent, getEventsByUser } from '@/lib/api/events';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
 import DashboardOrders from './DashboardOrders';
 import CreateEvent from './CreateEvent';
+import { getSession } from '@/lib/api/auth';
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
     const [count, setCount] = useState(0);
@@ -237,18 +226,11 @@ function DashboardHome({ displayName }: { displayName: string }) {
     };
 
     const fetchRealEvents = async () => {
-        const supabase = createClient();
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return;
+            const session = await getSession();
+            if (!session || !session.user) return;
 
-            const { data, error } = await supabase
-                .from('events')
-                .select('*, event_tickets(quantity)')
-                .eq('user_id', session.user.id)
-                .order('start_time', { ascending: true });
-
-            if (error) throw error;
+            const data = await getEventsByUser(session.user.user_id);
             setRealEvents(data || []);
         } catch (error) {
             console.error('Error fetching dashboard events:', error);
@@ -905,7 +887,7 @@ export default function Dashboard() {
             const currentUser = await getCurrentUser();
             if (currentUser) {
                 setUser(currentUser);
-                const profileData = await getProfileById(currentUser.id);
+                const profileData = await getCurrentUser();
                 setProfile(profileData);
             } else {
                 navigate('/login');
@@ -920,10 +902,9 @@ export default function Dashboard() {
             const match = location.pathname.match(/\/dashboard\/events\/([^\/]+)\/edit/);
             if (match && match[1]) {
                 const eventId = match[1];
-                const supabase = createClient();
-                const { data } = await supabase.from('events').select('title').eq('id', eventId).single();
-                if (data) {
-                    setEditingEventTitle(data.title);
+                const event = await getEvent(eventId);
+                if (event) {
+                    setEditingEventTitle(event.title);
                 }
             } else {
                 setEditingEventTitle(null);
@@ -944,7 +925,7 @@ export default function Dashboard() {
     const displayName = profile?.username || profile?.display_name || profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Organizer';
 
     const handleSignOut = async () => {
-        await signOut();
+        await apiSignOut();
         navigate('/');
     };
 

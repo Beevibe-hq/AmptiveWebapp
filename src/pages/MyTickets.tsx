@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { getCurrentUser } from '@/lib/api/auth';
 
 const supabase = createClient();
 
@@ -114,7 +115,7 @@ const MyTickets = () => {
 
     const fetchTickets = async () => {
         try {
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await getCurrentUser();
             if (!user) return;
 
             const { data, error } = await supabase
