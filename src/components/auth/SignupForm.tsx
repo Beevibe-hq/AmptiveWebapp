@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signUpWithEmail, signInWithGoogle } from '@/lib/supabase/auth';
+import { signUpWithEmail, signInWithGoogle } from '@/lib/api/auth';
 import { stashSignup } from '@/lib/api/otp';
 import { toast } from 'sonner';
 import { checkEmailExists } from '@/lib/api/checkEmail';

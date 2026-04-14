@@ -3,7 +3,7 @@ import Cropper from 'react-easy-crop';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { completeProfile, checkUsername } from '@/lib/api/profile';
 import { consumeSignup } from '@/lib/api/otp';
-import { signInWithEmail } from '@/lib/supabase/auth';
+import { signInWithEmail } from '@/lib/api/auth';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 
 export default function CompleteProfilePage() {

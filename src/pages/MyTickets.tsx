@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getCurrentUser } from '@/lib/api/auth';
-
-const supabase = createClient();
+import { getPurchasesByUser } from '@/lib/api/purchases';
 
 type TicketPurchase = {
     id: string;
@@ -118,31 +116,8 @@ const MyTickets = () => {
             const user = await getCurrentUser();
             if (!user) return;
 
-            const { data, error } = await supabase
-                .from('ticket_purchases')
-                .select(`
-          *,
-          events!event_id (
-            title,
-            cover_image,
-            start_time,
-            venue,
-            city,
-            location_type
-          ),
-          event_tickets!ticket_type_id (
-            color_theme,
-            label
-          )
-        `)
-                .eq('buyer_id', user.id)
-                .order('purchase_date', { ascending: false });
-
-            if (error) {
-                console.error('Error fetching tickets:', error);
-            } else {
-                setTickets(data || []);
-            }
+            const data = await getPurchasesByUser(user.id);
+            setTickets(data || []);
         } catch (err) {
             console.error('Unexpected error:', err);
         } finally {

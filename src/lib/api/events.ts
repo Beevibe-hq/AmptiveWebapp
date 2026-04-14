@@ -1,71 +1,127 @@
-import { api } from './client';
+import { api, StandardResponse } from './client';
 
-export interface Event {
-  id: string;
-  user_id: string;
+export interface StandaloneEvent {
+  event_id: string;
   title: string;
-  summary?: string | null;
   description?: string | null;
-  start_time: string;
-  end_time: string;
-  venue?: string | null;
-  city?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  cover_image?: string | null;
-  location_type?: string | null;
-  status?: string;
+  thumbnail_url?: string | null;
+  status: string;
+  scheduled_for?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  stream_url?: string | null;
+  stream_key?: string | null;
+  playback_url?: string | null;
+  livestream_id?: string | null;
+  event_type?: string | null;
+  viewer_count?: number;
+  peak_viewers?: number;
+  reaction_count?: number;
+  comment_count?: number;
+  going_count?: number;
+  duration_seconds?: number | null;
+  host?: UserSlim;
+  co_hosts?: UserSlim[];
+  community?: CommunitySlim | null;
+  tags?: TagSlim[];
   created_at?: string;
   updated_at?: string;
+  hand_raising?: boolean;
+  location?: {
+    type?: 'physical' | 'online' | null;
+    venue?: string;
+    city?: string;
+    latitude?: number;
+    longitude?: number
+  };
 }
 
-export interface EventWithTickets extends Event {
-  tickets?: Ticket[];
+export interface UserSlim {
+  user_id: string;
+  username: string;
+  name: string;
+  profile_picture?: string | null;
 }
 
-export interface Ticket {
-  id: string;
-  event_id: string;
-  label: string;
-  price: number;
-  currency: string;
-  benefits?: string[];
-  color_theme?: string | null;
-  quantity?: number | null;
-  is_physical?: boolean;
-  created_at?: string;
+export interface CommunitySlim {
+  community_id: string;
+  name: string;
+  description?: string | null;
+  cover_image?: string | null;
+  member_count?: number;
 }
 
-export type { Ticket as EventTicket };
+export interface TagSlim {
+  tag_id: string;
+  name: string;
+}
+
+export interface StandaloneEventCreateRequest {
+  title: string;
+  description?: string;
+  thumbnail_url?: string;
+  scheduled_for?: string;
+  event_type?: string;
+}
+
+export interface StandaloneEventUpdateRequest {
+  title?: string;
+  description?: string;
+  thumbnail_url?: string;
+  scheduled_for?: string;
+  event_type?: string;
+}
+
+export type Event = StandaloneEvent;
+
+export interface EventListResponse {
+  events: StandaloneEvent[];
+  page: number;
+  page_size: number;
+  total_count: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
 
 export async function listEvents(params?: {
-  limit?: number;
-  offset?: number;
-  userId?: string;
-}): Promise<Event[]> {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<StandaloneEvent[]> {
   const query = new URLSearchParams();
-  if (params?.limit) query.set('limit', String(params.limit));
-  if (params?.offset) query.set('offset', String(params.offset));
-  if (params?.userId) query.set('userId', params.userId);
+  if (params?.status) query.set('status', params.status);
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.page_size) query.set('page_size', String(params.page_size));
 
-  return api.get<Event[]>(`/events?${query}`);
+  const queryString = query.toString();
+  const endpoint = queryString ? `/events/?${queryString}` : '/events/';
+
+  const response = await api.get<EventListResponse>(endpoint);
+
+  return response.events || [];
 }
 
-export async function getEvent(eventId: string): Promise<EventWithTickets | null> {
+export async function getEvent(eventId: string): Promise<StandaloneEvent | null> {
   try {
-    return await api.get<EventWithTickets>(`/events/${eventId}`);
+    const response = await api.get<StandaloneEvent>(`/events/${eventId}`);    
+    return response || null;
   } catch {
     return null;
   }
 }
 
-export async function createEvent(event: Omit<Event, 'id' | 'created_at' | 'updated_at'>): Promise<{ id: string }> {
-  return api.post<{ id: string }>('/events', event);
+export async function createEvent(event: StandaloneEventCreateRequest): Promise<{ id: string; event_id?: string }> {
+  const response = await api.post<StandardResponse<StandaloneEvent>>('/events/', event);
+  if (response.data) {
+    return { id: response.data.event_id, event_id: response.data.event_id };
+  }
+  return { id: '' };
 }
 
-export async function updateEvent(eventId: string, event: Partial<Event>): Promise<{ ok: boolean; error?: string }> {
+export async function updateEvent(eventId: string, event: StandaloneEventUpdateRequest): Promise<{ ok: boolean; error?: string }> {
   try {
-    return await api.put<{ ok: boolean; error?: string }>(`/events/${eventId}`, event);
+    const response = await api.patch<StandardResponse<StandaloneEvent>>(`/events/${eventId}`, event);
+    return { ok: response.status, error: response.status ? undefined : response.message };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -73,16 +129,35 @@ export async function updateEvent(eventId: string, event: Partial<Event>): Promi
 
 export async function deleteEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    return await api.delete<{ ok: boolean; error?: string }>(`/events/${eventId}`);
+    const response = await api.delete<StandardResponse<null>>(`/events/${eventId}`);
+    return { ok: response.status, error: response.status ? undefined : response.message };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
 }
 
-export async function getEventsByUser(userId: string): Promise<Event[]> {
-  return api.get<Event[]>(`/events?userId=${userId}`);
+export async function getEventsByUser(userId: string): Promise<StandaloneEvent[]> {
+  const response = await api.get<EventListResponse>(`/events?userId=${userId}`);
+  return response?.events || response || [];
 }
 
-export async function getRelatedEvents(userId: string, excludeEventId: string, limit = 4): Promise<Event[]> {
-  return api.get<Event[]>(`/events?userId=${userId}&excludeId=${excludeEventId}&limit=${limit}`);
+export async function getRelatedEvents(userId: string, excludeEventId: string, limit = 4): Promise<StandaloneEvent[]> {
+  const response = await api.get<EventListResponse>(
+    `/events/?userId=${userId}&excludeId=${excludeEventId}&page_size=${limit}`
+  );
+  return response?.events || response || [];
+}
+
+export async function publishEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const response = await api.post<StandardResponse<null>>(`/events/${eventId}/publish`);
+    return { ok: response.status, error: response.status ? undefined : response.message };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function getEventOrders(eventId: string): Promise<unknown[]> {
+  const response = await api.get<any>(`/events/${eventId}/orders`);
+  return response?.data || response || [];
 }

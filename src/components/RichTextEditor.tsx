@@ -5,7 +5,7 @@ import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import { useState } from 'react';
 import { toastError } from '@/lib/ui/toast';
-import { createClient } from '@/lib/supabase/client';
+import { uploadFile, getPublicUrl } from '@/lib/api/storage';
 import {
     Heading1,
     Heading2,
@@ -87,81 +87,47 @@ export default function RichTextEditor({
         setUploading(true);
 
         try {
-            // Initialize Supabase client
-            const supabase = createClient();
-
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
 
-                // Validate file type
                 const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
                 if (!allowedTypes.includes(file.type)) {
                     toastError(`File type not supported: ${file.name}. Only images and PDFs are allowed.`);
                     continue;
                 }
 
-                // Validate file size (max 10MB)
-                const maxSize = 10 * 1024 * 1024; // 10MB
+                const maxSize = 10 * 1024 * 1024;
                 if (file.size > maxSize) {
                     toastError(`File too large: ${file.name}. Maximum size is 10MB.`);
                     continue;
                 }
 
-                // Upload to Supabase Storage
-                // Sanitize filename and add timestamp to avoid collisions
-                // Upload to event-attachments folder as required by RLS policies
-                const fileName = `event-attachments/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
+                const fileName = `event-assets/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
 
-                const { error: uploadError } = await supabase.storage
-                    .from('event-assets') // Using user-provided bucket name
-                    .upload(fileName, file, {
-                        cacheControl: '3600',
-                        upsert: false
-                    });
+                try {
+                    const publicUrl = await uploadFile('event-assets', fileName, file);
 
-                if (uploadError) {
-                    console.error('Upload error:', uploadError);
-                    toastError(`Failed to upload ${file.name}: ${uploadError.message}`);
-                    continue;
-                }
+                    const isImage = file.type.startsWith('image/');
 
-                // Get Public URL
-                const { data: { publicUrl } } = supabase.storage
-                    .from('event-assets')
-                    .getPublicUrl(fileName);
+                    if (isImage) {
+                        editor.chain().focus().setImage({ src: publicUrl }).run();
+                    } else {
+                        const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+                        const svgString = `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f9fafb" stroke="#e5e7eb" stroke-width="4"/><text x="50%" y="50%" font-family="Arial, sans-serif" font-weight="bold" font-size="48" fill="#4b5563" text-anchor="middle" dy=".3em">${ext}</text></svg>`;
+                        const base64Svg = `data:image/svg+xml;base64,${btoa(svgString)}`;
 
-                // Insert into editor
-                const isImage = file.type.startsWith('image/');
-
-                if (isImage) {
-                    // Insert image (styling handled by extension config)
-                    editor.chain().focus().setImage({ src: publicUrl }).run();
-                } else {
-                    // Create a placeholder SVG for the file
-                    const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
-                    const svgString = `
-                        <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
-                            <rect width="100%" height="100%" fill="#f9fafb" stroke="#e5e7eb" stroke-width="4"/>
-                            <text x="50%" y="50%" font-family="Arial, sans-serif" font-weight="bold" font-size="48" fill="#4b5563" text-anchor="middle" dy=".3em">${ext}</text>
-                        </svg>
-                    `;
-                    const base64Svg = `data:image/svg+xml;base64,${btoa(svgString)}`;
-
-                    // Insert the placeholder image wrapped in a link
-                    editor
-                        .chain()
-                        .focus()
-                        .setImage({ src: base64Svg, alt: file.name, title: file.name })
-                        .setLink({ href: publicUrl })
-                        .run();
+                        editor.chain().focus().setImage({ src: base64Svg, alt: file.name, title: file.name }).setLink({ href: publicUrl }).run();
+                    }
+                } catch (error) {
+                    console.error('Error processing files:', error);
+                    toastError('An error occurred while processing files.');
                 }
             }
         } catch (error) {
-            console.error('Error processing files:', error);
+            console.error('Error uploading files:', error);
             toastError('An error occurred while processing files.');
         } finally {
             setUploading(false);
-            // Reset input
             e.target.value = '';
         }
     };

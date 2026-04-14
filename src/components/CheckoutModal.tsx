@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { Loader2, Minus, Plus, X, CheckCircle2, Ticket } from 'lucide-react';
-import { toastError } from '@/lib/ui/toast';
-import { User } from '@supabase/supabase-js';
+import { createPurchase } from '@/lib/api/purchases';
 
 type EventTicket = {
     id: string;
@@ -22,7 +20,7 @@ type CheckoutModalProps = {
         start_time?: string | null;
     };
     tickets: EventTicket[];
-    currentUser: User | null;
+    currentUser: { id: string; email?: string; name?: string } | null;
 };
 
 type TicketSelection = Record<string, number>;
@@ -32,8 +30,6 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
     const [totalAmount, setTotalAmount] = useState(0);
     const [step, setStep] = useState<'selection' | 'processing' | 'success'>('selection');
     const [error, setError] = useState<string | null>(null);
-
-    const supabase = createClient();
 
     // Reset state when modal opens
     useEffect(() => {
@@ -106,7 +102,7 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                         event_id: event.id,
                         ticket_type_id: ticketId,
                         buyer_id: currentUser.id,
-                        buyer_name: currentUser.user_metadata?.full_name || currentUser.email || 'Guest',
+                        buyer_name: currentUser.name || currentUser.email || 'Guest',
                         buyer_email: currentUser.email || 'guest@example.com',
                         purchase_date: timestamp,
                         ticket_status: 'valid',
@@ -125,12 +121,9 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                 }
             }
 
-            // 3. Insert into Database
-            const { error: dbError } = await supabase
-                .from('ticket_purchases')
-                .insert(purchases);
-
-            if (dbError) throw dbError;
+            // 3. Insert into Database using API
+            const result = await createPurchase(purchases);
+            if (!result.ok) throw new Error(result.error);
 
             // 4. Success!
             setStep('success');

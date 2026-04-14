@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Calendar } from 'lucide-react';
 import QRCodeGenerator from '../components/QRCodeGenerator';
-import { createClient } from '@/lib/supabase/client';
+import { listEvents } from '@/lib/api/events';
+import { listCommunities, Community } from '@/lib/api/communities';
 
 
 // Type definition for Trending Card
@@ -81,13 +82,6 @@ interface EventType {
 }
 
 // Update image paths to use public directory
-const karaImage = '/images/kara.png';
-const glennonDoyleImage = '/images/Glennon Doyle.jpeg';
-const jazzNightsImage = '/images/i-said-what-i-said.jpg';
-const stillProcessingImage = '/images/still processing.jpg';
-const configImage = '/images/config.jpeg';
-const liquidiumImage = '/images/liquidium.jpg';
-const honestBunchImage = '/images/honnest bunch.jpeg';
 const techConferenceCardStyles = `
   .tech-conference-card p {
     color: white !important;
@@ -122,6 +116,8 @@ interface HeroSlideProps {
   className?: string;
   isFirstSlide?: boolean;
   isSecondSlide?: boolean;
+  onSwipeLeft?: () => void;
+  onSwipeRight?: () => void;
 }
 
 const HeroSlide: React.FC<HeroSlideProps> = ({
@@ -395,9 +391,6 @@ const Homepage: React.FC = () => {
     };
   }, []);
 
-  // Initialize Supabase client
-  const supabase = useMemo(() => createClient(), []);
-
   // Initialize navigation
   const navigate = useNavigate();
 
@@ -417,13 +410,16 @@ const Homepage: React.FC = () => {
   const [filteredEvents, setFilteredEvents] = useState<EventType[]>([]);
   const [dbEvents, setDbEvents] = useState<EventType[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [loadingCommunities, setLoadingCommunities] = useState(true);
 
   // Get user's country on component mount
   useEffect(() => {
     const fetchUserCountry = async () => {
       try {
-        const response = await fetch('https://ipapi.co/json/');
-        const data = await response.json();
+        // const response = await fetch('https://ipapi.co/json/');
+        // const data = await response.json();
+        const data = { country_name: 'Nigeria' };
         setUserCountry(data.country_name || 'Nigeria');
         setFilters(prev => ({
           ...prev,
@@ -448,31 +444,14 @@ const Homepage: React.FC = () => {
       try {
         setLoadingEvents(true);
 
-        // Get start of today to include events that started earlier today
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
-
-        const { data, error } = await supabase
-          .from('events')
-          .select('*')
-          .gte('start_time', startOfToday.toISOString())
-          .order('start_time', { ascending: true })
-          .limit(20);
-
-        if (error) {
-          console.error('Error fetching events:', error);
-          setLoadingEvents(false);
-          return;
-        }
+        const eventsData = await listEvents({ page_size: 20 });
 
         // Transform database events to match EventType interface
-        const transformedEvents: EventType[] = (data || []).map((event: any) => {
-          // Determine status based on start time
-          const eventDate = new Date(event.start_time);
+        const transformedEvents: EventType[] = (eventsData || []).map((event: any) => {
+          const eventDate = new Date(event.scheduled_for);
           const now = new Date();
-          const isLiveNow = eventDate <= now && eventDate >= new Date(now.getTime() - 3 * 60 * 60 * 1000); // Within 3 hours
+          const isLiveNow = eventDate <= now && eventDate >= new Date(now.getTime() - 3 * 60 * 60 * 1000);
 
-          // Get price from tickets
           let price: number | Array<{ type: string; price: number }> = 0;
           if (event.tickets && event.tickets.length > 0) {
             if (event.tickets.length === 1) {
@@ -492,10 +471,10 @@ const Homepage: React.FC = () => {
             country: event.city || 'Nigeria',
             status: isLiveNow ? 'Live Now' : 'Upcoming',
             price,
-            date: event.start_time,
+            date: new Date(event.scheduled_for).toISOString(),
             media: {
               type: 'image' as const,
-              src: event.cover_image || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30',
+              src: event.thumbnail_url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30',
               alt: event.title
             }
           };
@@ -512,7 +491,22 @@ const Homepage: React.FC = () => {
     };
 
     fetchEvents();
-  }, [supabase]);
+  }, []);
+
+  // Fetch communities
+  useEffect(() => {
+    const fetchCommunities = async () => {
+      try {
+        const data = await listCommunities({ page_size: 20 });
+        setCommunities(data);
+      } catch (error) {
+        console.error('Error fetching communities:', error);
+      } finally {
+        setLoadingCommunities(false);
+      }
+    };
+    fetchCommunities();
+  }, []);
 
 
   // Data for Trending section
@@ -588,182 +582,182 @@ const Homepage: React.FC = () => {
   };
 
   // Sample events data
-  const events = [
-    {
-      id: 1,
-      title: "Karaoke Traffic Vibes",
-      location: "Lekki Phase 1, Lagos",
-      country: "Nigeria",
-      status: "Upcoming",
-      price: [
-        { type: 'Regular', price: 5000 },
-        { type: 'VIP', price: 10000 },
-        { type: 'VVIP', price: 20000 }
-      ],
-      date: "2025-07-12T20:00:00",
-      media: {
-        type: 'image' as const,
-        src: karaImage,
-        alt: 'Karaoke Traffic Vibes'
-      } as MediaSource
-    },
-    {
-      id: 2,
-      title: "Clinton Flames",
-      location: "Victoria Island, Lagos",
-      country: "Nigeria",
-      status: "Upcoming",
-      price: 10000,
-      date: "2025-07-13T19:30:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp',
-        alt: 'Clinton Flames'
-      } as MediaSource
-    },
-    {
-      id: 3,
-      title: "1analog Girl",
-      location: "Ikeja, Lagos",
-      country: "Nigeria",
-      status: "Sold Out",
-      price: 0, // Price is 0 for sold out events
-      date: "2025-07-07T22:00:00",
-      media: {
-        type: 'gif' as const,
-        src: '/images/GIF promo (1mouth analog) v2.gif',
-        alt: '1analog Girl',
-        autoplay: true,
-        loop: true
-      } as MediaSource
-    },
-    {
-      id: 4,
-      title: "Reekado Banks Live In Abuja",
-      location: "Garki, Abuja",
-      country: "Nigeria",
-      status: "Registration Open",
-      price: [
-        { type: 'Early Bird', price: 2000 },
-        { type: 'Regular', price: 5000 },
-        { type: 'VIP', price: 10000 }
-      ],
-      date: "2025-07-20T21:00:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp',
-        alt: 'Reekado Banks Live In Abuja'
-      } as MediaSource
-    },
-    {
-      id: 5,
-      title: "House Party/pool Party",
-      location: "Ikoyi, Lagos",
-      country: "Nigeria",
-      status: "Sold Out",
-      price: 0, // Price is 0 for sold out events
-      date: "2025-07-07T23:30:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751906823/yflortvspnhc5idiol9t.webp',
-        alt: 'House Party/pool Party'
-      } as MediaSource
-    },
-    {
-      id: 6,
-      title: "Afrobeat Night Live",
-      location: "Yaba, Lagos",
-      country: "Nigeria",
-      status: "Upcoming",
-      price: [
-        { type: 'Early Bird', price: 3000 },
-        { type: 'Regular', price: 5000 },
-        { type: 'VIP', price: 8000 }
-      ],
-      date: "2025-07-25T21:00:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752002405/mgoz620c4yjyeb0xa6hd.webp',
-        alt: 'Afrobeat Night Live',
-      } as MediaSource
-    },
-    {
-      id: 7,
-      title: "Tech Conference 2025",
-      location: "Maitama, Abuja",
-      country: "Nigeria",
-      status: "Sold Out",
-      price: 0, // Price is 0 for sold out events
-      date: "2025-08-05T09:00:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751984779/nlhtme0suacdfjyypc8s.webp',
-        alt: 'Tech Conference 2025',
-      } as MediaSource
-    },
-    {
-      id: 8,
-      title: "Art Exhibition",
-      location: "Wuse, Abuja",
-      country: "Nigeria",
-      status: "Upcoming",
-      price: 0,
-      date: "2025-07-30T10:00:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961673/yzh40wdpkykt96kogcam.webp',
-        alt: 'Art Exhibition',
-      } as MediaSource
-    },
-    {
-      id: 9,
-      title: "Food Festival",
-      location: "GRA, Port Harcourt",
-      country: "Nigeria",
-      status: "Live Now",
-      price: [
-        { type: 'Tasting Pass', price: 5000 },
-        { type: 'VIP Experience', price: 15000 }
-      ],
-      date: "2025-07-10T12:00:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961662/ltctlgwlgfma1hzlfs1q.webp',
-        alt: 'Food Festival',
-      } as MediaSource
-    },
-    {
-      id: 10,
-      title: "Jazz Night",
-      location: "GRA, Ilorin",
-      country: "Nigeria",
-      status: "Upcoming",
-      price: [
-        { type: 'Standard', price: 7000 },
-        { type: 'VIP', price: 12000 }
-      ],
-      date: "2025-08-15T20:00:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
-        alt: 'Jazz Night',
-      } as MediaSource
-    },
-    {
-      id: 11,
-      title: "Amptive Live Session",
-      location: "Amptive",
-      country: "Global",
-      status: "Live Now",
-      price: 0,
-      date: "2025-07-17T20:00:00",
-      media: {
-        type: 'image' as const,
-        src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
-        alt: 'Amptive Live Session',
-      } as MediaSource
-    }
-  ];
+  // const events = [
+  //   {
+  //     id: 1,
+  //     title: "Karaoke Traffic Vibes",
+  //     location: "Lekki Phase 1, Lagos",
+  //     country: "Nigeria",
+  //     status: "Upcoming",
+  //     price: [
+  //       { type: 'Regular', price: 5000 },
+  //       { type: 'VIP', price: 10000 },
+  //       { type: 'VVIP', price: 20000 }
+  //     ],
+  //     date: "2025-07-12T20:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: karaImage,
+  //       alt: 'Karaoke Traffic Vibes'
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 2,
+  //     title: "Clinton Flames",
+  //     location: "Victoria Island, Lagos",
+  //     country: "Nigeria",
+  //     status: "Upcoming",
+  //     price: 10000,
+  //     date: "2025-07-13T19:30:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp',
+  //       alt: 'Clinton Flames'
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 3,
+  //     title: "1analog Girl",
+  //     location: "Ikeja, Lagos",
+  //     country: "Nigeria",
+  //     status: "Sold Out",
+  //     price: 0, // Price is 0 for sold out events
+  //     date: "2025-07-07T22:00:00",
+  //     media: {
+  //       type: 'gif' as const,
+  //       src: '/images/GIF promo (1mouth analog) v2.gif',
+  //       alt: '1analog Girl',
+  //       autoplay: true,
+  //       loop: true
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 4,
+  //     title: "Reekado Banks Live In Abuja",
+  //     location: "Garki, Abuja",
+  //     country: "Nigeria",
+  //     status: "Registration Open",
+  //     price: [
+  //       { type: 'Early Bird', price: 2000 },
+  //       { type: 'Regular', price: 5000 },
+  //       { type: 'VIP', price: 10000 }
+  //     ],
+  //     date: "2025-07-20T21:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1744053819/lv7lfpukvpotznvykopf.webp',
+  //       alt: 'Reekado Banks Live In Abuja'
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 5,
+  //     title: "House Party/pool Party",
+  //     location: "Ikoyi, Lagos",
+  //     country: "Nigeria",
+  //     status: "Sold Out",
+  //     price: 0, // Price is 0 for sold out events
+  //     date: "2025-07-07T23:30:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751906823/yflortvspnhc5idiol9t.webp',
+  //       alt: 'House Party/pool Party'
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 6,
+  //     title: "Afrobeat Night Live",
+  //     location: "Yaba, Lagos",
+  //     country: "Nigeria",
+  //     status: "Upcoming",
+  //     price: [
+  //       { type: 'Early Bird', price: 3000 },
+  //       { type: 'Regular', price: 5000 },
+  //       { type: 'VIP', price: 8000 }
+  //     ],
+  //     date: "2025-07-25T21:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752002405/mgoz620c4yjyeb0xa6hd.webp',
+  //       alt: 'Afrobeat Night Live',
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 7,
+  //     title: "Tech Conference 2025",
+  //     location: "Maitama, Abuja",
+  //     country: "Nigeria",
+  //     status: "Sold Out",
+  //     price: 0, // Price is 0 for sold out events
+  //     date: "2025-08-05T09:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751984779/nlhtme0suacdfjyypc8s.webp',
+  //       alt: 'Tech Conference 2025',
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 8,
+  //     title: "Art Exhibition",
+  //     location: "Wuse, Abuja",
+  //     country: "Nigeria",
+  //     status: "Upcoming",
+  //     price: 0,
+  //     date: "2025-07-30T10:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961673/yzh40wdpkykt96kogcam.webp',
+  //       alt: 'Art Exhibition',
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 9,
+  //     title: "Food Festival",
+  //     location: "GRA, Port Harcourt",
+  //     country: "Nigeria",
+  //     status: "Live Now",
+  //     price: [
+  //       { type: 'Tasting Pass', price: 5000 },
+  //       { type: 'VIP Experience', price: 15000 }
+  //     ],
+  //     date: "2025-07-10T12:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751961662/ltctlgwlgfma1hzlfs1q.webp',
+  //       alt: 'Food Festival',
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 10,
+  //     title: "Jazz Night",
+  //     location: "GRA, Ilorin",
+  //     country: "Nigeria",
+  //     status: "Upcoming",
+  //     price: [
+  //       { type: 'Standard', price: 7000 },
+  //       { type: 'VIP', price: 12000 }
+  //     ],
+  //     date: "2025-08-15T20:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
+  //       alt: 'Jazz Night',
+  //     } as MediaSource
+  //   },
+  //   {
+  //     id: 11,
+  //     title: "Amptive Live Session",
+  //     location: "Amptive",
+  //     country: "Global",
+  //     status: "Live Now",
+  //     price: 0,
+  //     date: "2025-07-17T20:00:00",
+  //     media: {
+  //       type: 'image' as const,
+  //       src: 'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1751666040/dzit74ibwfmtpuwfexme.webp',
+  //       alt: 'Amptive Live Session',
+  //     } as MediaSource
+  //   }
+  // ];
 
   // Initialize filtered events with database events
   useEffect(() => {
@@ -1742,56 +1736,26 @@ const Homepage: React.FC = () => {
 
             {/* Cards Container */}
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 hide-scrollbar px-4" ref={cardsContainerRef} style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              {[
-                {
-                  title: "Music",
-                  image: communityMusicImage
-                },
-                {
-                  title: "Food & Drink",
-                  image: communityFoodImage
-                },
-                {
-                  title: "Art & Culture",
-                  image: communityArtImage
-                },
-                {
-                  title: "Technology",
-                  image: communityTechImage
-                },
-                {
-                  title: "Sports",
-                  image: communitySportsImage
-                },
-                {
-                  title: "Fashion",
-                  image: communityFashionImage
-                },
-                {
-                  title: "Gaming",
-                  image: communityGamingImage
-                },
-                {
-                  title: "Health & Wellness",
-                  image: communityHealthImage
-                },
-                {
-                  title: "Education",
-                  image: communityEducationImage
-                },
-                {
-                  title: "Travel",
-                  image: communityTravelImage
-                }
-              ].map((community, index) => (
+              {(loadingCommunities ? [
+                { name: "Music", image: communityMusicImage },
+                { name: "Food & Drink", image: communityFoodImage },
+                { name: "Art & Culture", image: communityArtImage },
+                { name: "Technology", image: communityTechImage },
+                { name: "Sports", image: communitySportsImage },
+                { name: "Fashion", image: communityFashionImage },
+                { name: "Gaming", image: communityGamingImage },
+                { name: "Health & Wellness", image: communityHealthImage },
+                { name: "Education", image: communityEducationImage },
+                { name: "Travel", image: communityTravelImage }
+              ] : communities).map((community: any, index: number) => (
                 <div
-                  key={index}
+                  key={community.community_id || index}
                   className="community-card flex-shrink-0 w-[280px] h-[200px] bg-white rounded-xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
                   data-index={index}
                 >
                   <img
-                    src={community.image}
-                    alt={community.title}
+                    src={community.image || communityMusicImage}
+                    alt={community.name}
                     className="w-full h-full object-cover rounded-xl"
                   />
                 </div>

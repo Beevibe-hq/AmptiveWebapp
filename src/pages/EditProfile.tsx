@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createClient } from '@/lib/supabase/client';
-import {  upsertProfile, checkUsernameAvailability, Profile } from '@/lib/supabase/profiles';
+import { checkUsernameAvailability, updateProfile, Profile } from '@/lib/api/profiles';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { Camera, Loader2, Save } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import { getCurrentUser } from '@/lib/api/auth';
+import { uploadFile, getPublicUrl } from '@/lib/api/storage';
 
 export default function EditProfile() {
     const navigate = useNavigate();
@@ -30,7 +30,6 @@ export default function EditProfile() {
     const initialUsernameRef = useRef<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const supabase = createClient();
 
     // Check Username Availability Effect
     useEffect(() => {
@@ -148,14 +147,8 @@ export default function EditProfile() {
             const fileName = `${userId}-${Math.random()}.${fileExt}`;
             const filePath = `avatars/${fileName}`;
 
-            const { error: uploadError } = await supabase.storage
-                .from('avatars')
-                .upload(filePath, avatarFile);
-
-            if (uploadError) throw uploadError;
-
-            const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
-            return data.publicUrl;
+            const publicUrl = await uploadFile('avatars', filePath, avatarFile);
+            return publicUrl;
         } catch (error) {
             console.error('Error uploading avatar:', error);
             throw error;

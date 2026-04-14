@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getCurrentUser, signOut } from '@/lib/supabase/auth';
+import { getCurrentUser, signOut } from '@/lib/api/auth';
 import { useNavigate } from 'react-router-dom';
 import { updateProfileAvatar } from '@/lib/api/profiles';
 

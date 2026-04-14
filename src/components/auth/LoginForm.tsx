@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/supabase/auth';
-import {  isProfileComplete } from '@/lib/supabase/profiles';
+import { signInWithEmail, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/api/auth';
+import {  isProfileComplete } from '@/lib/api/profiles';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -107,7 +107,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       // }
 
       // Decide post-login redirect based on profile completion in profiles table
-      const u = await getCurrentUser();
+      const u = await getCurrentUser();      
       const needsCompletion = !isProfileComplete(u);
 
       onSuccess?.();
