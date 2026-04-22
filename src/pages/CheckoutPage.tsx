@@ -6,6 +6,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { TICKET_THEMES } from '@/lib/constants';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getCurrentUser } from '@/lib/api/auth';
 
 type EventRecord = {
     id: string;
@@ -54,7 +55,7 @@ export default function CheckoutPage() {
         const fetchData = async () => {
             if (!id) return;
             try {
-                const { data: { user } } = await supabase.auth.getUser();
+                const user = await getCurrentUser();
                 setCurrentUser(user);
 
                 const { data: eventData, error: eventError } = await supabase

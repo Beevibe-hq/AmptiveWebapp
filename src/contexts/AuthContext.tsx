@@ -1,11 +1,11 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client';
+import { getSession } from '@/lib/api/auth';
+import { UserProfile } from '@/lib/api/profiles';
 
 type AuthContextType = {
-  user: User | null;
+  user: UserProfile | null;
   loading: boolean;
   refreshUser: () => Promise<void>;
 };
@@ -13,16 +13,13 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
 
   const refreshUser = async () => {
     try {
-      // Prefer getSession so we hydrate from persisted storage synchronously
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) throw error;
-      setUser(session?.user ?? null);
+      const currentSession = await getSession();      
+      setUser(currentSession.user);
     } catch (error) {
       console.error('Error refreshing user:', error);
       setUser(null);
@@ -31,23 +28,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  useEffect(() => {
-    // On app load, hydrate from persisted session
+  useEffect(() => {    
     void refreshUser();
-
-    // Set up auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: string, session: Session | null) => {
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
-
-    return () => {
-      subscription.unsubscribe();
-    };
-    // We only want to set this up once for a given client instance
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

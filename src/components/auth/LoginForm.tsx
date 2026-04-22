@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail, signOut, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/supabase/auth';
-import { getProfileById, isProfileComplete } from '@/lib/supabase/profiles';
+import { signInWithEmail, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/supabase/auth';
+import {  isProfileComplete } from '@/lib/supabase/profiles';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -81,12 +81,11 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       if (!password) {
         setError('Please enter your password.');
         return;
-      }
-
+      }      
       // Sign in first to avoid extra round trips slowing login
-      const { data, error } = await signInWithEmail(normalizedEmail, password);
-      if (error) {
-        const msg = (error.message || '').toLowerCase();
+      const { data, status, message } = await signInWithEmail(normalizedEmail, password);      
+      if (!status) {
+        const msg = (message || '').toLowerCase();
         if (msg.includes('invalid login credentials')) {
           setError('Incorrect email or password.');
         } else if (msg.includes('email not confirmed') || msg.includes('email not verified')) {
@@ -99,39 +98,17 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }
 
-      // After sign-in, enforce OTP: first use fresh user from response (most reliable)
-      let respUser: any = (data as any)?.user;
-      let otpVerified = Boolean(respUser?.user_metadata?.otp_verified);
-      let confirmedAt = respUser?.email_confirmed_at;
-
-      // If response lacks user fields (can happen), fall back to local getUser with brief polling
-      if (!respUser) {
-        // After sign-in, enforce OTP via locally cached user to avoid extra round-trip.
-        // Poll briefly to avoid stale reads right after sign-in.
-        let current = await getCurrentUser();
-        otpVerified = Boolean((current as any)?.user_metadata?.otp_verified);
-        confirmedAt = (current as any)?.email_confirmed_at;
-        if (!otpVerified && !confirmedAt) {
-          for (let i = 0; i < 4; i++) {
-            await new Promise(r => setTimeout(r, 300));
-            current = await getCurrentUser();
-            otpVerified = Boolean((current as any)?.user_metadata?.otp_verified);
-            confirmedAt = (current as any)?.email_confirmed_at;
-            if (otpVerified || confirmedAt) break;
-          }
-        }
-      }
-      if (!otpVerified && !confirmedAt) {
-        await signOut();
-        setError('Please verify your email with the OTP before logging in.');
-        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`);
-        return;
-      }
+      // Todo: After sign-in, enforce OTP: first use fresh user from response (most reliable)  
+      // if (!otpVerified && !confirmedAt) {
+      //   await signOut();
+      //   setError('Please verify your email with the OTP before logging in.');
+      //   navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`);
+      //   return;
+      // }
 
       // Decide post-login redirect based on profile completion in profiles table
       const u = await getCurrentUser();
-      const profile = u ? await getProfileById(u.id) : null;
-      const needsCompletion = !isProfileComplete(profile);
+      const needsCompletion = !isProfileComplete(u);
 
       onSuccess?.();
       if (needsCompletion) {

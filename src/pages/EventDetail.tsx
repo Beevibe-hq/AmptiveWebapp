@@ -1,12 +1,13 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, MapPin, Share2, Ticket, Globe, X, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { MapPin, Share2, Ticket, Check } from 'lucide-react';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { createClient } from '@/lib/supabase/client';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { QRCodeSVG } from 'qrcode.react';
-import { toastError, toastSuccess } from '@/lib/ui/toast';
+import { toastSuccess } from '@/lib/ui/toast';
+import { getCurrentUser } from '@/lib/api/auth';
 
 
 type EventRecord = {
@@ -186,7 +187,7 @@ const EventDetail = () => {
       setError(null);
 
       // Fetch Current User
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentUser();
       setCurrentUser(user);
 
       try {

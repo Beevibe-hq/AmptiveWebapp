@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { RefreshCw, Plus, Search, Filter, ChevronDown, Star, ExternalLink, Pen, Trash2, FileText, LayoutList, CalendarDays, History, Ticket } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { useEffect, useState } from 'react';
+import { Plus, Search, CalendarDays, Ticket } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-const supabase = createClient();
+import { getSession } from '@/lib/api/auth';
+import { getEventsByUser } from '@/lib/api/events';
 
 export default function DashboardEvents() {
     const [events, setEvents] = useState<any[]>([]);
@@ -15,19 +14,13 @@ export default function DashboardEvents() {
     useEffect(() => {
         const fetchEvents = async () => {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!session) {
+                const session = await getSession();
+                if (!session || !session.user) {
                     setLoading(false);
                     return;
                 }
 
-                const { data, error } = await supabase
-                    .from('events')
-                    .select('*, event_tickets(quantity)')
-                    .eq('user_id', session.user.id)
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
+                const data = await getEventsByUser(session.user.user_id);
                 setEvents(data || []);
             } catch (error) {
                 console.error('Error fetching events:', error);

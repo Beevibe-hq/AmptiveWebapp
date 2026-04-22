@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getProfileById, isProfileComplete, upsertProfile } from '@/lib/supabase/profiles';
-import { createClient } from '@/lib/supabase/client';
+import { isProfileComplete, upsertProfile } from '@/lib/api/profiles';
+import { getCurrentUser, handleOAuthCallback as processOAuthCallback } from '@/lib/api/auth';
 
 export default function OAuthCallback() {
   const navigate = useNavigate();
@@ -9,59 +9,53 @@ export default function OAuthCallback() {
   const [status, setStatus] = useState('Processing login...');
 
   useEffect(() => {
-    const handleOAuthCallback = async () => {
+    const handleOAuth = async () => {
       try {
         setStatus('Verifying your session...');
-        const supabase = createClient();
-        
-        // Check for OAuth errors in the URL
+
         const error = searchParams.get('error');
         if (error) {
           throw new Error(`OAuth error: ${error}`);
         }
 
-        // Get the current session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError || !session) {
-          throw new Error(sessionError?.message || 'No active session found');
+        const code = searchParams.get('code');
+        if (!code) {
+          throw new Error('No authorization code found');
         }
 
-        const { user } = session;
+        const { user } = await processOAuthCallback(code);
+        if (!user) {
+          throw new Error('No user found in session');
+        }
+
         setStatus('Loading your profile...');
 
-        // Get or create user profile
-        let profile = await getProfileById(user.id);
-        
-        // If profile has no avatar_url but provider supplies one, persist it
-        const providerAvatar = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+        let profile = await getCurrentUser();
+
+        const providerAvatar = (user as any).user_metadata?.avatar_url || (user as any).user_metadata?.picture;
         if ((!profile || !profile.avatar_url) && providerAvatar) {
-          // Create a profile update object with only the fields we want to update
-          const profileUpdate: any = { 
+          const profileUpdate: any = {
             user_id: user.id,
-            avatar_url: providerAvatar 
+            avatar_url: providerAvatar
           };
-          
-          // Only include full_name if it's not already set
-          if (!profile?.full_name) {
-            profileUpdate.full_name = user.user_metadata?.full_name || user.user_metadata?.name || '';
+
+          if (!profile?.name) {
+            profileUpdate.full_name = (user as any).user_metadata?.full_name || (user as any).user_metadata?.name || '';
           }
-          
+
           await upsertProfile(profileUpdate);
-          profile = await getProfileById(user.id);
+          profile = await getCurrentUser();
         }
 
-        // Check if profile needs completion
         const needsCompletion = !isProfileComplete(profile);
-        
+
         if (needsCompletion) {
           setStatus('Redirecting to complete your profile...');
-          navigate(`/complete-profile?email=${encodeURIComponent(user.email || '')}`, { 
-            replace: true 
+          navigate(`/complete-profile?email=${encodeURIComponent(user.email || '')}`, {
+            replace: true
           });
         } else {
           setStatus('Login successful! Redirecting...');
-          // Small delay to show success message
           setTimeout(() => {
             navigate('/', { replace: true });
           }, 1000);
@@ -70,26 +64,23 @@ export default function OAuthCallback() {
         console.error('OAuth callback error:', err);
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
         setStatus(`Error: ${errorMessage}. Redirecting to login...`);
-        
-        // Redirect to login with error message
+
         setTimeout(() => {
-          navigate(`/login?error=${encodeURIComponent('Failed to sign in. ' + errorMessage)}`, { 
-            replace: true 
+          navigate(`/login?error=${encodeURIComponent('Failed to sign in. ' + errorMessage)}`, {
+            replace: true
           });
         }, 2000);
       }
     };
 
-    handleOAuthCallback();
+    handleOAuth();
   }, [navigate, searchParams]);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white">
       <div className="flex flex-col items-center justify-center p-6">
-        {/* Amptive Logo with fallback */}
         <div className="w-24 h-24 mb-6 flex items-center justify-center">
           <div className="relative w-full h-full">
-            {/* Use the actual Amptive logo SVG */}
             <svg
               className="w-full h-full text-black"
               width="105"
@@ -102,15 +93,13 @@ export default function OAuthCallback() {
             </svg>
           </div>
         </div>
-        
-        {/* Status message */}
+
         <p className="text-sm text-gray-600 font-medium mb-4">{status}</p>
-        
-        {/* Simple loading indicator */}
+
         <div className="w-32 h-1 bg-gray-200 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-blue-500 rounded-full" 
-            style={{ 
+          <div
+            className="h-full bg-blue-500 rounded-full"
+            style={{
               width: '100%',
               animation: 'pulse 1.5s ease-in-out infinite',
             }}

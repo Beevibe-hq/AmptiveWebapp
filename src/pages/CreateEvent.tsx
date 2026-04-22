@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getEvent, createEvent as createNewEvent, updateEvent } from '@/lib/api/events';
+import { getTicketsForEvent, createTickets, updateTicket, deleteTickets } from '@/lib/api/tickets';
+import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import RichTextEditor from '@/components/RichTextEditor';
 import LocationPicker from '@/components/LocationPicker';
 import { QRCodeSVG } from 'qrcode.react';
@@ -242,7 +244,6 @@ const AVAILABILITY_BADGE_CLASSES: Record<AvailabilityStatus, string> = {
 const CreateEvent = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const supabase = useMemo(() => createClient(), []);
 
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitting, setSubmitting] = useState(false);
@@ -409,21 +410,20 @@ const CreateEvent = () => {
     let cancelled = false;
     const hydrate = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (session) {
-          setUserId(session.user.id);
+        const user = await getCurrentUser();
+        if (user) {
+          setUserId(user.user_id);
           setReady(true);
         } else {
-          // If no session, try to refresh or redirect
-          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-          if (refreshError || !refreshed.session) {
+          const refreshed = await refreshSession();
+          if (!refreshed.data) {
             if (!cancelled) {
               toastError('Please sign in to create an event.');
               navigate('/login');
             }
           } else {
-            setUserId(refreshed.session.user.id);
+            const u =  await getCurrentUser()
+            setUserId(u?.user_id || '');
             setReady(true);
           }
         }
@@ -440,7 +440,7 @@ const CreateEvent = () => {
     return () => {
       cancelled = true;
     };
-  }, [navigate, supabase]);
+  }, [navigate]);
 
   useEffect(() => {
     if (!ready || !id || !userId) return;
@@ -463,45 +463,40 @@ const CreateEvent = () => {
 
       setLoadingEvent(true);
       try {
-        const { data: event, error: eventError } = await supabase
-          .from('events')
-          .select('*, event_tickets(*)')
-          .eq('id', id)
-          .single();
+        const event = await getEvent(id);
+        if (!event) throw new Error('Event not found');
 
-        if (eventError) throw eventError;
-
-        if (event) {
-          if (event.user_id !== userId) {
-            toastError("You don't have permission to edit this event.");
-            navigate('/dashboard/events');
-            return;
-          }
-
-          setForm({
-            title: event.title || '',
-            summary: event.summary || '',
-            description: event.description || '',
-            startDateTime: safeFormat(event.start_time),
-            endDateTime: safeFormat(event.end_time),
-            venue: event.venue || '',
-            city: event.city || '',
-            latitude: event.latitude,
-            longitude: event.longitude,
-            coverImage: event.cover_image || '',
-            locationType: event.location_type || 'physical',
-            tickets: (event.event_tickets || []).map((t: any) => ({
-              id: t.id,
-              title: t.label,
-              price: t.price,
-              currency: t.currency,
-              benefits: t.benefits || [],
-              colorTheme: t.color_theme,
-              quantity: t.quantity
-            }))
-          });
-          setCoverPreview(event.cover_image || '');
+        if (event.user_id !== userId) {
+          toastError("You don't have permission to edit this event.");
+          navigate('/dashboard/events');
+          return;
         }
+
+        const tickets = await getTicketsForEvent(id);
+
+        setForm({
+          title: event.title || '',
+          summary: event.summary || '',
+          description: event.description || '',
+          startDateTime: safeFormat(event.start_time),
+          endDateTime: safeFormat(event.end_time),
+          venue: event.venue || '',
+          city: event.city || '',
+          latitude: event.latitude,
+          longitude: event.longitude,
+          coverImage: event.cover_image || '',
+          locationType: event.location_type || 'physical',
+          tickets: (tickets || []).map((t: any) => ({
+            id: t.id,
+            title: t.label,
+            price: t.price,
+            currency: t.currency,
+            benefits: t.benefits || [],
+            colorTheme: t.color_theme,
+            quantity: t.quantity
+          }))
+        });
+        setCoverPreview(event.cover_image || '');
       } catch (error) {
         console.error('Error fetching event for edit:', error);
         toastError('Failed to load event data.');
@@ -511,7 +506,7 @@ const CreateEvent = () => {
     };
 
     fetchEventData();
-  }, [id, ready, userId, supabase, navigate]);
+  }, [id, ready, userId, navigate]);
 
   useEffect(() => {
     setCoverPreview(form.coverImage);
@@ -591,74 +586,21 @@ const CreateEvent = () => {
   }, []);
 
   const uploadCoverImage = async (file: File): Promise<string> => {
+    const { uploadFile, getPublicUrl } = await import('@/lib/api/storage');
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const filePath = fileName;
 
     console.log('Upload Path:', filePath);
 
-    // Timeout Promise using a function so we can recreate it
-    const createTimeout = () => new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Upload timed out after 20 seconds')), 20000);
-    });
-
-    // Probe
-    console.log('Probing bucket access...');
     try {
-      const listPromise = supabase.storage.from('event-covers').list();
-      const probeTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Probe timed out')), 5000));
-      const { data: listData, error: listError } = await Promise.race([listPromise, probeTimeout]) as any;
-
-      if (listError) {
-        console.error('PROBE FAILED:', listError);
-        throw new Error(`Bucket probe failed: ${listError.message}`);
-      }
-      console.log('PROBE SUCCESS. Found', listData?.length, 'files.');
-    } catch (error) {
-      console.error('Probe Exception:', error);
-      // Continue to upload attempt anyway
+      const publicUrl = await uploadFile('event-covers', filePath, file);
+      console.log('UPLOAD SUCCESS:', publicUrl);
+      return getPublicUrl('event-covers', filePath);
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      throw new Error(`Upload failed: ${err.message}`);
     }
-
-    // Retry Loop
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      attempts++;
-      console.log(`Starting upload attempt ${attempts} of ${maxAttempts}...`);
-
-      try {
-        const uploadPromise = supabase.storage
-          .from('event-covers')
-          .upload(filePath, file, {
-            upsert: false
-          });
-
-        // Race upload vs timeout
-        const result = await Promise.race([uploadPromise, createTimeout()]) as any;
-
-        if (result.error) {
-          console.error(`Attempt ${attempts} Supabase error:`, result.error);
-          throw result.error;
-        }
-
-        console.log('UPLOAD SUCCESS:', result.data);
-        const { data } = supabase.storage.from('event-covers').getPublicUrl(filePath);
-        return data.publicUrl;
-
-      } catch (err: any) {
-        console.error(`Attempt ${attempts} Exception:`, err);
-
-        if (attempts >= maxAttempts) {
-          throw new Error(`Upload failed after ${maxAttempts} attempts: ${err.message}`);
-        }
-
-        console.log('Waiting 1s before retry...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-
-    throw new Error('Upload failed unexpectedly');
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -730,57 +672,30 @@ const CreateEvent = () => {
 
       let eventId = id;
       if (id) {
-        const { error } = await supabase
-          .from('events')
-          .update(insertPayload)
-          .eq('id', id);
-
-        if (error) {
-          console.error('Failed to update event', error);
-          toastError(error.message || 'We could not update this event. Please try again.');
+        const result = await updateEvent(id, insertPayload);
+        if (!result.ok) {
+          console.error('Failed to update event', result.error);
+          toastError(result.error || 'We could not update this event. Please try again.');
           return;
         }
       } else {
-        const { data, error } = await supabase
-          .from('events')
-          .insert(insertPayload)
-          .select('id')
-          .maybeSingle();
-
-        if (error) {
-          console.error('Failed to create event', error);
-          toastError(error.message || 'We could not create this event. Please try again.');
-          return;
-        }
-
-        if (!data?.id) {
+        const result = await createNewEvent(insertPayload);
+        if (!result.id) {
           toastError('Event was created but we could not retrieve its ID.');
           return;
         }
-        eventId = data.id;
+        eventId = result.id;
       }
 
       // Handle tickets
       if (id) {
-        // Find existing tickets in DB to determine which ones were deleted
-        const { data: currentTickets } = await supabase
-          .from('event_tickets')
-          .select('id')
-          .eq('event_id', id);
-
+        const currentTickets = await getTicketsForEvent(id);
         const currentTicketIds = (currentTickets || []).map(t => t.id);
         const formTicketIds = new Set(form.tickets.map(t => t.id).filter(id => !id.startsWith('ticket-')));
         const ticketsToDelete = currentTicketIds.filter(tid => !formTicketIds.has(tid));
 
         if (ticketsToDelete.length > 0) {
-          const { error: deleteError } = await supabase
-            .from('event_tickets')
-            .delete()
-            .in('id', ticketsToDelete);
-
-          if (deleteError) {
-            console.error('Failed to clean up removed tickets', deleteError);
-          }
+          await deleteTickets(ticketsToDelete);
         }
       }
 
@@ -802,35 +717,20 @@ const CreateEvent = () => {
             is_physical: false,
           }));
 
-          const { error: insertError } = await supabase
-            .from('event_tickets')
-            .insert(ticketInserts);
-
-          if (insertError) {
-            console.error('Failed to save new tickets', insertError);
-            toastError('Some new tickets could not be saved.');
-          }
+          await createTickets(eventId!, ticketInserts);
         }
 
         // Update existing tickets
         if (existingTickets.length > 0) {
-          // We update them one by one to keep it simple, or we could upsert if we mapped all fields.
           for (const ticket of existingTickets) {
-            const { error: updateError } = await supabase
-              .from('event_tickets')
-              .update({
-                label: ticket.title,
-                price: ticket.price,
-                currency: ticket.currency,
-                quantity: ticket.quantity,
-                benefits: ticket.benefits,
-                color_theme: ticket.colorTheme,
-              })
-              .eq('id', ticket.id);
-
-            if (updateError) {
-              console.error(`Failed to update ticket ${ticket.id}`, updateError);
-            }
+            await updateTicket(ticket.id, {
+              label: ticket.title,
+              price: ticket.price,
+              currency: ticket.currency,
+              quantity: ticket.quantity,
+              benefits: ticket.benefits,
+              color_theme: ticket.colorTheme,
+            });
           }
         }
       }

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { createClient } from '@/lib/supabase/client';
-import { User } from '@supabase/supabase-js';
-import { ProfileRow, getProfileById, updateProfileAvatar } from '@/lib/supabase/profiles';
+import { getProfile, updateProfileAvatar, UserProfile } from '@/lib/api/profiles';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import amptiveLogo from '@/assets/amptivelogo.svg';
+import { getCurrentUser } from '@/lib/api/auth';
+import { getEventsByUser } from '@/lib/api/events';
 
 type DatabaseEventRow = {
   id: string;
@@ -149,8 +149,8 @@ const mapEventRows = (
 
 const ProfilePage = () => {
   const { id: urlUserId } = useParams<{ id: string }>();
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
@@ -172,69 +172,20 @@ const ProfilePage = () => {
   const pastCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [failedCardImageIds, setFailedCardImageIds] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
-  const supabase = createClient();
   const loadEvents = useCallback(
     async (targetUserId: string) => {
       const nowIso = new Date().toISOString();
-
-      const selectFieldsWithEnd = 'id, title, start_time, end_time, venue, city, cover_image, details_url, manage_url';
-      const selectFieldsWithoutEnd = 'id, title, start_time, venue, city, cover_image, details_url, manage_url';
-
-      const runQueries = (fields: string) =>
-        Promise.all([
-          supabase
-            .from('events')
-            .select(fields)
-            .eq('user_id', targetUserId)
-            .gte('start_time', nowIso)
-            .order('start_time', { ascending: true }),
-          supabase
-            .from('events')
-            .select(fields)
-            .eq('user_id', targetUserId)
-            .lt('start_time', nowIso)
-            .order('start_time', { ascending: false }),
-        ] as const);
-
-      let [{ data: upcomingData, error: upcomingError }, { data: pastData, error: pastError }] = await runQueries(selectFieldsWithEnd);
-
-      if (upcomingError?.code === '42703' || pastError?.code === '42703') {
-        [{ data: upcomingData, error: upcomingError }, { data: pastData, error: pastError }] = await runQueries(selectFieldsWithoutEnd);
-      }
-
-      if (upcomingError) throw upcomingError;
-      if (pastError) throw pastError;
-
-      const allEventIds = [...(upcomingData ?? []), ...(pastData ?? [])]
-        .map((row) => row.id)
-        .filter(Boolean) as string[];
-
+      const events = await getEventsByUser(targetUserId);
+      
+      const upcomingData = (events ?? []).filter(e => e.start_time && e.start_time >= nowIso);
+      const pastData = (events ?? []).filter(e => e.start_time && e.start_time < nowIso);
+      
+      const allEventIds = events?.map(e => e.id).filter(Boolean) as string[] || [];
       const ticketMap: Record<string, EventTicket[]> = {};
 
-      if (allEventIds.length > 0) {
-        const { data: ticketRows, error: ticketError } = await supabase
-          .from('event_tickets')
-          .select('id, event_id, label, price, currency')
-          .in('event_id', allEventIds);
-
-        if (ticketError) throw ticketError;
-
-        (ticketRows ?? []).forEach((ticket) => {
-          if (!ticket.event_id || !ticket.id) return;
-          if (!ticketMap[ticket.event_id]) ticketMap[ticket.event_id] = [];
-          ticketMap[ticket.event_id].push({
-            id: ticket.id,
-            eventId: ticket.event_id,
-            label: ticket.label ?? 'Ticket',
-            price: Number(ticket.price) || 0,
-            currency: ticket.currency,
-          });
-        });
-      }
-
       const now = new Date();
-      const upcomingMapped = mapEventRows(upcomingData ?? [], ticketMap, now);
-      const pastMapped = mapEventRows(pastData ?? [], ticketMap, now);
+      const upcomingMapped = mapEventRows(upcomingData, ticketMap, now);
+      const pastMapped = mapEventRows(pastData, ticketMap, now);
       const allEvents = [...upcomingMapped, ...pastMapped];
 
       const upcoming = allEvents
@@ -265,7 +216,7 @@ const ProfilePage = () => {
 
       return { upcoming, past };
     },
-    [supabase]
+    []
   );
 
   // Load profile data
@@ -275,7 +226,7 @@ const ProfilePage = () => {
       // Determine the target user ID:
       // 1. URL param (public view)
       // 2. Authenticated user (private view)
-      const targetId = urlUserId || user?.id;
+      const targetId = urlUserId || user?.user_id;
 
       if (!targetId) {
         setProfileLoading(false);
@@ -291,20 +242,11 @@ const ProfilePage = () => {
         // But the previous component uses `displayProfile.username || event.user_id` in the link.
         // If it is a UUID, getProfileById works. If it is a username, we need to fetch by username.
 
-        let profileData: ProfileRow | null = null;
+        let profileData: UserProfile | null = null;
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
 
-        if (isUuid) {
-          profileData = await getProfileById(targetId);
-        } else {
-          // Fetch by username
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('username', targetId)
-            .single();
-          if (!error) profileData = data;
-        }
+          profileData = await getCurrentUser();
+        
 
         if (!cancelled) {
           setProfile(profileData);
@@ -322,15 +264,15 @@ const ProfilePage = () => {
     };
     loadProfile();
     return () => { cancelled = true; };
-  }, [user?.id, urlUserId]); // Depend on urlUserId too
+  }, [user?.user_id, urlUserId]); // Depend on urlUserId too
 
   // Update profile when avatar URL changes (only if it's a new URL)
   useEffect(() => {
     let cancelled = false;
     const updateAvatar = async () => {
-      if (!user?.id || !profileAvatarUrl || (profile && profile.avatar_url === profileAvatarUrl)) return;
+      if (!user?.user_id || !profileAvatarUrl || (profile && profile.avatar_url === profileAvatarUrl)) return;
       try {
-        await updateProfileAvatar(user.id, profileAvatarUrl);
+        await updateProfileAvatar(user.user_id, profileAvatarUrl);
         if (!cancelled) {
           setProfile(prev => prev ? { ...prev, avatar_url: profileAvatarUrl } : null);
         }
@@ -340,7 +282,7 @@ const ProfilePage = () => {
     };
     updateAvatar();
     return () => { cancelled = true; };
-  }, [profileAvatarUrl, user?.id, profile]);
+  }, [profileAvatarUrl, user?.user_id, profile]);
 
   // Load Events
   useEffect(() => {
@@ -348,7 +290,7 @@ const ProfilePage = () => {
     let intervalId: number | undefined;
 
     const run = async () => {
-      const targetId = profile?.user_id || (urlUserId ? undefined : user?.id); // Use profile.user_id if profile loaded, else falback
+      const targetId = profile?.user_id || (urlUserId ? undefined : user?.user_id); // Use profile.user_id if profile loaded, else falback
 
       // Wait for profile to load if we are using a username URL
       if (!targetId) {
@@ -379,7 +321,7 @@ const ProfilePage = () => {
       cancelled = true;
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [user?.id, urlUserId, profile?.user_id, loadEvents]); // Updated dependencies
+  }, [user?.user_id, urlUserId, profile?.user_id, loadEvents]); // Updated dependencies
 
   const renderEventCard = useCallback(
     (
@@ -667,7 +609,7 @@ const ProfilePage = () => {
   const uploadedAvatar: string | undefined = profileAvatarUrl || undefined;
 
   // Deterministic emoji avatar fallback
-  const seed = (user?.user_metadata?.username || user?.email || 'guest').toLowerCase();
+  const seed = (user?.username || user?.email || 'guest').toLowerCase();
   const emojiSet = useMemo(
     () => ['😀', '😎', '🤠', '🦄', '🐼', '🐸', '🐯', '🐵', '🐧', '🐰', '🐨', '🦊', '🐙', '🐳', '🐝', '🐢', '🐞', '🌸', '🌼', '🍀', '🍉', '🍓', '🍍', '⚡', '⭐', '🌙', '☀️', '🔥', '🎧', '🎨', '🎯', '🚀', '🧠', '💎', '💜', '💛', '💚', '💙', '🧸'],
     []
@@ -857,16 +799,13 @@ const ProfilePage = () => {
   useEffect(() => {
     const hydrateUser = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const u = session?.user ?? null;
+        const u = await getCurrentUser();
 
-        // If no user and NOT viewing a public profile, redirect to login
         if (!u && !urlUserId) {
           navigate('/login');
           return;
         }
 
-        // If user exists, set user. If not, user remains null (public view state)
         if (u) {
           setUser(u);
         }
@@ -986,11 +925,11 @@ const ProfilePage = () => {
             )}
           </div>
           <h1 className="w-full font-bold text-black text-center whitespace-nowrap overflow-visible mt-3 md:mt-1 text-[40px] md:text-[92px]" style={{ fontWeight: 700, color: '#000000' }}>
-            {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+            {profile?.name || user?.name || user?.email?.split('@')[0] || 'User'}
           </h1>
-          <p className="mt-1 text-gray-600 text-center">@{profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</p>
+          <p className="mt-1 text-gray-600 text-center">@{profile?.username || user?.username || user?.email?.split('@')[0] || 'user'}</p>
           <div className="mt-7 flex flex-row flex-wrap items-center justify-center gap-3">
-            {user?.id && profile?.user_id && user.id === profile.user_id && (
+            {user?.user_id && profile?.user_id && user.user_id === profile.user_id && (
               <>
                 <button
                   type="button"
