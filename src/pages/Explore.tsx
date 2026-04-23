@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, MoreHorizontal, Play, X, Filter, Eye, ShoppingCart } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
+import { listEvents, StandaloneEvent } from '@/lib/api/events';
 import { Link, useNavigate } from 'react-router-dom';
 import ReactCalendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
@@ -39,7 +39,7 @@ const defaultCenter = { lat: 6.5244, lng: 3.3792 };
 export default function Explore() {
     const [viewMode, setViewMode] = useState<'list' | 'map'>(() => sessionStorage.getItem('explore_viewMode') as 'list' | 'map' || 'list');
     const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('explore_searchQuery') || '');
-    const [events, setEvents] = useState<Event[]>([]);
+    const [events, setEvents] = useState<StandaloneEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [map, setMap] = useState<google.maps.Map | null>(null);
 
@@ -69,8 +69,6 @@ export default function Explore() {
     }, [viewMode, searchQuery, dateFilter, locFilter, communityFilter, priceFilter, customStartDate, customEndDate]);
 
     const navigate = useNavigate();
-
-    const supabase = createClient();
     const { isLoaded } = useJsApiLoader({
         id: 'google-map-script',
         googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
@@ -78,138 +76,82 @@ export default function Explore() {
 
     const fetchEvents = async () => {
         setLoading(true);
-        // Step 1: Fetch Events
-        let query = supabase
-            .from('events')
-            .select('*')
-            .order('start_time', { ascending: true });
+        try {
+            const eventsData = await listEvents({ page_size: 100 });
 
-        if (searchQuery) {
-            query = query.ilike('title', `%${searchQuery}%`);
-        }
+            console.log('Fetch Events Debug:', { eventsData });
 
-        const { data: eventsData, error: eventsError } = await query;
-        console.log('Fetch Events Debug:', { eventsData, eventsError });
-
-        if (!eventsError && eventsData) {
-            // Step 2: Fetch Tickets for these events (Client-side join workaround for 400 error)
-            const eventIds = eventsData.map(e => e.id);
-            const { data: ticketsData, error: ticketsError } = await supabase
-                .from('event_tickets')
-                .select('event_id, price')
-                .in('event_id', eventIds);
-
-            console.log('Fetch Tickets Debug:', { ticketsData, ticketsError });
-
-            // Enrich with real price min from tickets
-            const enriched = eventsData.map(e => {
-                const eventTickets = ticketsData?.filter((t: any) => t.event_id === e.id) || [];
-                const prices = eventTickets.map((t: any) => Number(t.price)).filter((p: number) => !isNaN(p) && p >= 0) || [];
-                // Default to 0 (Free) if no tickets, as per user request
-                const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-                return {
+            let enriched: any[] = [];
+            if (eventsData && eventsData.length > 0) {
+                enriched = eventsData.map(e => ({
                     ...e,
-                    tickets: eventTickets,
-                    price_min: minPrice
-                };
-            });
-
-            // console.log('Enriched Events:', enriched.map(e => ({ title: e.title, price_min: e.price_min })));
+                    price_min: 0
+                }));
+            }
 
             let filtered = enriched;
 
-            // Client-side filtering for Dates
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            const dayAfter = new Date(today);
-            dayAfter.setDate(dayAfter.getDate() + 2);
-
-
             if (dateFilter === 'All Upcoming') {
                 const now = new Date();
-                filtered = filtered.filter(e => new Date(e.start_time) >= now);
+                filtered = enriched.filter(e => {
+                    const eventDate = new Date(e.scheduled_for);
+                    return eventDate >= now;
+                });
             } else if (dateFilter === 'Today') {
-                filtered = filtered.filter(e => {
-                    const d = new Date(e.start_time);
-                    return d >= today && d < tomorrow;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                filtered = enriched.filter(e => {
+                    const eventDate = new Date(e.scheduled_for);
+                    return eventDate >= today && eventDate < tomorrow;
                 });
             } else if (dateFilter === 'Tomorrow') {
-                filtered = filtered.filter(e => {
-                    const d = new Date(e.start_time);
-                    return d >= tomorrow && d < dayAfter;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const dayAfter = new Date(today);
+                dayAfter.setDate(dayAfter.getDate() + 2);
+                filtered = enriched.filter(e => {
+                    const eventDate = new Date(e.scheduled_for);
+                    return eventDate >= tomorrow && eventDate < dayAfter;
                 });
-            } else if (dateFilter === 'This Weekend') {
-                const d = new Date();
-                const day = d.getDay();
-                // Calc next Friday
-                const diff = (day <= 5) ? (5 - day) : (12 - day); // if Saturday(6), next Friday is +6 days. If Sunday(0), +5. If Friday(5), +0.
-
-                const nextFriday = new Date(d);
-                nextFriday.setDate(d.getDate() + diff);
-                nextFriday.setHours(0, 0, 0, 0);
-
-                const nextSunday = new Date(nextFriday);
-                nextSunday.setDate(nextSunday.getDate() + 2); // Friday + 2 = Sunday
-                nextSunday.setHours(23, 59, 59, 999);
-
-                filtered = filtered.filter(e => {
-                    const evtDate = new Date(e.start_time);
-                    return evtDate >= nextFriday && evtDate <= nextSunday;
-                });
-            } else if (dateFilter === 'Custom' && customStartDate && customEndDate) {
-                const start = new Date(customStartDate);
-                start.setHours(0, 0, 0, 0);
-                const end = new Date(customEndDate);
-                end.setHours(23, 59, 59, 999);
-
-                filtered = filtered.filter(e => {
-                    const d = new Date(e.start_time);
-                    return d >= start && d <= end;
+            } else if (dateFilter) {
+                filtered = enriched.filter(e => {
+                    const eventDate = new Date(e.scheduled_for);
+                    const eventMonth = eventDate.toLocaleString('default', { month: 'long' });
+                    return eventMonth === dateFilter;
                 });
             }
 
-            // Location Filter
-            if (locFilter === 'Near Me') {
-                // Determine user location or show all if unavailable
-                // For now, keeping as placeholder or showing all
-            } else if (locFilter !== 'Nigeria') {
-                // Specific Location Logic
-                if (locFilter === 'United States') filtered = filtered.filter(e => e.city?.includes('USA') || e.city?.includes('New York') || e.venue?.includes('USA'));
-                if (locFilter === 'France') filtered = filtered.filter(e => e.city?.includes('Paris') || e.city?.includes('France'));
-            }
-
-            // Community Filter
-            if (communityFilter !== 'All Communities') {
-                filtered = filtered.filter(e =>
-                    e.title?.toLowerCase().includes(communityFilter.toLowerCase()) ||
-                    (e.description && e.description.toLowerCase().includes(communityFilter.toLowerCase()))
-                );
-            }
-
-            // Price Filter
-            if (priceFilter.length > 0) {
-
+            if (searchQuery && searchQuery.length > 0) {
                 filtered = filtered.filter(e => {
-                    // Ensure price is treated as a number
-                    const p = e.price_min;
-
-                    if (priceFilter.includes('Free') && p === 0) return true;
-                    // Ranges
-                    if (priceFilter.includes('Under ₦5,000') && p < 5000) return true;
-                    if (priceFilter.includes('₦5,000 - ₦20,000') && p >= 5000 && p <= 20000) return true;
-                    if (priceFilter.includes('₦20,000 - ₦50,000') && p >= 20000 && p <= 50000) return true;
-                    if (priceFilter.includes('₦50,000+') && p >= 50000) return true;
-                    return false;
+                    const searchLower = searchQuery.toLowerCase();
+                    return e.title.toLowerCase().includes(searchLower) ||
+                        e.venue?.toLowerCase().includes(searchLower) ||
+                        e.city?.toLowerCase().includes(searchLower);
                 });
+            }
+
+            // todo: add location type in response of events
+            // if (locFilter !== 'All Locations') {
+            //     filtered = filtered.filter(e => e.location_type === locFilter);
+            // }
+
+            if (priceFilter.includes('Free')) {
+                filtered = filtered.filter(e => e.price_min === 0);
+            } else if (priceFilter.includes('Paid')) {
+                filtered = filtered.filter(e => e.price_min > 0);
             }
 
             setEvents(filtered);
-        } else {
+        } catch (error) {
+            console.error('Error fetching events:', error);
             setEvents([]);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     useEffect(() => {
@@ -458,11 +400,11 @@ export default function Explore() {
                                             styles: [{ featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] }]
                                         }}
                                     >
-                                        {events.filter(e => e.latitude && e.longitude).map(event => (
+                                        {events.filter(e => e.location?.latitude && e.location?.longitude).map(event => (
                                             <Marker
-                                                key={event.id}
-                                                position={{ lat: event.latitude!, lng: event.longitude! }}
-                                                onClick={() => navigate(`/events/${event.id}`)}
+                                                key={event.event_id}
+                                                position={{ lat: event.location?.latitude!, lng: event.location?.longitude! }}
+                                                onClick={() => navigate(`/events/${event.event_id}`)}
                                             />
                                         ))}
                                     </GoogleMap>
@@ -488,7 +430,7 @@ export default function Explore() {
                                 ) : events.length > 0 ? (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-both">
                                         {events.map((event, index) => {
-                                            const eventDate = new Date(event.start_time);
+                                            const eventDate = new Date(event.scheduled_for!);
                                             const isToday = new Date().toDateString() === eventDate.toDateString();
                                             const isTomorrow = new Date(Date.now() + 86400000).toDateString() === eventDate.toDateString();
 
@@ -500,15 +442,15 @@ export default function Explore() {
 
                                             return (
                                                 <Link
-                                                    key={event.id}
-                                                    to={`/events/${event.id}`}
+                                                    key={event.event_id}
+                                                    to={`/events/${event.event_id}`}
                                                     className="group flex items-center gap-4 p-2 rounded-2xl hover:bg-gray-50 transition-colors w-full relative cursor-pointer block"
                                                     style={{ animationDelay: `${index * 50}ms` }}
                                                 >
                                                     {/* Cover Image */}
                                                     <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 border border-gray-100 group-hover:scale-[1.02] transition-transform duration-500">
-                                                        {event.cover_image ? (
-                                                            <img src={event.cover_image} alt={event.title} className="w-full h-full object-cover" />
+                                                        {event.thumbnail_url ? (
+                                                            <img src={event.thumbnail_url} alt={event.title} className="w-full h-full object-cover" />
                                                         ) : (
                                                             <div className="w-full h-full flex items-center justify-center text-gray-400">
                                                                 <Calendar className="w-8 h-8 opacity-50" />
@@ -537,7 +479,7 @@ export default function Explore() {
 
                                                         {/* Location */}
                                                         <div className="text-sm text-gray-500 truncate mt-0.5">
-                                                            {event.venue || event.city || 'TBA'}
+                                                            {event.location?.venue || event.location?.city || 'TBA'}
                                                         </div>
                                                     </div>
                                                 </Link>

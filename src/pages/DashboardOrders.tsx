@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
-
-const supabase = createClient();
+import { getPurchasesByEvent } from '@/lib/api/purchases';
+import { getCurrentUser } from '@/lib/api/auth';
 
 const DUMMY_ORDERS = [
     { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', created_at: '2025-02-28T14:30:00Z', total_amount: 25000, status: 'completed', profiles: { display_name: 'Adaeze Okafor', email: 'adaeze@mail.com' } },
@@ -28,14 +27,14 @@ export default function DashboardOrders() {
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('ticket_purchases')
-                    .select('*')
-                    .order('created_at', { ascending: false });
+                const user = await getCurrentUser();
+                if (!user) {
+                    setOrders(DUMMY_ORDERS);
+                    return;
+                }
+                
+                const data = await getPurchasesByEvent(user.id);
 
-                if (error) throw error;
-
-                // Map the data to match the UI expectations
                 const mappedData = (data || []).map(order => ({
                     ...order,
                     status: order.ticket_status,

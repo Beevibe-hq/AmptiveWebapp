@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import Cropper from 'react-easy-crop';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { completeProfile, checkUsername } from '@/lib/api/profile';
-import { consumeSignup } from '@/lib/api/otp';
-import { signInWithEmail } from '@/lib/supabase/auth';
+import { checkUsernameAvailability, completeProfile, consumeSignup } from '@/lib/api/otp';
+import { signInWithEmail } from '@/lib/api/auth';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function CompleteProfilePage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const params = new URLSearchParams(location.search);
   const email = params.get('email') || '';
   const token = params.get('token') || '';
@@ -88,11 +89,11 @@ export default function CompleteProfilePage() {
 
   // Emoji-based default avatar (deterministic by username/email)
   const emojiSet = useMemo(
-    () => ['😀','😎','🤠','🦄','🐼','🐸','🐯','🐵','🐧','🐰','🐨','🦊','🐙','🐳','🐝','🐢','🐞','🌸','🌼','🍀','🍉','🍓','🍍','⚡','⭐','🌙','☀️','🔥','🎧','🎨','🎯','🚀','🧠','💎','💜','💛','💚','💙','🧸'],
+    () => ['😀', '😎', '🤠', '🦄', '🐼', '🐸', '🐯', '🐵', '🐧', '🐰', '🐨', '🦊', '🐙', '🐳', '🐝', '🐢', '🐞', '🌸', '🌼', '🍀', '🍉', '🍓', '🍍', '⚡', '⭐', '🌙', '☀️', '🔥', '🎧', '🎨', '🎯', '🚀', '🧠', '💎', '💜', '💛', '💚', '💙', '🧸'],
     []
   );
   const bgSet = useMemo(
-    () => ['#FDE68A','#FFEDD5','#E9D5FF','#DBEAFE','#DCFCE7','#FCE7F3','#FFE4E6','#F3E8FF','#E0E7FF','#D1FAE5'],
+    () => ['#FDE68A', '#FFEDD5', '#E9D5FF', '#DBEAFE', '#DCFCE7', '#FCE7F3', '#FFE4E6', '#F3E8FF', '#E0E7FF', '#D1FAE5'],
     []
   );
   const seedString = (username || email || 'guest').toLowerCase();
@@ -162,6 +163,7 @@ export default function CompleteProfilePage() {
 
   // Debounced live username availability check
   useEffect(() => {
+
     const un = username.trim().toLowerCase();
     setUsernameMsg(null);
     setUsernameAvailable(null);
@@ -174,21 +176,15 @@ export default function CompleteProfilePage() {
     let cancelled = false;
     setUsernameChecking(true);
     const t = setTimeout(async () => {
-      const res = await checkUsername(un);
+      const isAvailable = await checkUsernameAvailability(un);
       if (cancelled) return;
       setUsernameChecking(false);
-      if (res.invalid) {
-        setUsernameAvailable(false);
-        setUsernameMsg(res.message || 'Invalid username');
-      } else if (res.available) {
-        setUsernameAvailable(true);
-        setUsernameMsg('Username is available');
-      } else if (!res.available && res.message) {
-        setUsernameAvailable(null);
-        setUsernameMsg('Could not verify username right now. We will check on submit.');
-      } else {
+      if (!isAvailable) {
         setUsernameAvailable(false);
         setUsernameMsg('Username is already taken');
+      } else {
+        setUsernameAvailable(true);
+        setUsernameMsg('Username is available');
       }
     }, 350);
     return () => {
@@ -336,6 +332,7 @@ export default function CompleteProfilePage() {
           const { error } = await signInWithEmail(consumed.email, consumed.password);
           if (!error) {
             toastSuccess('Profile completed! Welcome to Amptive.');
+            await refreshUser();
             setTimeout(() => navigate('/'), 500);
             setSecuring(false);
             return;
@@ -358,7 +355,7 @@ export default function CompleteProfilePage() {
       {securing && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl px-5 py-4 shadow-lg border border-gray-200 flex items-center gap-3">
-            <svg className="animate-spin text-black" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25"/><path d="M21 12a9 9 0 0 1-9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+            <svg className="animate-spin text-black" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" /><path d="M21 12a9 9 0 0 1-9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
             <span className="text-sm font-medium text-gray-900">Securing your account…</span>
           </div>
         </div>
@@ -558,7 +555,7 @@ export default function CompleteProfilePage() {
                         title="Remove"
                       >
                         <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none">
-                          <path d="M4 4 L12 12 M12 4 L4 12" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"/>
+                          <path d="M4 4 L12 12 M12 4 L4 12" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
                         </svg>
                       </button>
                     </div>
@@ -580,7 +577,7 @@ export default function CompleteProfilePage() {
                     </div>
                     <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-black text-white flex items-center justify-center shadow-sm opacity-90 group-hover:opacity-100">
                       <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
-                        <path d="M8 3.2v9.6M3.2 8h9.6" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
+                        <path d="M8 3.2v9.6M3.2 8h9.6" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
                       </svg>
                     </span>
                   </button>
@@ -619,7 +616,7 @@ export default function CompleteProfilePage() {
                       onClick={() => setZoom((z) => Math.max(1, Math.round((z - 0.1) * 10) / 10))}
                     >
                       <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
-                        <path d="M3.2 8h9.6" stroke="#111" strokeWidth="1.6" strokeLinecap="round"/>
+                        <path d="M3.2 8h9.6" stroke="#111" strokeWidth="1.6" strokeLinecap="round" />
                       </svg>
                     </button>
                     <input
@@ -639,7 +636,7 @@ export default function CompleteProfilePage() {
                       onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.1) * 10) / 10))}
                     >
                       <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">
-                        <path d="M8 3.2v9.6M3.2 8h9.6" stroke="#111" strokeWidth="1.6" strokeLinecap="round"/>
+                        <path d="M8 3.2v9.6M3.2 8h9.6" stroke="#111" strokeWidth="1.6" strokeLinecap="round" />
                       </svg>
                     </button>
                     <span className="text-xs text-gray-500 tabular-nums w-14 text-right">{Math.round(zoom * 100)}%</span>

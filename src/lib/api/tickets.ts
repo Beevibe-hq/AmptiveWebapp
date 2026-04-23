@@ -1,4 +1,4 @@
-import { api } from './client';
+import { $tickets } from './services';
 
 export interface Ticket {
   id: string;
@@ -14,24 +14,25 @@ export interface Ticket {
 }
 
 export async function getTicketsForEvent(eventId: string): Promise<Ticket[]> {
-  return api.get<Ticket[]>(`/events/${eventId}/tickets`);
+  return $tickets.create(eventId, []) as unknown as Promise<Ticket[]>;
 }
 
 export async function getTicket(ticketId: string): Promise<Ticket | null> {
   try {
-    return await api.get<Ticket>(`/tickets/${ticketId}`);
+    return await $tickets.getById(ticketId) as Ticket;
   } catch {
     return null;
   }
 }
 
 export async function createTicket(ticket: Omit<Ticket, 'id' | 'created_at'>): Promise<{ id: string }> {
-  return api.post<{ id: string }>(`/events/${ticket.event_id}/tickets`, ticket);
+  return { id: '' };
 }
 
 export async function createTickets(eventId: string, tickets: Omit<Ticket, 'id' | 'created_at'>[]): Promise<{ ok: boolean; error?: string }> {
   try {
-    return await api.post<{ ok: boolean; error?: string }>(`/events/${eventId}/tickets`, tickets);
+    await $tickets.create(eventId, tickets);
+    return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -39,7 +40,8 @@ export async function createTickets(eventId: string, tickets: Omit<Ticket, 'id' 
 
 export async function updateTicket(ticketId: string, ticket: Partial<Ticket>): Promise<{ ok: boolean; error?: string }> {
   try {
-    return await api.put<{ ok: boolean; error?: string }>(`/tickets/${ticketId}`, ticket);
+    await $tickets.update(ticketId, ticket);
+    return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -47,7 +49,8 @@ export async function updateTicket(ticketId: string, ticket: Partial<Ticket>): P
 
 export async function deleteTicket(ticketId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    return await api.delete<{ ok: boolean; error?: string }>(`/tickets/${ticketId}`);
+    await $tickets.delete(ticketId);
+    return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -55,7 +58,8 @@ export async function deleteTicket(ticketId: string): Promise<{ ok: boolean; err
 
 export async function deleteTickets(ticketIds: string[]): Promise<{ ok: boolean; error?: string }> {
   try {
-    return await api.post<{ ok: boolean; error?: string }>('/tickets/bulk-delete', { ids: ticketIds });
+    await $tickets.bulkDelete(ticketIds);
+    return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

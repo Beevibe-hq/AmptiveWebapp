@@ -1,22 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { getCurrentUser, signOut } from '@/lib/supabase/auth';
+import { useMemo, useState } from 'react';
+import { signOut } from '@/lib/api/auth';
 import { useNavigate } from 'react-router-dom';
-import { updateProfileAvatar } from '@/lib/api/profiles';
+import { useAuth } from '@/contexts/AuthContext';
 
-type SupaUser = {
-  id?: string;
-  email?: string;
-  user_metadata?: Record<string, any>;
-};
 
-export default function UserAvatar({ user }: { user: SupaUser }) {
+export default function UserAvatar() {
   const [isOpen, setIsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -24,50 +19,14 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
     window.location.reload();
   };
 
-  // Load avatar_url from profiles table (preferred)
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        setIsLoading(true);
-        if (!user?.id) return;
-        
-        // Small delay to show the skeleton (for demo purposes)
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const profile = await getCurrentUser();
-        if (cancelled) return;
-        
-        // If no avatar in profile but we have one in user_metadata, update the profile
-        if (!profile?.avatar_url && (user.user_metadata?.avatar_url || user.user_metadata?.picture)) {
-          const avatarUrl = user.user_metadata.avatar_url || user.user_metadata.picture;
-          await updateProfileAvatar(user.id, avatarUrl);
-          if (!cancelled) setProfileAvatarUrl(avatarUrl);
-        } else {
-          if (!cancelled) setProfileAvatarUrl(profile?.avatar_url || null);
-        }
-      } catch (error) {
-        console.error('Error loading profile avatar:', error);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-    run();
-    return () => { cancelled = true; };
-  }, [user?.id, user?.user_metadata?.avatar_url, user?.user_metadata?.picture]);
-
-  // Determine preferred avatar source: profiles.avatar_url -> provider avatar -> legacy data url
-  const uploadedAvatar: string | undefined =
-    profileAvatarUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || user?.user_metadata?.avatar_data_url;
-
   // Deterministic emoji avatar fallback
-  const seed = (user?.user_metadata?.username || user?.email || 'guest').toLowerCase();
+  const seed = (user?.username || user?.email || 'guest').toLowerCase();
   const emojiSet = useMemo(
-    () => ['😀','😎','🤠','🦄','🐼','🐸','🐯','🐵','🐧','🐰','🐨','🦊','🐙','🐳','🐝','🐢','🐞','🌸','🌼','🍀','🍉','🍓','🍍','⚡','⭐','🌙','☀️','🔥','🎧','🎨','🎯','🚀','🧠','💎','💜','💛','💚','💙','🧸'],
+    () => ['😀', '😎', '🤠', '🦄', '🐼', '🐸', '🐯', '🐵', '🐧', '🐰', '🐨', '🦊', '🐙', '🐳', '🐝', '🐢', '🐞', '🌸', '🌼', '🍀', '🍉', '🍓', '🍍', '⚡', '⭐', '🌙', '☀️', '🔥', '🎧', '🎨', '🎯', '🚀', '🧠', '💎', '💜', '💛', '💚', '💙', '🧸'],
     []
   );
   const bgSet = useMemo(
-    () => ['#FDE68A','#FFEDD5','#E9D5FF','#DBEAFE','#DCFCE7','#FCE7F3','#FFE4E6','#F3E8FF','#E0E7FF','#D1FAE5'],
+    () => ['#FDE68A', '#FFEDD5', '#E9D5FF', '#DBEAFE', '#DCFCE7', '#FCE7F3', '#FFE4E6', '#F3E8FF', '#E0E7FF', '#D1FAE5'],
     []
   );
   const hash = useMemo(() => {
@@ -90,9 +49,9 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
       >
         {isLoading ? (
           <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
-        ) : uploadedAvatar && !imgError ? (
+        ) : user?.profile_picture && !imgError ? (
           <img
-            src={uploadedAvatar}
+            src={user.profile_picture}
             alt="Profile"
             className="w-full h-full object-cover"
             onLoad={() => setIsLoading(false)}
@@ -102,17 +61,17 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
             }}
           />
         ) : (
-          <span 
-            className="text-base select-none" 
-            aria-hidden="true" 
-            style={{ 
-              background: 'transparent', 
-              width: '100%', 
-              height: '100%', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              backgroundColor: emojiBg 
+          <span
+            className="text-base select-none"
+            aria-hidden="true"
+            style={{
+              background: 'transparent',
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: emojiBg
             }}
           >
             {emoji}

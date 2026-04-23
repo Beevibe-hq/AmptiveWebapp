@@ -1,36 +1,12 @@
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getCurrentUser } from '@/lib/api/auth';
+import { getPurchasesByUser, type TicketPurchase } from '@/lib/api/purchases';
 
-const supabase = createClient();
-
-type TicketPurchase = {
-    id: string;
-    ticket_id: string;
-    event_id: string;
-    ticket_type_id: string;
-    status: string;
-    purchase_date: string;
-    qr_code_data: string;
-    events?: {
-        title: string;
-        cover_image: string;
-        start_time: string;
-        venue: string;
-        city: string;
-        location_type: string;
-    };
-    metadata?: {
-        price_paid: number;
-        currency: string;
-        physical_delivery: boolean;
-    };
-};
 
 // Theme definitions copied from CreateEvent for consistency
 type TicketTheme = 'silver' | 'bronze' | 'gold' | 'platinum' | 'obsidian';
@@ -118,31 +94,8 @@ const MyTickets = () => {
             const user = await getCurrentUser();
             if (!user) return;
 
-            const { data, error } = await supabase
-                .from('ticket_purchases')
-                .select(`
-          *,
-          events!event_id (
-            title,
-            cover_image,
-            start_time,
-            venue,
-            city,
-            location_type
-          ),
-          event_tickets!ticket_type_id (
-            color_theme,
-            label
-          )
-        `)
-                .eq('buyer_id', user.id)
-                .order('purchase_date', { ascending: false });
-
-            if (error) {
-                console.error('Error fetching tickets:', error);
-            } else {
-                setTickets(data || []);
-            }
+            const data = await getPurchasesByUser(user.id);
+            setTickets(data || []);
         } catch (err) {
             console.error('Unexpected error:', err);
         } finally {
@@ -178,9 +131,7 @@ const MyTickets = () => {
                 ) : (
                     <div className="flex flex-wrap gap-8 justify-center">
                         {tickets.map((ticket, index) => {
-                            // Map theme from event_tickets or default to silver
-                            // @ts-ignore - event_tickets might not be fully typed in the specific Supabase generated types yet
-                            const themeName = (ticket.event_tickets?.color_theme || 'silver') as TicketTheme;
+                            const themeName = ('silver') as TicketTheme;
                             const theme = TICKET_THEMES[themeName] || TICKET_THEMES['silver'];
                             const price = ticket.metadata?.price_paid || 0;
                             const currency = ticket.metadata?.currency || 'NGN';

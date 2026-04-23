@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/supabase/auth';
-import {  isProfileComplete } from '@/lib/supabase/profiles';
+import { signInWithEmail } from '@/lib/api/auth';
+import { isProfileComplete } from '@/lib/api/profiles';
+import { useAuth } from '@/contexts/AuthContext';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -49,6 +50,7 @@ interface LoginFormProps {
 
 export default function LoginForm({ onSuccess }: LoginFormProps) {
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,6 +58,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
   const [step, setStep] = useState<'email' | 'password'>('email');
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [showSocialTooltip, setShowSocialTooltip] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,9 +84,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       if (!password) {
         setError('Please enter your password.');
         return;
-      }      
+      }
       // Sign in first to avoid extra round trips slowing login
-      const { data, status, message } = await signInWithEmail(normalizedEmail, password);      
+      const { data, status, message, user: loggedInUser } = await signInWithEmail(normalizedEmail, password);
       if (!status) {
         const msg = (message || '').toLowerCase();
         if (msg.includes('invalid login credentials')) {
@@ -98,28 +101,18 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }
 
-      // Todo: After sign-in, enforce OTP: first use fresh user from response (most reliable)  
-      // if (!otpVerified && !confirmedAt) {
-      //   await signOut();
-      //   setError('Please verify your email with the OTP before logging in.');
-      //   navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`);
-      //   return;
-      // }
-
-      // Decide post-login redirect based on profile completion in profiles table
-      const u = await getCurrentUser();
+      // Use user from login response instead of fetching again
+      const u = loggedInUser || data?.user;
       const needsCompletion = !isProfileComplete(u);
 
-      onSuccess?.();
+
       if (needsCompletion) {
-        // Redirect first so UI changes immediately
         navigate(`/complete-profile?email=${encodeURIComponent(normalizedEmail)}`, { replace: true });
-        // Then sign out silently on the next tick to avoid interrupting navigation
-        setTimeout(() => { void signOutSilent(); }, 0);
       } else {
-        navigate('/', { replace: true });
+        // Refresh AuthContext user state before navigating
+        await refreshUser();
+        onSuccess?.();
       }
-      console.log('Login successful:', data);
     } catch (err: any) {
       console.error('Login error:', err);
       const em = (err?.message || '').toLowerCase();
@@ -135,24 +128,20 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* Social providers */}
+      {/* Social providers - temporarily disabled */}
       <div style={{ marginBottom: '24px' }}>
+        {showSocialTooltip && (
+          <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            Social login coming soon. Use email sign-in below.
+            <button type="button" onClick={() => setShowSocialTooltip(false)} className="ml-2 underline font-medium">Got it</button>
+          </div>
+        )}
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
-            onClick={async () => {
-              if (loading) return;
-              setLoading(true);
-              try {
-                await signInWithGoogle();
-              } catch (e) {
-                console.error('Google sign-in failed', e);
-                setLoading(false);
-              }
-            }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -171,9 +160,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -187,9 +176,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         <div>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -262,8 +251,8 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           />
           {email && (
             <div style={{ display: 'contents' }}>
-              <div 
-                role="button" 
+              <div
+                role="button"
                 tabIndex={0}
                 aria-label="Clear Input"
                 onClick={() => setEmail('')}
@@ -283,16 +272,16 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
                   marginInlineEnd: '-4px'
                 }}
               >
-                <svg 
-                  aria-hidden="true" 
-                  role="graphics-symbol" 
-                  viewBox="0 0 16 16" 
-                  className="clearInput" 
+                <svg
+                  aria-hidden="true"
+                  role="graphics-symbol"
+                  viewBox="0 0 16 16"
+                  className="clearInput"
                   style={{
-                    width: '16px', 
-                    height: '16px', 
-                    display: 'block', 
-                    fill: 'rgba(81, 73, 60, 0.32)', 
+                    width: '16px',
+                    height: '16px',
+                    display: 'block',
+                    fill: 'rgba(81, 73, 60, 0.32)',
                     flexShrink: 0
                   }}
                 >
@@ -386,8 +375,8 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
           />
           {password && (
             <div style={{ display: 'contents' }}>
-              <div 
-                role="button" 
+              <div
+                role="button"
                 tabIndex={0}
                 aria-label="Clear Input"
                 onClick={() => setPassword('')}
@@ -407,16 +396,16 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
                   marginInlineEnd: '-4px'
                 }}
               >
-                <svg 
-                  aria-hidden="true" 
-                  role="graphics-symbol" 
-                  viewBox="0 0 16 16" 
-                  className="clearInput" 
+                <svg
+                  aria-hidden="true"
+                  role="graphics-symbol"
+                  viewBox="0 0 16 16"
+                  className="clearInput"
                   style={{
-                    width: '16px', 
-                    height: '16px', 
-                    display: 'block', 
-                    fill: 'rgba(81, 73, 60, 0.32)', 
+                    width: '16px',
+                    height: '16px',
+                    display: 'block',
+                    fill: 'rgba(81, 73, 60, 0.32)',
                     flexShrink: 0
                   }}
                 >
@@ -448,21 +437,21 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         >
           {step === 'email' ? (loading ? 'Continue...' : 'Continue') : (loading ? 'Signing in...' : 'Sign in')}
         </button>
-        <div style={{ 
-          width: '100%', 
+        <div style={{
+          width: '100%',
           marginTop: '16px',
-          marginBottom: '0px', 
-          fontSize: '12px', 
-          lineHeight: '16px', 
-          color: 'rgb(116, 113, 108)', 
+          marginBottom: '0px',
+          fontSize: '12px',
+          lineHeight: '16px',
+          color: 'rgb(116, 113, 108)',
           textAlign: 'center',
-          textWrap: 'balance' 
+          textWrap: 'balance'
         }}>
           <p style={{ marginBottom: '0px' }}>
             By continuing, you acknowledge that you understand and agree to the{' '}
-            <a 
-              href="/terms" 
-              target="_blank" 
+            <a
+              href="/terms"
+              target="_blank"
               rel="noopener noreferrer"
               style={{
                 display: 'inline',
@@ -475,9 +464,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
               Terms & Conditions
             </a>{' '}
             and{' '}
-            <a 
-              href="/privacy" 
-              target="_blank" 
+            <a
+              href="/privacy"
+              target="_blank"
               rel="noopener noreferrer"
               style={{
                 display: 'inline',
