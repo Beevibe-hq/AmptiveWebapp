@@ -4,6 +4,7 @@ import { signUpWithEmail } from '@/lib/api/auth';
 import { stashSignup } from '@/lib/api/otp';
 import { toast } from 'sonner';
 import { checkEmailExists } from '@/lib/api/checkEmail';
+import { useAuth } from '@/contexts/AuthContext';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -52,6 +53,7 @@ interface SignupFormProps {
 
 export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps) {
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const [email, setEmail] = useState(initialEmail ?? '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -115,7 +117,7 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
       
       if (error) {
         console.error('Signup error:', error);
-        const msg = (error.message || '').toLowerCase();
+        const msg = (error || '').toLowerCase();
         if (msg.includes('already registered') || msg.includes('already in use')) {
           setError('An account with this email already exists. Please sign in instead.');
         } else if (msg.includes('password')) {
@@ -129,11 +131,6 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
       
       console.log('Signup response:', data);
 
-      // If no error from Supabase, consider this a successful signup.
-      // In projects requiring email confirmation, Supabase may return no session
-      // and sometimes even no user object. We'll treat this as success and
-      // let the app redirect/show a success state via onSuccess.
-      console.log('Signup successful (no Supabase error). Proceeding to success handler.');
       // Securely stash credentials server-side and pass one-time token via navigation state
       const signupToken = sessionStorage.getItem('amptive_signup_pending');
       let tokenState: string | undefined;

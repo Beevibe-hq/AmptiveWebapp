@@ -1,4 +1,4 @@
-import { api, StandardResponse } from './client';
+import { $users, $auth } from './services';
 
 export interface UserProfile {
   id: string;
@@ -26,30 +26,20 @@ export interface UserProfile {
 }
 
 export interface UpdateProfilePayload {
-  profile_picture?: string | null;
-  name?: string | null;
-  username?: string | null;
-  bio?: string | null;
-  country?: string | null;
-  cover_photo?: string | null;
-  x_url?: string | null;
-  instagram_url?: string | null;
-  linkedin_url?: string | null;
-  website_url?: string | null;
+  profile_picture?: string | undefined;
+  name?: string | undefined;
+  username?: string | undefined;
+  bio?: string | undefined;
+  country?: string | undefined;
+  cover_photo?: string | undefined;
+  x_url?: string | undefined;
+  instagram_url?: string | undefined;
+  linkedin_url?: string | undefined;
+  website_url?: string | undefined;
+  [key: string]: unknown;
 }
 
-type AvailabilityData = Record<string, unknown> | boolean | null | undefined;
 
-function firstBoolean(data: AvailabilityData): boolean | null {
-  if (typeof data === 'boolean') return data;
-  if (!data || typeof data !== 'object') return null;
-
-  for (const value of Object.values(data)) {
-    if (typeof value === 'boolean') return value;
-  }
-
-  return null;
-}
 
 export function normalizeUserProfile(user: Partial<UserProfile> | null | undefined): UserProfile | null {
   if (!user) return null;
@@ -104,8 +94,8 @@ function mapUpdatePayload(data: Partial<UserProfile>): UpdateProfilePayload {
 
 export async function getProfile(userId?: string): Promise<UserProfile | null> {
   try {
-    const response = await api.get<StandardResponse<UserProfile>>('/users/me');
-    const profile = normalizeUserProfile(response.data);
+    const response = await $users.getCurrent();
+    const profile = normalizeUserProfile(response);
     if (!profile) return null;
     if (userId && profile.id !== userId && profile.user_id !== userId) return null;
     return profile;
@@ -116,8 +106,8 @@ export async function getProfile(userId?: string): Promise<UserProfile | null> {
 
 export async function getProfileByUserId(targetUserId: string): Promise<UserProfile | null> {
   try {
-    const response = await api.get<StandardResponse<UserProfile>>(`/users/${targetUserId}`);
-    return normalizeUserProfile(response.data);
+    const response = await $users.getById(targetUserId);
+    return normalizeUserProfile(response);
   } catch {
     return null;
   }
@@ -128,15 +118,12 @@ export async function updateProfile(
   data: Partial<UserProfile>
 ): Promise<{ ok: boolean; error?: string; profile?: UserProfile | null }> {
   try {
-    const response = await api.request<StandardResponse<UserProfile>>('/users/me', {
-      method: 'PATCH',
-      body: JSON.stringify(mapUpdatePayload(data)),
-    });
+    const response = await $users.update(mapUpdatePayload(data));
 
     return {
-      ok: response.status,
-      error: response.status ? undefined : response.message,
-      profile: normalizeUserProfile(response.data),
+      ok: true,
+      error: undefined,
+      profile: normalizeUserProfile(response),
     };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -150,7 +137,7 @@ export async function upsertProfile(_profile: UserProfile): Promise<{ ok: boolea
   };
 }
 
-export function isProfileComplete(profile: UserProfile | null): boolean {
+export function isProfileComplete(profile: UserProfile | null | undefined): boolean {
   if (!profile) return false;
   const hasUsername = typeof profile.username === 'string' && profile.username.trim().length >= 3;
   const hasFullName = typeof profile.name === 'string' && profile.name.trim().length > 0;
@@ -162,12 +149,8 @@ export async function checkUsernameAvailability(username: string, _excludeUserId
   if (username.length < 3) return false;
 
   try {
-    const response = await api.post<StandardResponse<AvailabilityData>>('/auth/check-availability', { username });
-    const available = firstBoolean(response.data);
-
-    if (available !== null) return available;
-
-    return response.status && /available/i.test(response.message);
+    const response = await $auth.checkAvailability({ username });    
+    return response.status === true;
   } catch {
     return false;
   }
@@ -184,28 +167,17 @@ export async function checkUsername(username: string): Promise<{ available: bool
   }
 
   try {
-    const response = await api.post<StandardResponse<AvailabilityData>>('/auth/check-availability', { username });
-    const available = firstBoolean(response.data);
-
-    if (available !== null) {
-      return { available, message: response.message };
-    }
-
-    if (response.status && /available/i.test(response.message)) {
-      return { available: true, message: response.message };
-    }
-
-    if (/invalid/i.test(response.message)) {
-      return { available: false, invalid: true, message: response.message };
-    }
-
-    return { available: false, message: response.message };
+    const response = await $auth.checkAvailability({ username });
+    return {
+      available: response.status === true,
+      message: response.message,
+    };
   } catch (e) {
     return { available: false, message: (e as Error).message };
   }
 }
 
-export async function completeProfile(): Promise<{ ok: boolean; message?: string }> {
+export async function completeProfile(email?: string, p0?: string, p1?: string, payload?: { dob?: string; avatarDataUrl?: string; avatarStyle?: "emoji"; avatarEmoji?: string; avatarBg?: string; }): Promise<{ ok: boolean; message?: string }> {
   return {
     ok: false,
     message: 'Complete profile is not supported by the current backend contract. Use registration plus PATCH /users/me instead.',

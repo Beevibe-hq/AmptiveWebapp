@@ -2,7 +2,6 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
 const ACCESS_TOKEN_KEY = 'amptive.auth_token';
 const REFRESH_TOKEN_KEY = 'amptive.refresh_token';
 const ACCESS_TOKEN_EXPIRY_KEY = 'amptive.auth_token_expiry';
-const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
 interface StandardResponse<T> {
   status: boolean;
@@ -68,31 +67,26 @@ async function refreshAccessToken(): Promise<boolean> {
   }
 }
 
-let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
 
-function isTokenExpiringSoon(): boolean {
+function isTokenExpired(): boolean {
   const expiryStr = localStorage.getItem(ACCESS_TOKEN_EXPIRY_KEY);
   if (!expiryStr) return false;
   
   const expiry = parseInt(expiryStr, 10);
-  return Date.now() + TOKEN_EXPIRY_BUFFER_MS > expiry;
+  if (isNaN(expiry)) return false;
+  
+  return Date.now() > expiry;
 }
 
 async function ensureValidToken(): Promise<boolean> {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (!token) return false;
   
-  if (isTokenExpiringSoon()) {
-    if (!isRefreshing) {
-      isRefreshing = true;
-      refreshPromise = refreshAccessToken();
-    }
-    const success = await refreshPromise;
-    isRefreshing = false;
-    refreshPromise = null;
-    return success;
+  if (isTokenExpired()) {
+    return false;
   }
+  
   return true;
 }
 
@@ -120,13 +114,11 @@ async function request<T>(
   });
 
   if (response.status === 401 && !endpoint.includes('/auth/refresh')) {
-    if (!isRefreshing) {
-      isRefreshing = true;
+    if (!refreshPromise) {
       refreshPromise = refreshAccessToken();
     }
 
     const refreshSuccess = await refreshPromise;
-    isRefreshing = false;
     refreshPromise = null;
 
     if (refreshSuccess) {
@@ -164,7 +156,10 @@ async function request<T>(
     if (!stdResponse.status && stdResponse.status_code >= 400) {
       throw new Error(stdResponse.message || `Request failed with status ${stdResponse.status_code}`);
     }
-    return stdResponse.data as T;
+    if ('data' in stdResponse) {
+      return stdResponse.data as T;
+    }
+    return data as T;
   }
 
   return data as T;
@@ -236,7 +231,7 @@ export const api = {
     } else {
       localStorage.removeItem(REFRESH_TOKEN_KEY);
     }
-    if (expiresIn) {
+    if (expiresIn && expiresIn > 0) {
       const expiresAt = Date.now() + (expiresIn * 1000);
       localStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(expiresAt));
     } else {

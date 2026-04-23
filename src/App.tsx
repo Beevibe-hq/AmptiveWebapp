@@ -32,14 +32,14 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
-        <ScrollToTop />
-        <Routes>
-          <Route path="/dashboard/*" element={<Dashboard />} />
-          <Route path="*" element={<MainLayout />} />
-        </Routes>
-        <Toaster position="top-center" richColors closeButton expand={false} />
-      </Router>
-    </ThemeProvider>
+          <ScrollToTop />
+          <Routes>
+            <Route path="/dashboard/*" element={<Dashboard />} />
+            <Route path="*" element={<MainLayout />} />
+          </Routes>
+          <Toaster position="top-center" richColors closeButton expand={false} />
+        </Router>
+      </ThemeProvider>
   );
 }
 

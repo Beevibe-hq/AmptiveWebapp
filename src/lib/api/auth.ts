@@ -1,5 +1,23 @@
-import { api, API_BASE, StandardResponse } from './client';
+import { api } from './client';
 import { UserProfile, normalizeUserProfile } from './profiles';
+import { $auth, $users } from './services';
+import type { AvailabilityResponse, LoginRequest, RegisterRequest } from './services';
+
+function decodeTokenExpiry(token: string): number | undefined {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return undefined;
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64));
+    if (payload.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      return payload.exp - now;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface UserResponse {
   status: boolean;
@@ -23,12 +41,6 @@ export interface LoginResponse {
     user: UserProfile | null;
   };
   error?: string;
-}
-
-export interface LoginRequest {
-  email?: string;
-  phone_number?: string;
-  password: string;
 }
 
 export interface RefreshTokenResponse {
@@ -57,27 +69,7 @@ export interface AuthResponse {
   error?: string;
 }
 
-type AvailabilityData = Record<string, unknown> | boolean | null | undefined;
 
-function firstBoolean(data: AvailabilityData): boolean | null {
-  if (typeof data === 'boolean') return data;
-  if (!data || typeof data !== 'object') return null;
-
-  for (const value of Object.values(data)) {
-    if (typeof value === 'boolean') return value;
-  }
-
-  return null;
-}
-
-function normalizeStandardUserResponse(response: StandardResponse<UserProfile>): UserResponse {
-  return {
-    status: response.status,
-    status_code: response.status_code,
-    message: response.message,
-    data: normalizeUserProfile(response.data),
-  };
-}
 
 function unsupportedAuthResponse(message: string): AuthResponse {
   return {
@@ -89,22 +81,23 @@ function unsupportedAuthResponse(message: string): AuthResponse {
 
 export async function login(email: string, password: string, phoneNumber?: string): Promise<LoginResponse> {
   try {
-    const loginData: { email?: string; phone_number?: string; password: string } = { password };
+    const loginData: LoginRequest = { password };
     if (phoneNumber) {
       loginData.phone_number = phoneNumber;
     } else if (email) {
       loginData.email = email;
     }
 
-    const response = await api.post<{ user: UserProfile; access_token: string; refresh_token: string; expires_in?: number }>('/auth/login', loginData);
+    const response = await $auth.login(loginData);
     
     const user = normalizeUserProfile(response.user);    
     if (!user) {
       throw new Error('Login response did not include a valid user profile.');
     }    
 
-    const expiresIn = response.expires_in;
-    api.setSessionTokens(response.access_token, response.refresh_token, expiresIn);
+    const expiresIn = decodeTokenExpiry(response.access_token);
+    const tokenExpiry = expiresIn ?? 86400;
+    api.setSessionTokens(response.access_token, response.refresh_token, tokenExpiry);
 
     return {
       user,
@@ -138,14 +131,15 @@ export async function register(email: string, password: string, options?: Regist
   }
 
   try {
-    const response = await api.post<StandardResponse<unknown>>('/auth/register', {
+    const registerData: RegisterRequest = {
       email,
       password,
       username: options.username,
       dob: options.dob,
       name: options.name,
       phone_number: options.phone_number,
-    });
+    };
+    const response = await $auth.register(registerData);
 
     return {
       status: response.status,
@@ -168,9 +162,7 @@ export async function signOutSilent(): Promise<{ error: null }> {
   return { error: null };
 }
 
-export async function logout(): Promise<void> {
-  console.log("called loaout");
-  
+export async function logout(): Promise<void> {  
   api.clearSessionTokens();
   localStorage.removeItem('amptive.auth');
 }
@@ -180,7 +172,7 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
   if (!token) return null;
 
   try {
-    const response = await api.get<UserProfile>('/users/me');
+    const response = await $users.getCurrent();    
     return normalizeUserProfile(response);
   } catch {
     api.clearSessionTokens();
@@ -193,10 +185,16 @@ export async function getSession(): Promise<{ user: UserProfile | null; token: s
   if (!token) return { user: null, token: null };
 
   try {
-    const response = await api.get<StandardResponse<UserProfile>>('/users/me');
-    return { user: normalizeUserProfile(response.data), token };
-  } catch {
-    return { user: null, token: null };
+    const response = await $users.getCurrent();    
+    return { user: normalizeUserProfile(response), token };
+  } catch (error: any) {
+    const errorStr = String(error);
+    if (errorStr.includes('401') || errorStr.includes('unauthorized') || errorStr.includes('Invalid login') || errorStr.includes('Token expired')) {
+      api.clearSessionTokens();
+      return { user: null, token: null };
+    }
+    console.warn('Session fetch error (non-auth):', error);
+    return { user: null, token };
   }
 }
 
@@ -207,9 +205,7 @@ export async function refreshSession(): Promise<AuthResponse> {
   }
 
   try {
-    const response = await api.post<RefreshTokenResponse>('/auth/refresh', {
-      refresh_token: refreshToken,
-    });
+    const response = await $auth.refresh({ refresh_token: refreshToken });
 
     api.setSessionTokens(response.access_token, response.refresh_token);
 
@@ -242,7 +238,7 @@ export type ResendOtpResponse = { success: boolean; message?: string };
 
 export async function verifyOtp(email: string, code: string): Promise<VerifyOtpResponse> {
   try {
-    const response = await api.post<StandardResponse<unknown>>('/auth/verify-otp', { email, otp: code });
+    const response = await $auth.verifyOtp(email, code);
     return { success: response.status, message: response.message };
   } catch (error: any) {
     return { success: false, message: error.message };
@@ -251,7 +247,7 @@ export async function verifyOtp(email: string, code: string): Promise<VerifyOtpR
 
 export async function resendOtp(email: string): Promise<ResendOtpResponse> {
   try {
-    const response = await api.post<StandardResponse<unknown>>('/auth/init', { email });
+    const response = await $auth.resendOtp(email);
     return { success: response.status, message: response.message };
   } catch (error: any) {
     return { success: false, message: error.message };
@@ -264,18 +260,8 @@ export async function isVerified(_email: string): Promise<{ verified: boolean }>
 
 export async function checkEmailExists(email: string): Promise<{ exists: boolean; available?: boolean; message?: string }> {
   try {
-    const response = await api.post<StandardResponse<AvailabilityData>>('/auth/check-availability', { email });
-    const available = firstBoolean(response.data);
-
-    if (available !== null) {
-      return { exists: !available, available, message: response.message };
-    }
-
-    if (response.status && /available/i.test(response.message)) {
-      return { exists: false, available: true, message: response.message };
-    }
-
-    return { exists: true, available: false, message: response.message };
+    const response = await $auth.checkAvailability({ email });
+    return { exists: !response.status, available: response.status, message: response.message };
   } catch (error: any) {
     return { exists: false, available: false, message: error.message };
   }
@@ -296,10 +282,13 @@ export async function consumeSignup(_token: string): Promise<{ ok: boolean; emai
 }
 
 export async function getNormalizedCurrentUserResponse(): Promise<UserResponse> {
-  const response = await api.get<StandardResponse<UserProfile>>('/users/me');
-  return normalizeStandardUserResponse(response);
+  const response = await $users.getCurrent();
+  return {
+    status: true,
+    status_code: 200,
+    message: 'Success',
+    data: normalizeUserProfile(response),
+  };
 }
 
 export type User = UserProfile;
-
-export { API_BASE };

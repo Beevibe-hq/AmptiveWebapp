@@ -1,22 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getProfile, updateProfileAvatar, UserProfile } from '@/lib/api/profiles';
+import { updateProfileAvatar, UserProfile } from '@/lib/api/profiles';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getEventsByUser } from '@/lib/api/events';
-
-type DatabaseEventRow = {
-  id: string;
-  title?: string | null;
-  start_time?: string | null;
-  end_time?: string | null;
-  venue?: string | null;
-  city?: string | null;
-  cover_image?: string | null;
-  details_url?: string | null;
-  manage_url?: string | null;
-};
+import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 
 type EventStatus = 'upcoming' | 'live' | 'past';
 
@@ -118,29 +106,29 @@ const resolveEventStatus = (startIso: string | null, endIso: string | null, now:
   return 'upcoming';
 };
 
-const mapEventRows = (
-  rows: DatabaseEventRow[],
+const mapStandaloneEvents = (
+  events: StandaloneEvent[],
   ticketMap: Record<string, EventTicket[]>,
   now: Date
 ): EventCardData[] =>
-  rows
-    .filter((row): row is DatabaseEventRow & { id: string } => Boolean(row.id))
-    .map((row) => {
-      const startIso = row.start_time ?? null;
-      const endIso = row.end_time ?? null;
+  events
+    .filter((e): e is StandaloneEvent & { event_id: string } => Boolean(e.event_id))
+    .map((e) => {
+      const startIso = e.scheduled_for ?? null;
+      const endIso = e.ended_at ?? null;
       const status = resolveEventStatus(startIso, endIso, now);
       const startTimeLabel = status === 'live' ? 'LIVE' : formatEventTimeLabel(startIso);
 
       return {
-        id: row.id,
-        title: row.title ?? 'Untitled Event',
-        dateLabel: formatEventDateLabel(row.start_time),
+        id: e.event_id,
+        title: e.title ?? 'Untitled Event',
+        dateLabel: formatEventDateLabel(e.scheduled_for),
         startTimeLabel,
-        locationLabel: buildLocationLabel(row.venue, row.city),
-        coverImage: row.cover_image ?? null,
-        detailsUrl: row.details_url ?? `/events/${row.id}`,
-        manageUrl: row.manage_url ?? `/events/manage/${row.id}`,
-        tickets: ticketMap[row.id] ?? [],
+        locationLabel: buildLocationLabel(e.location?.venue, e.location?.city),
+        coverImage: e.thumbnail_url ?? null,
+        detailsUrl: `/events/${e.event_id}`,
+        manageUrl: `/events/manage/${e.event_id}`,
+        tickets: ticketMap[e.event_id] ?? [],
         startIso,
         endIso,
         status,
@@ -177,15 +165,15 @@ const ProfilePage = () => {
       const nowIso = new Date().toISOString();
       const events = await getEventsByUser(targetUserId);
       
-      const upcomingData = (events ?? []).filter(e => e.start_time && e.start_time >= nowIso);
-      const pastData = (events ?? []).filter(e => e.start_time && e.start_time < nowIso);
+      const upcomingData = (events ?? []).filter(e => e.scheduled_for && e.scheduled_for >= nowIso);
+      const pastData = (events ?? []).filter(e => e.scheduled_for && e.scheduled_for < nowIso);
       
-      const allEventIds = events?.map(e => e.id).filter(Boolean) as string[] || [];
+      const allEventIds = events?.map(e => e.event_id).filter(Boolean) as string[] || [];
       const ticketMap: Record<string, EventTicket[]> = {};
 
       const now = new Date();
-      const upcomingMapped = mapEventRows(upcomingData, ticketMap, now);
-      const pastMapped = mapEventRows(pastData, ticketMap, now);
+      const upcomingMapped = mapStandaloneEvents(upcomingData, ticketMap, now);
+      const pastMapped = mapStandaloneEvents(pastData, ticketMap, now);
       const allEvents = [...upcomingMapped, ...pastMapped];
 
       const upcoming = allEvents
@@ -995,7 +983,7 @@ const ProfilePage = () => {
               {activeEventTab === 'upcoming' && (
                 upcomingEvents.length > 0 ? (
                   <div className="grid gap-6 lg:grid-cols-2">
-                    {upcomingEvents.map(renderEventCard)}
+                    {upcomingEvents.map(event => renderEventCard(event))}
                   </div>
                 ) : (
                   <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">

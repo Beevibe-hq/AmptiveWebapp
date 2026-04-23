@@ -471,7 +471,7 @@ const Homepage: React.FC = () => {
             country: event.city || 'Nigeria',
             status: isLiveNow ? 'Live Now' : 'Upcoming',
             price,
-            date: new Date(event.scheduled_for).toISOString(),
+            date: event.scheduled_for ? new Date(event.scheduled_for).toISOString() : '',
             media: {
               type: 'image' as const,
               src: event.thumbnail_url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30',
@@ -479,8 +479,6 @@ const Homepage: React.FC = () => {
             }
           };
         });
-
-        console.log('Fetched events from database:', transformedEvents.length, transformedEvents);
         setDbEvents(transformedEvents);
         setFilteredEvents(transformedEvents);
         setLoadingEvents(false);
@@ -497,7 +495,7 @@ const Homepage: React.FC = () => {
   useEffect(() => {
     const fetchCommunities = async () => {
       try {
-        const data = await listCommunities({ page_size: 20 });
+        const data = await listCommunities({ page_size: 20 });        
         setCommunities(data);
       } catch (error) {
         console.error('Error fetching communities:', error);

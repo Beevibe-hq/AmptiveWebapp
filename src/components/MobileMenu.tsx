@@ -14,8 +14,9 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { getCurrentUser, signOut } from '@/lib/api/auth';
+import { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { logout } from '@/lib/api/auth';
 import UserAvatar from './UserAvatar';
 
 type BaseLink = {
@@ -44,51 +45,12 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const userData = await getCurrentUser();
-        setUser(userData);
-      } catch (error) {
-        console.error('Error fetching user:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (isOpen) {
-      getUser();
-    }
-  }, [isOpen]);
-
-  // Track scroll position and handle body scroll
-  useEffect(() => {
-    if (isOpen) {
-      // Save current scroll position
-      const scrollY = window.scrollY;
-
-      // Prevent body scroll
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollY}px`;
-      document.body.style.width = '100%';
-
-      // Cleanup function to restore scroll position when menu closes
-      return () => {
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.width = '';
-        window.scrollTo(0, scrollY);
-      };
-    }
-  }, [isOpen]);
+  const { user, loading } = useAuth();
 
   // Navigation links for authenticated users with icons
   const authLinks: LinkItem[] = [
-    { 
-      name: 'My Dashboard', 
+    {
+      name: 'My Dashboard',
       path: '/dashboard',
       icon: <LayoutDashboard className="w-5 h-5 mr-3" />
     },
@@ -147,10 +109,9 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
       name: 'Sign Out',
       path: '#',
       icon: <LogOut className="w-5 h-5 mr-3" />,
-      onClick: async () => {        
-        await signOut();
+      onClick: async () => {
+        await logout();
         navigate('/');
-        window.location.reload();
       }
     }
   ];
@@ -360,7 +321,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
             <div className="p-4 pr-6 space-y-3">
               {!loading && user && (
                 <div className="flex justify-center py-2">
-                  <UserAvatar user={user} />
+                  <UserAvatar />
                 </div>
               )}
               {!loading && !user && (

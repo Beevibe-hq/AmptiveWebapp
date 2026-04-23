@@ -1,4 +1,4 @@
-import { api, StandardResponse } from './client';
+import { $events } from './services';
 
 export interface StandaloneEvent {
   event_id: string;
@@ -88,22 +88,18 @@ export async function listEvents(params?: {
   page?: number;
   page_size?: number;
 }): Promise<StandaloneEvent[]> {
-  const query = new URLSearchParams();
-  if (params?.status) query.set('status', params.status);
-  if (params?.page) query.set('page', String(params.page));
-  if (params?.page_size) query.set('page_size', String(params.page_size));
+  const query: Record<string, string> = {};
+  if (params?.status) query.status = params.status;
+  if (params?.page) query.page = String(params.page);
+  if (params?.page_size) query.page_size = String(params.page_size);
 
-  const queryString = query.toString();
-  const endpoint = queryString ? `/events/?${queryString}` : '/events/';
-
-  const response = await api.get<EventListResponse>(endpoint);
-
-  return response.events || [];
+  const response = await $events.list(query);
+  return (response.events || []) as StandaloneEvent[];
 }
 
 export async function getEvent(eventId: string): Promise<StandaloneEvent | null> {
   try {
-    const response = await api.get<StandaloneEvent>(`/events/${eventId}`);    
+    const response = await $events.getById(eventId) as StandaloneEvent;    
     return response || null;
   } catch {
     return null;
@@ -111,17 +107,17 @@ export async function getEvent(eventId: string): Promise<StandaloneEvent | null>
 }
 
 export async function createEvent(event: StandaloneEventCreateRequest): Promise<{ id: string; event_id?: string }> {
-  const response = await api.post<StandardResponse<StandaloneEvent>>('/events/', event);
-  if (response.data) {
-    return { id: response.data.event_id, event_id: response.data.event_id };
+  const response = await $events.create(event) as { event_id?: string };
+  if (response && response.event_id) {
+    return { id: response.event_id, event_id: response.event_id };
   }
   return { id: '' };
 }
 
 export async function updateEvent(eventId: string, event: StandaloneEventUpdateRequest): Promise<{ ok: boolean; error?: string }> {
   try {
-    const response = await api.patch<StandardResponse<StandaloneEvent>>(`/events/${eventId}`, event);
-    return { ok: response.status, error: response.status ? undefined : response.message };
+    await $events.update(eventId, event);
+    return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -129,35 +125,37 @@ export async function updateEvent(eventId: string, event: StandaloneEventUpdateR
 
 export async function deleteEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const response = await api.delete<StandardResponse<null>>(`/events/${eventId}`);
-    return { ok: response.status, error: response.status ? undefined : response.message };
+    await $events.delete(eventId);
+    return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
 }
 
 export async function getEventsByUser(userId: string): Promise<StandaloneEvent[]> {
-  const response = await api.get<EventListResponse>(`/events?userId=${userId}`);
-  return response?.events || response || [];
+  const response = await $events.getByUserId(userId);
+  return (response?.events || []) as StandaloneEvent[];
 }
 
 export async function getRelatedEvents(userId: string, excludeEventId: string, limit = 4): Promise<StandaloneEvent[]> {
-  const response = await api.get<EventListResponse>(
-    `/events/?userId=${userId}&excludeId=${excludeEventId}&page_size=${limit}`
-  );
-  return response?.events || response || [];
+  const response = await $events.list({
+    userId,
+    excludeId: excludeEventId,
+    page_size: String(limit),
+  });
+  return (response?.events || []) as StandaloneEvent[];
 }
 
 export async function publishEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const response = await api.post<StandardResponse<null>>(`/events/${eventId}/publish`);
-    return { ok: response.status, error: response.status ? undefined : response.message };
+    await $events.publish(eventId);
+    return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
 }
 
 export async function getEventOrders(eventId: string): Promise<unknown[]> {
-  const response = await api.get<any>(`/events/${eventId}/orders`);
-  return response?.data || response || [];
+  const response = await $events.getOrders(eventId);
+  return (response as { data?: unknown[] })?.data || (response as unknown[]) || [];
 }

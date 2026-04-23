@@ -1,7 +1,8 @@
-import { api, API_BASE } from './client';
+import { API_BASE } from './client';
+import { $storage } from './services';
 
 export async function uploadFile(bucket: string, path: string, file: File): Promise<string> {
-  return api.uploadFile(bucket, path, file);
+  return $storage.upload(bucket, path, file);
 }
 
 export function getPublicUrl(bucket: string, path: string): string {
@@ -10,7 +11,7 @@ export function getPublicUrl(bucket: string, path: string): string {
 
 export async function listFiles(bucket: string): Promise<string[]> {
   try {
-    const files = await api.get<string[]>(`/storage/${bucket}`);
+    const files = await $storage.listFiles(bucket);
     return files || [];
   } catch {
     return [];

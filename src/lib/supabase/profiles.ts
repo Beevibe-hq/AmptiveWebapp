@@ -1,2 +1,0 @@
-export { updateProfile, upsertProfile, isProfileComplete, checkUsernameAvailability, completeProfile, updateProfileAvatar } from '@/lib/api/profiles';
-export type { UserProfile as Profile } from '@/lib/api/profiles';

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { getSession } from '@/lib/api/auth';
 import { UserProfile } from '@/lib/api/profiles';
 
@@ -16,9 +16,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
-      const currentSession = await getSession();      
+      setLoading(true);
+      const currentSession = await getSession();            
       setUser(currentSession.user);
     } catch (error) {
       console.error('Error refreshing user:', error);
@@ -26,15 +27,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {    
-    void refreshUser();
   }, []);
+
+  useEffect(() => {
+    void refreshUser();
+  }, [refreshUser]);
 
   return (
     <AuthContext.Provider value={{ user, loading, refreshUser }}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }
@@ -43,6 +44,6 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
-  }
+  }  
   return context;
 };

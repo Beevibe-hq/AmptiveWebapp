@@ -17,13 +17,13 @@ import {
     Ticket,
     Share2,
     Download} from 'lucide-react';
-import { getCurrentUser, logout as apiSignOut } from '@/lib/api/auth';
+import { logout as apiSignOut, getSession } from '@/lib/api/auth';
 import { getEvent, getEventsByUser } from '@/lib/api/events';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
 import DashboardOrders from './DashboardOrders';
 import CreateEvent from './CreateEvent';
-import { getSession } from '@/lib/api/auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
     const [count, setCount] = useState(0);
@@ -876,25 +876,23 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
 export default function Dashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [user, setUser] = useState<any>(null);
+    const { user, loading } = useAuth();
     const [profile, setProfile] = useState<any>(null);
     const [editingEventTitle, setEditingEventTitle] = useState<string | null>(null);
     const location = useLocation();
     const navigate = useNavigate();
 
     useEffect(() => {
-        const fetchUserData = async () => {
-            const currentUser = await getCurrentUser();
-            if (currentUser) {
-                setUser(currentUser);
-                const profileData = await getCurrentUser();
-                setProfile(profileData);
-            } else {
-                navigate('/login');
-            }
-        };
-        fetchUserData();
-    }, [navigate]);
+        if (!loading && !user) {
+            navigate('/login');
+        }
+    }, [user, loading, navigate]);
+
+    useEffect(() => {
+        if (user) {
+            setProfile(user);
+        }
+    }, [user]);
 
     // Fetch editing event title if in edit mode
     useEffect(() => {
@@ -922,7 +920,7 @@ export default function Dashboard() {
         { name: 'Settings', path: '/dashboard/settings', icon: null as any, customIcon: 'settings' },
     ];
 
-    const displayName = profile?.username || profile?.display_name || profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Organizer';
+    const displayName = profile?.username || profile?.name || user?.name || user?.email?.split('@')[0] || 'Organizer';
 
     const handleSignOut = async () => {
         await apiSignOut();
