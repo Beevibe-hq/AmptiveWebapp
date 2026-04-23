@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/api/auth';
-import {  isProfileComplete } from '@/lib/api/profiles';
+import { signInWithEmail, signOutSilent } from '@/lib/api/auth';
+import { isProfileComplete } from '@/lib/api/profiles';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -56,6 +56,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
   const [step, setStep] = useState<'email' | 'password'>('email');
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [showSocialTooltip, setShowSocialTooltip] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +84,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }      
       // Sign in first to avoid extra round trips slowing login
-      const { data, status, message } = await signInWithEmail(normalizedEmail, password);      
+      const { data, status, message, user: loggedInUser } = await signInWithEmail(normalizedEmail, password);      
       if (!status) {
         const msg = (message || '').toLowerCase();
         if (msg.includes('invalid login credentials')) {
@@ -98,16 +99,8 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }
 
-      // Todo: After sign-in, enforce OTP: first use fresh user from response (most reliable)  
-      // if (!otpVerified && !confirmedAt) {
-      //   await signOut();
-      //   setError('Please verify your email with the OTP before logging in.');
-      //   navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`);
-      //   return;
-      // }
-
-      // Decide post-login redirect based on profile completion in profiles table
-      const u = await getCurrentUser();      
+      // Use user from login response instead of fetching again
+      const u = loggedInUser || data?.user;
       const needsCompletion = !isProfileComplete(u);
 
       onSuccess?.();
@@ -135,24 +128,20 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* Social providers */}
+      {/* Social providers - temporarily disabled */}
       <div style={{ marginBottom: '24px' }}>
+        {showSocialTooltip && (
+          <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            Social login coming soon. Use email sign-in below.
+            <button type="button" onClick={() => setShowSocialTooltip(false)} className="ml-2 underline font-medium">Got it</button>
+          </div>
+        )}
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
-            onClick={async () => {
-              if (loading) return;
-              setLoading(true);
-              try {
-                await signInWithGoogle();
-              } catch (e) {
-                console.error('Google sign-in failed', e);
-                setLoading(false);
-              }
-            }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -171,9 +160,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -187,9 +176,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         <div>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>

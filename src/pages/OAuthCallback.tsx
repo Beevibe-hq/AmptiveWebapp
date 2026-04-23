@@ -11,12 +11,25 @@ export default function OAuthCallback() {
   useEffect(() => {
     const handleOAuth = async () => {
       try {
-        setStatus('Verifying your session...');
+        setStatus('Checking authentication...');
 
         const error = searchParams.get('error');
         if (error) {
-          throw new Error(`OAuth error: ${error}`);
+          throw new Error(`Authentication error: ${error}`);
         }
+
+        const provider = searchParams.get('provider');
+        
+        // OAuth not currently supported - redirect to login with message
+        if (!provider) {
+          setStatus('Social login is not available. Redirecting...');
+          setTimeout(() => {
+            navigate('/login?error=Social+login+not+available', { replace: true });
+          }, 2000);
+          return;
+        }
+
+        setStatus('Verifying your session...');
 
         const code = searchParams.get('code');
         if (!code) {

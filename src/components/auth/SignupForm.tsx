@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signUpWithEmail, signInWithGoogle } from '@/lib/api/auth';
+import { signUpWithEmail } from '@/lib/api/auth';
 import { stashSignup } from '@/lib/api/otp';
 import { toast } from 'sonner';
 import { checkEmailExists } from '@/lib/api/checkEmail';
@@ -60,6 +60,7 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showSocialTooltip, setShowSocialTooltip] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,24 +134,26 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
       // and sometimes even no user object. We'll treat this as success and
       // let the app redirect/show a success state via onSuccess.
       console.log('Signup successful (no Supabase error). Proceeding to success handler.');
-      // Securely stash credentials server-side and pass one-time token to verify page
-      let tokenParam = '';
+      // Securely stash credentials server-side and pass one-time token via navigation state
+      const signupToken = sessionStorage.getItem('amptive_signup_pending');
+      let tokenState: string | undefined;
       try {
         const stash = await stashSignup(normalizedEmail, password);
         if (stash.ok && stash.token) {
-          tokenParam = `&token=${encodeURIComponent(stash.token)}`;
+          sessionStorage.setItem('amptive_signup_pending', stash.token);
+          tokenState = stash.token;
+          sessionStorage.setItem('amptive_signup_email', normalizedEmail);
         } else {
           toast.warning('Could not prepare auto sign-in. You can still complete verification.');
         }
       } catch (e) {
+        sessionStorage.removeItem('amptive_signup_pending');
         toast.warning('Network issue preparing secure sign-in. You can still complete verification.');
       }
 
-      // Navigate to OTP verification page with email (and token if available) as query param.
-      // The Verify page will handle sending the OTP once it mounts.
-      try {
-        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}${tokenParam}`);
-      } catch {}
+      // Navigate to OTP verification page with email in query param (for back navigation)
+      // Token stored in sessionStorage (not URL) - cleared on tab close
+      navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`, { state: { token: tokenState } });
       return;
     } catch (err: any) {
       console.error('Unexpected signup error:', err);
@@ -161,24 +164,20 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* Social providers */}
+      {/* Social providers - temporarily disabled */}
       <div style={{ marginBottom: '24px' }}>
+        {showSocialTooltip && (
+          <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            Social signup coming soon. Use email sign-up below.
+            <button type="button" onClick={() => setShowSocialTooltip(false)} className="ml-2 underline font-medium">Got it</button>
+          </div>
+        )}
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
-            onClick={async () => {
-              if (loading) return;
-              setLoading(true);
-              try {
-                await signInWithGoogle();
-              } catch (e) {
-                console.error('Google sign-up failed', e);
-                setLoading(false);
-              }
-            }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -197,9 +196,9 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -213,9 +212,9 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
         <div>
           <button
             type="button"
-            style={socialButtonStyle}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f5f5f5' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white' }}
+            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            onClick={() => setShowSocialTooltip(true)}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>

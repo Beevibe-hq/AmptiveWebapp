@@ -12,12 +12,14 @@ export interface LoginResponse {
   user: UserProfile | null;
   access_token: string;
   refresh_token: string;
+  expires_in?: number;
   status: boolean;
   status_code?: number;
   message?: string;
   data?: {
     access_token: string;
     refresh_token: string;
+    expires_in?: number;
     user: UserProfile | null;
   };
   error?: string;
@@ -94,14 +96,15 @@ export async function login(email: string, password: string, phoneNumber?: strin
       loginData.email = email;
     }
 
-    const response = await api.post<{ user: UserProfile; access_token: string; refresh_token: string }>('/auth/login', loginData);
+    const response = await api.post<{ user: UserProfile; access_token: string; refresh_token: string; expires_in?: number }>('/auth/login', loginData);
     
     const user = normalizeUserProfile(response.user);    
     if (!user) {
       throw new Error('Login response did not include a valid user profile.');
     }    
 
-    api.setSessionTokens(response.access_token, response.refresh_token);
+    const expiresIn = response.expires_in;
+    api.setSessionTokens(response.access_token, response.refresh_token, expiresIn);
 
     return {
       user,

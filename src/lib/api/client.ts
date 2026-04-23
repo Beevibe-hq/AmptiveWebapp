@@ -1,6 +1,8 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
 const ACCESS_TOKEN_KEY = 'amptive.auth_token';
 const REFRESH_TOKEN_KEY = 'amptive.refresh_token';
+const ACCESS_TOKEN_EXPIRY_KEY = 'amptive.auth_token_expiry';
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
 interface StandardResponse<T> {
   status: boolean;
@@ -13,6 +15,7 @@ interface StandardResponse<T> {
 interface TokenRefreshResponse {
   access_token: string;
   refresh_token: string;
+  expires_in?: number;
 }
 
 function getAuthHeaders(): HeadersInit {
@@ -29,11 +32,13 @@ function getAuthHeaders(): HeadersInit {
 function clearSessionTokens(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(ACCESS_TOKEN_EXPIRY_KEY);
 }
 
 async function refreshAccessToken(): Promise<boolean> {
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
   if (!refreshToken) {
+    clearSessionTokens();
     return false;
   }
 
@@ -50,8 +55,12 @@ async function refreshAccessToken(): Promise<boolean> {
     }
 
     const data: TokenRefreshResponse = await response.json();
+    const expiresIn = data.expires_in ?? 3600;
+    const expiresAt = Date.now() + (expiresIn * 1000);
+    
     localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
     localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+    localStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(expiresAt));
     return true;
   } catch {
     clearSessionTokens();
@@ -62,10 +71,43 @@ async function refreshAccessToken(): Promise<boolean> {
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
 
+function isTokenExpiringSoon(): boolean {
+  const expiryStr = localStorage.getItem(ACCESS_TOKEN_EXPIRY_KEY);
+  if (!expiryStr) return false;
+  
+  const expiry = parseInt(expiryStr, 10);
+  return Date.now() + TOKEN_EXPIRY_BUFFER_MS > expiry;
+}
+
+async function ensureValidToken(): Promise<boolean> {
+  const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+  if (!token) return false;
+  
+  if (isTokenExpiringSoon()) {
+    if (!isRefreshing) {
+      isRefreshing = true;
+      refreshPromise = refreshAccessToken();
+    }
+    const success = await refreshPromise;
+    isRefreshing = false;
+    refreshPromise = null;
+    return success;
+  }
+  return true;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  if (!endpoint.includes('/auth/')) {
+    const hasValidToken = await ensureValidToken();
+    if (!hasValidToken) {
+      clearSessionTokens();
+      throw new Error('Session expired. Please log in again.');
+    }
+  }
+
   const url = `${API_BASE}${endpoint}`;
   const headers = getAuthHeaders();
 
@@ -187,12 +229,18 @@ export const api = {
     localStorage.setItem(REFRESH_TOKEN_KEY, token);
   },
 
-  setSessionTokens: (accessToken: string, refreshToken?: string | null) => {
-    localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);    
+  setSessionTokens: (accessToken: string, refreshToken?: string | null, expiresIn?: number) => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
     } else {
       localStorage.removeItem(REFRESH_TOKEN_KEY);
+    }
+    if (expiresIn) {
+      const expiresAt = Date.now() + (expiresIn * 1000);
+      localStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(expiresAt));
+    } else {
+      localStorage.removeItem(ACCESS_TOKEN_EXPIRY_KEY);
     }
   },
 
@@ -203,6 +251,7 @@ export const api = {
   clearSessionTokens: () => {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(ACCESS_TOKEN_EXPIRY_KEY);
   },
 
   getToken: () => localStorage.getItem(ACCESS_TOKEN_KEY),
