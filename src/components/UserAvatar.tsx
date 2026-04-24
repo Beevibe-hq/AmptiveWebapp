@@ -38,45 +38,37 @@ export default function UserAvatar() {
     return Math.abs(h);
   }, [seed]);
   const emoji = emojiSet[hash % emojiSet.length];
-  const emojiBg = bgSet[hash % bgSet.length];
 
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 text-black/80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black overflow-hidden"
-        aria-label="Account menu"
+        className="relative flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 overflow-hidden"
       >
-        {isLoading ? (
-          <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
-        ) : user?.profile_picture && !imgError ? (
+        {user?.profile_picture && !imgError && (
           <img
             src={user.profile_picture}
             alt="Profile"
             className="w-full h-full object-cover"
-            onLoad={() => setIsLoading(false)}
+            onLoad={() => {
+              setIsLoading(false);
+            }}
             onError={() => {
               setImgError(true);
               setIsLoading(false);
             }}
           />
-        ) : (
-          <span
-            className="text-base select-none"
-            aria-hidden="true"
-            style={{
-              background: 'transparent',
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: emojiBg
-            }}
-          >
+        )}
+
+        {isLoading && (
+          <div className="absolute inset-0 bg-gray-200 animate-pulse rounded-full" />
+        )}
+
+        {!user?.profile_picture || imgError ? (
+          <span className="absolute inset-0 flex items-center justify-center">
             {emoji}
           </span>
-        )}
+        ) : null}
       </button>
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
@@ -97,3 +89,4 @@ export default function UserAvatar() {
     </div>
   );
 }
+

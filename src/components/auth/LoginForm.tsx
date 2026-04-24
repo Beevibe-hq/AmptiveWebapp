@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmail } from '@/lib/api/auth';
+import { login } from '@/lib/api/auth';
 import { isProfileComplete } from '@/lib/api/profiles';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -86,7 +86,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         return;
       }
       // Sign in first to avoid extra round trips slowing login
-      const { data, status, message, user: loggedInUser } = await signInWithEmail(normalizedEmail, password);
+      const { data, status, message, user: loggedInUser } = await login(normalizedEmail, password);
       if (!status) {
         const msg = (message || '').toLowerCase();
         if (msg.includes('invalid login credentials')) {

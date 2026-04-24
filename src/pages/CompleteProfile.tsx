@@ -1,28 +1,43 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import Cropper from 'react-easy-crop';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { checkUsernameAvailability, completeProfile, consumeSignup } from '@/lib/api/otp';
-import { signInWithEmail } from '@/lib/api/auth';
+import { SIGNUP_KEYS } from '@/lib/constants';
+import { register } from '@/lib/api/auth';
+import { uploadImage } from '@/lib/api/storage';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { checkUsernameAvailability } from '@/lib/api/profiles';
 
 export default function CompleteProfilePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
   const params = new URLSearchParams(location.search);
-  const email = params.get('email') || '';
-  const token = params.get('token') || '';
+  const email = params.get('email') || sessionStorage.getItem(SIGNUP_KEYS.email) || '';
 
-  const [step, setStep] = useState(0); // 0=username, 1=full name, 2=avatar, 3=dob
-  const totalSteps = 4;
+  useEffect(() => {
+    const handleLeave = () => {
+      sessionStorage.removeItem(SIGNUP_KEYS.email);
+    };
+    window.addEventListener('beforeunload', handleLeave);
+    return () => {
+      window.removeEventListener('beforeunload', handleLeave);
+    };
+  }, []);
+
+  const [step, setStep] = useState(0);
+  const totalSteps = 6;
 
   const [username, setUsername] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameChecking, setUsernameChecking] = useState(false);
   const [usernameMsg, setUsernameMsg] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
-  const [dob, setDob] = useState(''); // yyyy-mm-dd
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [dob, setDob] = useState('');
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
   const [cropImage, setCropImage] = useState<string | null>(null);
@@ -30,11 +45,12 @@ export default function CompleteProfilePage() {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ width: number; height: number; x: number; y: number } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [securing, setSecuring] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [usernameFocused, setUsernameFocused] = useState(false);
   const [fullNameFocused, setFullNameFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
   const [dobFocused, setDobFocused] = useState(false);
 
   // Detect native date input support (some iOS versions report support but UX is buggy)
@@ -119,16 +135,19 @@ export default function CompleteProfilePage() {
 
   const progress = Math.round(((step + 1) / totalSteps) * 100);
 
-  // Dynamic titles/subtitles per step
   const stepTitles = [
     'Pick your @username',
     'Enter your full name',
+    'Create a password',
+    'Confirm password',
     'Add an avatar',
     'Date of birth',
   ];
   const stepSubtitles = [
     'This will be your unique identifier on Amptive.',
     'Tell us how we should address you.',
+    'Your password should be at least 8 characters.',
+    'Please re-enter your password.',
     'Upload a photo or keep your emoji avatar.',
     'This helps personalize your experience.',
   ];
@@ -140,7 +159,6 @@ export default function CompleteProfilePage() {
         toastError('Username must be 3-20 chars: letters, numbers, dot, dash, underscore.');
         return;
       }
-      // Do not re-check on Continue; rely on last debounced result.
       if (usernameAvailable === false) {
         toastError('Username is already taken');
         return;
@@ -152,7 +170,19 @@ export default function CompleteProfilePage() {
         return;
       }
     }
+    if (step === 2) {
+      if (!password || password.length < 8) {
+        toastError('Your password should be at least 8 characters.');
+        return;
+      }
+    }
     if (step === 3) {
+      if (password !== confirmPassword) {
+        toastError('Passwords do not match.');
+        return;
+      }
+    }
+    if (step === 5) {
       if (!dob) {
         toastError('Please select your date of birth.');
         return;
@@ -264,8 +294,16 @@ export default function CompleteProfilePage() {
   };
 
   const submit = async () => {
-    if (!email) {
-      toastError('Missing email. Please start signup again.');
+    if (!email || !password) {
+      toastError('Missing email or password. Please start signup again.');
+      return;
+    }
+    if (!username.trim()) {
+      toastError('Please enter a username.');
+      return;
+    }
+    if (!fullName.trim()) {
+      toastError('Please enter your full name.');
       return;
     }
     // Build effective DOB (compose from selects on iOS fallback)
@@ -306,60 +344,40 @@ export default function CompleteProfilePage() {
     }
     setLoading(true);
     try {
-      const payload = {
-        dob: effectiveDob || undefined,
-        avatarDataUrl: avatarPreview || undefined,
-        ...(avatarPreview
-          ? {}
-          : { avatarStyle: 'emoji' as const, avatarEmoji: emoji, avatarBg: emojiBg }),
-      } as { dob?: string; avatarDataUrl?: string; avatarStyle?: 'emoji'; avatarEmoji?: string; avatarBg?: string };
-      const res = await completeProfile(
-        email,
-        fullName.trim(),
-        username.trim().toLowerCase(),
-        payload
-      );
-      if (!res.ok) {
-        toastError(res.message || 'Failed to complete profile');
+      let profilePictureUrl: string | undefined;
+
+      if (avatarPreview && !avatarPreview.startsWith('data:image/svg')) {
+        const res = await fetch(avatarPreview);
+        const blob = await res.blob();
+        const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
+        profilePictureUrl = await uploadImage(file, 'profile-picture');
+      }
+
+      const { status, error } = await register(email, password, {
+        username: username.trim().toLowerCase(),
+        dob: effectiveDob,
+        name: fullName.trim(),
+        profile_picture: profilePictureUrl,
+      });
+      if (!status) {
+        toastError(error || 'Failed to register. Please try again.');
         setLoading(false);
         return;
       }
-      // Try auto sign-in via one-time token
-      if (token) {
-        setSecuring(true);
-        const consumed = await consumeSignup(token);
-        if (consumed.ok && consumed.email && consumed.password) {
-          const { error } = await signInWithEmail(consumed.email, consumed.password);
-          if (!error) {
-            toastSuccess('Profile completed! Welcome to Amptive.');
-            await refreshUser();
-            setTimeout(() => navigate('/'), 500);
-            setSecuring(false);
-            return;
-          }
-        }
-        setSecuring(false);
-      }
-      toastSuccess('Profile completed. Please sign in.');
-      setTimeout(() => navigate(`/login?email=${encodeURIComponent(email)}`), 500);
+
+      sessionStorage.removeItem(SIGNUP_KEYS.email);
+      await refreshUser();
+      toastSuccess('Account created! Welcome to Amptive.');
+      setTimeout(() => navigate('/'), 500);
     } catch (e) {
       toastError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
-      setSecuring(false);
     }
   };
 
   return (
     <div className="relative min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 overflow-auto">
-      {securing && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl px-5 py-4 shadow-lg border border-gray-200 flex items-center gap-3">
-            <svg className="animate-spin text-black" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" /><path d="M21 12a9 9 0 0 1-9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-            <span className="text-sm font-medium text-gray-900">Securing your account…</span>
-          </div>
-        </div>
-      )}
       {/* Animated background keyframes (match Login page) */}
       <style>{`
         @keyframes float {
@@ -435,8 +453,10 @@ export default function CompleteProfilePage() {
           <div className="mt-2 flex justify-between text-xs text-gray-600">
             <span className={step >= 0 ? 'font-medium text-gray-900' : ''}>Username</span>
             <span className={step >= 1 ? 'font-medium text-gray-900' : ''}>Full name</span>
-            <span className={step >= 2 ? 'font-medium text-gray-900' : ''}>Avatar</span>
-            <span className={step >= 3 ? 'font-medium text-gray-900' : ''}>DOB</span>
+            <span className={step >= 2 ? 'font-medium text-gray-900' : ''}>Password</span>
+            <span className={step >= 3 ? 'font-medium text-gray-900' : ''}>Confirm</span>
+            <span className={step >= 4 ? 'font-medium text-gray-900' : ''}>Avatar</span>
+            <span className={step >= 5 ? 'font-medium text-gray-900' : ''}>DOB</span>
           </div>
         </div>
 
@@ -525,6 +545,102 @@ export default function CompleteProfilePage() {
             </div>
           )}
           {step === 2 && (
+            <div>
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', width: '100%', fontSize: '15px', lineHeight: '26px', position: 'relative', borderRadius: '10px',
+                  border: (password && password.length < 8) ? '1px solid #b91c1c' : (passwordFocused ? '1px solid #000' : '1px solid rgba(15, 15, 15, 0.1)'), background: 'transparent', cursor: 'text',
+                  paddingTop: '4px', paddingBottom: '4px', paddingInline: '10px', marginTop: '4px', marginBottom: '12px', height: '40px', boxSizing: 'border-box'
+                }}
+              >
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Create a password..."
+                  aria-label="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => setPasswordFocused(false)}
+                  style={{ fontSize: 'inherit', lineHeight: 'inherit', border: 'none', background: 'none', width: '100%', display: 'block', resize: 'none', padding: '0px 28px 0 0', outline: 'none' }}
+                />
+                <button
+                  type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPassword(v => !v)}
+                  style={{
+                    position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                    background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: 'pointer', color: 'rgba(0,0,0,0.6)'
+                  }}
+                >
+                  {showPassword ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M17.94 17.94C16.23 19.22 14.2 20 12 20 5.48 20 1 12.99 1 12.99S3.29 9.42 6.56 7.53" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M9.9 5.96C10.57 5.82 11.28 5.75 12 5.75c6.52 0 11 7 11 7s-1.18 1.83-3.24 3.43" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M14.12 9.88A3 3 0 0 1 12 15a3 3 0 0 1-3-3c0-.5.12-.98.33-1.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M3 3l18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <p className={`text-xs ${password && password.length < 8 ? 'text-red-600' : 'text-gray-500'}`}>
+                {password && password.length < 8 ? 'Password must be at least 8 characters' : 'At least 8 characters'}
+              </p>
+            </div>
+          )}
+          {step === 3 && (
+            <div>
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', width: '100%', fontSize: '15px', lineHeight: '26px', position: 'relative', borderRadius: '10px',
+                  border: confirmPasswordFocused ? '1px solid #000' : '1px solid rgba(15, 15, 15, 0.1)', background: 'transparent', cursor: 'text',
+                  paddingTop: '4px', paddingBottom: '4px', paddingInline: '10px', marginTop: '4px', marginBottom: '12px', height: '40px', boxSizing: 'border-box'
+                }}
+              >
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Confirm password..."
+                  aria-label="Confirm password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onFocus={() => setConfirmPasswordFocused(true)}
+                  onBlur={() => setConfirmPasswordFocused(false)}
+                  style={{ fontSize: 'inherit', lineHeight: 'inherit', border: 'none', background: 'none', width: '100%', display: 'block', resize: 'none', padding: '0px 28px 0 0', outline: 'none' }}
+                />
+                <button
+                  type="button"
+                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowConfirmPassword(v => !v)}
+                  style={{
+                    position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                    background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: 'pointer', color: 'rgba(0,0,0,0.6)'
+                  }}
+                >
+                  {showConfirmPassword ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M17.94 17.94C16.23 19.22 14.2 20 12 20 5.48 20 1 12.99 1 12.99S3.29 9.42 6.56 7.53" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M9.9 5.96C10.57 5.82 11.28 5.75 12 5.75c6.52 0 11 7 11 7s-1.18 1.83-3.24 3.43" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M14.12 9.88A3 3 0 0 1 12 15a3 3 0 0 1-3-3c0-.5.12-.98.33-1.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M3 3l18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <p className={`text-xs ${confirmPassword && confirmPassword !== password ? 'text-red-600' : 'text-gray-500'}`}>
+                {confirmPassword && confirmPassword !== password ? 'Passwords do not match' : 'Re-enter your password'}
+              </p>
+            </div>
+          )}
+          {step === 4 && (
             <div>
               {/* Hidden file input used for picking image */}
               <input
@@ -660,7 +776,7 @@ export default function CompleteProfilePage() {
               </div>
             </div>
           )}
-          {step === 3 && (
+          {step === 5 && (
             <div>
               <label className="block text-sm font-medium text-gray-700">Date of birth</label>
               {!useFallbackDob ? (

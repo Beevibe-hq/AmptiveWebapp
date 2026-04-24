@@ -18,7 +18,7 @@ import {
     Share2,
     Download} from 'lucide-react';
 import { logout as apiSignOut, getSession } from '@/lib/api/auth';
-import { getEvent, getEventsByUser } from '@/lib/api/events';
+import { getEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
 import DashboardOrders from './DashboardOrders';
@@ -112,7 +112,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const [eventsLoading, setEventsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshCount, setRefreshCount] = useState(0);
-    const [realEvents, setRealEvents] = useState<any[]>([]);
+    const [realEvents, setRealEvents] = useState<StandaloneEvent[]>([]);
 
     const [isPaused, setIsPaused] = useState(false);
     const [currentStatIndex, setCurrentStatIndex] = useState(0);
@@ -121,11 +121,11 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const CAROUSEL_DURATION = 5000;
 
     const upcomingEvents = realEvents.filter(event =>
-        new Date(event.start_time || event.created_at) >= new Date()
+        new Date(event.scheduled_for ?? event.created_at!) >= new Date()
     ).slice(0, 3);
 
     const upcomingCount = realEvents.filter(event =>
-        new Date(event.start_time || event.created_at) >= new Date()
+        new Date(event.scheduled_for ?? event.created_at!) >= new Date()
     ).length;
 
     const stats = [
@@ -230,7 +230,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             const session = await getSession();
             if (!session || !session.user) return;
 
-            const data = await getEventsByUser(session.user.user_id);
+            const data = await getEventsByUser();
             setRealEvents(data || []);
         } catch (error) {
             console.error('Error fetching dashboard events:', error);
@@ -772,7 +772,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                 ) : (
                                     // Real event cards
                                     upcomingEvents.map((event) => {
-                                        const startDate = new Date(event.start_time || event.created_at);
+                                        const startDate = new Date(event.scheduled_for ?? event.created_at!);
                                         const month = startDate.toLocaleString('default', { month: 'short' });
                                         const day = startDate.getDate().toString().padStart(2, '0');
                                         const time = startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -782,7 +782,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                         const total = totalCapacity;
 
                                         return (
-                                            <div key={event.id} className="flex items-center justify-between p-4 border border-black/5 rounded-xl hover:border-black/10 transition-colors group/card">
+                                            <div key={event.event_id} className="flex items-center justify-between p-4 border border-black/5 rounded-xl hover:border-black/10 transition-colors group/card">
                                                 <div className="flex items-center gap-4 min-w-0 flex-1">
                                                     {/* Date Box */}
                                                     <div className="bg-red-50 rounded-lg p-3 text-center min-w-[64px] shrink-0">
@@ -805,7 +805,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                             </div>
                                                             <div className="flex items-center gap-1 text-[11px] font-medium truncate">
                                                                 <MapPin className="w-3.5 h-3.5 shrink-0" />
-                                                                <span className="truncate">{event.venue || event.city || 'TBA'}</span>
+                                                                <span className="truncate">{event.location?.venue || event.location?.city || 'TBA'}</span>
                                                             </div>
                                                         </div>
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { verifyOtp, resendOtp } from '@/lib/api/otp';
 import { toastSuccess, toastInfo, toastError } from '@/lib/ui/toast';
+import { resendOtp, verifyOtp } from '@/lib/api/auth';
 
 export default function VerifyOtpPage() {
   const location = useLocation();

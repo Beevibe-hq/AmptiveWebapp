@@ -40,6 +40,7 @@ export interface RegisterRequest {
   dob: string;
   name?: string;
   phone_number?: string;
+  profile_picture?: string;
 }
 
 export interface RefreshTokenRequest {
@@ -107,7 +108,7 @@ export const $auth = {
     api.post<LoginResponse>(`${AUTH_PREFIX}/login`, data),
 
   register: (data: RegisterRequest) =>
-    api.post<StandardResponse<unknown>>(`${AUTH_PREFIX}/register`, data),
+    api.post<StandardResponse<AuthResponse>>(`${AUTH_PREFIX}/register`, data),
 
   refresh: (data: RefreshTokenRequest) =>
     api.post<RefreshTokenResponse>(`${AUTH_PREFIX}/refresh`, data),
@@ -133,7 +134,7 @@ export const $events = {
   },
 
   getById: (eventId: string) =>
-    api.get<unknown>(`${EVENTS_PREFIX}/${eventId}/`),
+    api.get<unknown>(`${EVENTS_PREFIX}/${eventId}`),
 
   create: (event: unknown) =>
     api.post<unknown>(`${EVENTS_PREFIX}/`, event),
@@ -144,8 +145,8 @@ export const $events = {
   delete: (eventId: string) =>
     api.delete<unknown>(`${EVENTS_PREFIX}/${eventId}`),
 
-  getByUserId: (userId: string) =>
-    api.get<{ events: unknown[]; total: number }>(`${EVENTS_PREFIX}?userId=${userId}`),
+  getForCurrentUser: () =>
+    api.get<{ events: unknown[]; total: number }>(`${EVENTS_PREFIX}/me/`),
 
   publish: (eventId: string) =>
     api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/publish`),
@@ -188,14 +189,17 @@ export const $tickets = {
   getById: (ticketId: string) =>
     api.get<unknown>(`${TICKETS_PREFIX}/${ticketId}`),
 
+  getForEvent: (eventId: string) =>
+    api.get<unknown>(`${TICKETS_PREFIX}/events/${eventId}/list`),
+
   create: (eventId: string, tickets: unknown) =>
-    api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/tickets`, tickets),
+    api.post<unknown>(`${TICKETS_PREFIX}/event/${eventId}/create`, tickets),
 
   update: (ticketId: string, ticket: unknown) =>
-    api.put<unknown>(`${TICKETS_PREFIX}/${ticketId}`, ticket),
+    api.put<unknown>(`${TICKETS_PREFIX}/${ticketId}/update`, ticket),
 
   delete: (ticketId: string) =>
-    api.delete<unknown>(`${TICKETS_PREFIX}/${ticketId}`),
+    api.delete<unknown>(`${TICKETS_PREFIX}/${ticketId}/deactivate`),
 
   bulkDelete: (ticketIds: string[]) =>
     api.post<unknown>(`${TICKETS_PREFIX}/bulk-delete`, { ids: ticketIds }),

@@ -14,7 +14,6 @@ import Community from './pages/Community';
 import AITool from './pages/AITool';
 import NewChat from './pages/NewChat';
 import ChatMode from './pages/ChatMode';
-import Help from './pages/Help';
 import Download from './pages/Download';
 import LoginPage from './pages/Login';
 import SignupPage from './pages/Signup';

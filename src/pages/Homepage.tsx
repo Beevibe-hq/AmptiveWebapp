@@ -66,7 +66,6 @@ const TrendingCard: React.FC<TrendingCardProps> = ({
   </div>
 );
 // Images moved to public directory for Netlify
-const weCanDoHardThingsImage = '/images/we-can-do-hard-things.jpeg';
 import EventCard, { MediaSource } from '../components/EventCard';
 import GeometricPattern from '../components/GeometricPattern';
 
@@ -75,7 +74,7 @@ interface EventType {
   title: string;
   location: string;
   country: string;
-  status: string;
+  ticket_status: string;
   price: number | Array<{ type: string; price: number }>;
   date: string;
   media: MediaSource;
@@ -445,36 +444,19 @@ const Homepage: React.FC = () => {
         setLoadingEvents(true);
 
         const eventsData = await listEvents({ page_size: 20 });
-
         // Transform database events to match EventType interface
         const transformedEvents: EventType[] = (eventsData || []).map((event: any) => {
-          const eventDate = new Date(event.scheduled_for);
-          const now = new Date();
-          const isLiveNow = eventDate <= now && eventDate >= new Date(now.getTime() - 3 * 60 * 60 * 1000);
-
-          let price: number | Array<{ type: string; price: number }> = 0;
-          if (event.tickets && event.tickets.length > 0) {
-            if (event.tickets.length === 1) {
-              price = event.tickets[0].price;
-            } else {
-              price = event.tickets.map((t: any) => ({
-                type: t.label,
-                price: t.price
-              }));
-            }
-          }
-
           return {
-            id: event.id,
+            id: event.event_id,
             title: event.title,
             location: event.venue || 'Online',
             country: event.city || 'Nigeria',
-            status: isLiveNow ? 'Live Now' : 'Upcoming',
-            price,
+            ticket_status: event.is_sold_out? 'Sold Out': 'On Sale',
+            price: event.price_from,
             date: event.scheduled_for ? new Date(event.scheduled_for).toISOString() : '',
             media: {
               type: 'image' as const,
-              src: event.thumbnail_url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30',
+              src: event.thumbnail_url,
               alt: event.title
             }
           };
@@ -772,7 +754,7 @@ const Homepage: React.FC = () => {
     // Filter by status
     if (filters.status === 'Ticket on sale') {
       // Show only events that are not sold out
-      result = result.filter(event => event.status !== 'Sold Out');
+      result = result.filter(event => event.ticket_status !== 'Sold Out');
     }
     // If status is 'ALL', show all events including sold out
 
@@ -1465,7 +1447,7 @@ const Homepage: React.FC = () => {
                         <EventCard
                           title={event.title}
                           location={event.location}
-                          status={event.status}
+                          status={event.ticket_status}
                           price={event.price}
                           date={event.date}
                           media={event.media}
@@ -1520,7 +1502,7 @@ const Homepage: React.FC = () => {
                         <EventCard
                           title={event.title}
                           location={event.location}
-                          status={event.status}
+                          status={event.ticket_status}
                           price={event.price}
                           date={event.date}
                           media={event.media}
@@ -1614,9 +1596,9 @@ const Homepage: React.FC = () => {
                     </div>
                     <div>
                       <div className="inline-block">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${event.status === 'Sold Out' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800'
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${event.ticket_status === 'Sold Out' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800'
                           }`}>
-                          {event.status === 'Sold Out' ? 'Sold out' : 'Ticket on sale'}
+                          {event.ticket_status === 'Sold Out' ? 'Sold out' : 'Ticket on sale'}
                         </span>
                       </div>
                     </div>
@@ -1671,7 +1653,7 @@ const Homepage: React.FC = () => {
                       <EventCard
                         title={event.title}
                         location={event.location}
-                        status={event.status}
+                        status={event.ticket_status}
                         price={event.price}
                         date={event.date}
                         media={event.media}

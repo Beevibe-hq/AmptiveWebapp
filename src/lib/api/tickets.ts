@@ -14,7 +14,7 @@ export interface Ticket {
 }
 
 export async function getTicketsForEvent(eventId: string): Promise<Ticket[]> {
-  return $tickets.create(eventId, []) as unknown as Promise<Ticket[]>;
+  return $tickets.getForEvent(eventId) as unknown as Promise<Ticket[]>;
 }
 
 export async function getTicket(ticketId: string): Promise<Ticket | null> {
@@ -25,8 +25,8 @@ export async function getTicket(ticketId: string): Promise<Ticket | null> {
   }
 }
 
-export async function createTicket(ticket: Omit<Ticket, 'id' | 'created_at'>): Promise<{ id: string }> {
-  return { id: '' };
+export async function createTicket(ticket: Omit<Ticket, 'id' | 'created_at'>, eventId: string): Promise<Ticket> {
+  return $tickets.create(eventId, ticket) as unknown as Promise<Ticket>;
 }
 
 export async function createTickets(eventId: string, tickets: Omit<Ticket, 'id' | 'created_at'>[]): Promise<{ ok: boolean; error?: string }> {
