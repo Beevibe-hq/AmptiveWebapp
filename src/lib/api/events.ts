@@ -1,6 +1,7 @@
 import { $events } from './services';
 
 export interface StandaloneEvent {
+  event_tickets: any;
   event_id: string;
   title: string;
   description?: string | null;
@@ -60,16 +61,30 @@ export interface StandaloneEventCreateRequest {
   title: string;
   description?: string;
   thumbnail_url?: string;
+  category?: string;
+  show_type: 'free' | 'paid';
+  price?: number;
   scheduled_for?: string;
-  event_type?: string;
+  community_id?: string;
+  tag_ids?: string[];
+  co_host_ids?: string[];
+  hand_raising: boolean;
+  allow_whispers: boolean;
 }
 
 export interface StandaloneEventUpdateRequest {
   title?: string;
   description?: string;
   thumbnail_url?: string;
+  category?: string;
+  show_type?: 'free' | 'paid';
+  price?: number;
   scheduled_for?: string;
-  event_type?: string;
+  community_id?: string;
+  tag_ids?: string[];
+  co_host_ids?: string[];
+  hand_raising?: boolean;
+  allow_whispers?: boolean;
 }
 
 export type Event = StandaloneEvent;
@@ -132,8 +147,8 @@ export async function deleteEvent(eventId: string): Promise<{ ok: boolean; error
   }
 }
 
-export async function getEventsByUser(userId: string): Promise<StandaloneEvent[]> {
-  const response = await $events.getByUserId(userId);
+export async function getEventsByUser(): Promise<StandaloneEvent[]> {
+  const response = await $events.getForCurrentUser();
   return (response?.events || []) as StandaloneEvent[];
 }
 

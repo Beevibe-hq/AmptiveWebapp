@@ -198,6 +198,8 @@ const EventDetail = () => {
 
         // Fetch Dominant Color
         if (eventData.thumbnail_url) {
+                  console.log("event data =>", eventData);
+
           extractDominantColors(eventData.thumbnail_url).then(colors => {
             if (colors[0]) {
               // Convert hex to rgb for background style
@@ -215,6 +217,8 @@ const EventDetail = () => {
 
         // Fetch Tickets
         const ticketData = await getTicketsForEvent(id);
+        console.log("tickets daata", ticketData);
+        
         setTickets(ticketData);
 
         // Fetch Organizer

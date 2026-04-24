@@ -1,1 +1,0 @@
-export { checkEmailExists } from '@/lib/api/auth';

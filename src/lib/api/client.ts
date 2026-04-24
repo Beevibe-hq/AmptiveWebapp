@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://amptive.onrender.com/api/v1';
 const ACCESS_TOKEN_KEY = 'amptive.auth_token';
 const REFRESH_TOKEN_KEY = 'amptive.refresh_token';
 const ACCESS_TOKEN_EXPIRY_KEY = 'amptive.auth_token_expiry';
@@ -69,22 +69,31 @@ async function refreshAccessToken(): Promise<boolean> {
 
 let refreshPromise: Promise<boolean> | null = null;
 
-function isTokenExpired(): boolean {
+function isTokenExpiringSoon(bufferMs = 5 * 60 * 1000): boolean {
   const expiryStr = localStorage.getItem(ACCESS_TOKEN_EXPIRY_KEY);
-  if (!expiryStr) return false;
+  if (!expiryStr) return true;
   
   const expiry = parseInt(expiryStr, 10);
-  if (isNaN(expiry)) return false;
+  if (isNaN(expiry)) return true;
   
-  return Date.now() > expiry;
+  return Date.now() + bufferMs > expiry;
 }
 
 async function ensureValidToken(): Promise<boolean> {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (!token) return false;
   
-  if (isTokenExpired()) {
+  if (isTokenExpiringSoon(0)) {
     return false;
+  }
+  
+  if (isTokenExpiringSoon()) {
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken();
+    }
+    const success = await refreshPromise;
+    refreshPromise = null;
+    if (!success) return false;
   }
   
   return true;
@@ -145,7 +154,8 @@ async function request<T>(
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    const errorMessage = errorBody.message || errorBody.detail || `HTTP ${response.status}`;
+    console.error('API Error Response:', errorBody);
+    const errorMessage = errorBody.message || errorBody.detail || JSON.stringify(errorBody) || `HTTP ${response.status}`;
     throw new Error(errorMessage);
   }
 
@@ -252,6 +262,12 @@ export const api = {
   getToken: () => localStorage.getItem(ACCESS_TOKEN_KEY),
 
   getRefreshToken: () => localStorage.getItem(REFRESH_TOKEN_KEY),
+
+  getProxiedImageUrl: (imageUrl: string): string => {
+    if (!imageUrl) return '';
+    const isExternal = /^https?:\/\//.test(imageUrl);
+    return isExternal ? `${API_BASE}/extras/image-proxy?url=${encodeURIComponent(imageUrl)}` : imageUrl;
+  },
 };
 
 export { API_BASE };

@@ -1,7 +1,7 @@
 import { api } from './client';
 import { UserProfile, normalizeUserProfile } from './profiles';
 import { $auth, $users } from './services';
-import type { AvailabilityResponse, LoginRequest, RegisterRequest } from './services';
+import type { LoginRequest, RegisterRequest } from './services';
 
 function decodeTokenExpiry(token: string): number | undefined {
   try {
@@ -53,6 +53,7 @@ export interface RegisterOptions {
   dob?: string;
   name?: string;
   phone_number?: string;
+  profile_picture?: string;
 }
 
 export interface AuthResponse {
@@ -123,28 +124,33 @@ export async function login(email: string, password: string, phoneNumber?: strin
   }
 }
 
-export const signInWithEmail = login;
-
-export async function register(email: string, password: string, options?: RegisterOptions): Promise<AuthResponse> {
-  if (!options?.username || !options?.dob) {
-    return unsupportedAuthResponse('Registration now requires username and date of birth before calling the backend.');
-  }
-
+export async function register(email: string, password: string, options?: RegisterOptions): Promise<any> {
   try {
     const registerData: RegisterRequest = {
       email,
       password,
-      username: options.username,
-      dob: options.dob,
-      name: options.name,
-      phone_number: options.phone_number,
+      username: options?.username!,
+      dob: options?.dob!,
+      name: options?.name,
+      phone_number: options?.phone_number,
+      profile_picture: options?.profile_picture,
     };
-    const response = await $auth.register(registerData);
+    const response = await $auth.register(registerData) as unknown as {user: UserProfile; access_token: string; refresh_token: string};
+    const user = response.user;
+    const accessToken = response.access_token;
+    const refreshToken = response.refresh_token;
+
+    if (accessToken) {
+      const expiresIn = 86400;
+      api.setSessionTokens(accessToken, refreshToken ?? '', expiresIn);
+    }
 
     return {
-      status: response.status,
-      message: response.message,
-      data: {},
+      status: true,
+      message: 'Registered successfully',
+      user,
+      access_token: accessToken,
+      refresh_token: refreshToken,
     };
   } catch (error: any) {
     return unsupportedAuthResponse(error.message);
@@ -258,27 +264,13 @@ export async function isVerified(_email: string): Promise<{ verified: boolean }>
   return { verified: false };
 }
 
-export async function checkEmailExists(email: string): Promise<{ exists: boolean; available?: boolean; message?: string }> {
+export async function checkEmailExists(email: string): Promise<boolean> {
   try {
-    const response = await $auth.checkAvailability({ email });
-    return { exists: !response.status, available: response.status, message: response.message };
-  } catch (error: any) {
-    return { exists: false, available: false, message: error.message };
+    const response = await $auth.checkAvailability({ email });    
+    return response.status === true;
+  } catch {
+    return false;
   }
-}
-
-export async function stashSignup(_email: string, _password: string): Promise<{ ok: boolean; token?: string; ttlSeconds?: number; message?: string }> {
-  return {
-    ok: false,
-    message: 'Signup credential stashing is not supported by the current backend contract.',
-  };
-}
-
-export async function consumeSignup(_token: string): Promise<{ ok: boolean; email?: string; password?: string; message?: string }> {
-  return {
-    ok: false,
-    message: 'Signup credential consumption is not supported by the current backend contract.',
-  };
 }
 
 export async function getNormalizedCurrentUserResponse(): Promise<UserResponse> {

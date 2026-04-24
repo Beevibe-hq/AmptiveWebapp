@@ -1,10 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signUpWithEmail } from '@/lib/api/auth';
-import { stashSignup } from '@/lib/api/otp';
-import { toast } from 'sonner';
-import { checkEmailExists } from '@/lib/api/checkEmail';
-import { useAuth } from '@/contexts/AuthContext';
+import { SIGNUP_KEYS } from '@/lib/constants';
+import { checkEmailExists } from '@/lib/api/auth';
 
 const socialButtonContainer: React.CSSProperties = {
   position: 'relative',
@@ -47,114 +44,51 @@ const socialIconStyle: React.CSSProperties = {
 };
 
 interface SignupFormProps {
-  onSuccess?: () => void;
   initialEmail?: string;
 }
 
-export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps) {
+export default function SignupForm({ initialEmail }: SignupFormProps) {
   const navigate = useNavigate();
-  const { refreshUser } = useAuth();
   const [email, setEmail] = useState(initialEmail ?? '');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<'email' | 'password'>('email');
   const [emailFocused, setEmailFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [showSocialTooltip, setShowSocialTooltip] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      sessionStorage.removeItem(SIGNUP_KEYS.email);
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (step === 'email') {
-      const normalizedEmail = email.trim().toLowerCase();
-      
-      // Validate email format
-      const emailOk = /.+@.+\..+/.test(normalizedEmail);
-      if (!emailOk) {
-        setError('Please enter a valid email address.');
-        return;
-      }
-      
-      // Check if email exists
-      setLoading(true);
-      try {
-        const { exists } = await checkEmailExists(normalizedEmail);
-        
-        if (exists) {
-          setError('This email is already registered. Please sign in instead.');
-          return;
-        }
-        
-        // If we get here, email is valid and not registered
-        setError(null);
-        setStep('password');
-      } catch (err) {
-        console.error('Email check failed:', err);
-        setError('Failed to check email. Please try again.');
-      } finally {
-        setLoading(false);
-      }
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const emailOk = /.+@.+\..+/.test(normalizedEmail);
+    if (!emailOk) {
+      setError('Please enter a valid email address.');
       return;
     }
 
-    // Don't submit if already loading
-    if (loading) return;
-    
     setLoading(true);
     try {
-      const normalizedEmail = email.trim().toLowerCase();
-      if (!password || password.length < 8) {
-        setError('Your password should be at least 8 characters.');
+      const isAvailable = await checkEmailExists(normalizedEmail);
+
+      if (!isAvailable) {
+        setError('This email is already registered. Please sign in instead.');
         setLoading(false);
         return;
       }
-      
-      console.log('Attempting to sign up with:', { email: normalizedEmail });
-      const { data, error } = await signUpWithEmail(normalizedEmail, password);
-      
-      if (error) {
-        console.error('Signup error:', error);
-        const msg = (error || '').toLowerCase();
-        if (msg.includes('already registered') || msg.includes('already in use')) {
-          setError('An account with this email already exists. Please sign in instead.');
-        } else if (msg.includes('password')) {
-          setError('Password is not strong enough. Please choose a stronger password.');
-        } else {
-          setError('Sign up failed. Please try again.');
-        }
-        setLoading(false);
-        return;
-      }
-      
-      console.log('Signup response:', data);
 
-      // Securely stash credentials server-side and pass one-time token via navigation state
-      const signupToken = sessionStorage.getItem('amptive_signup_pending');
-      let tokenState: string | undefined;
-      try {
-        const stash = await stashSignup(normalizedEmail, password);
-        if (stash.ok && stash.token) {
-          sessionStorage.setItem('amptive_signup_pending', stash.token);
-          tokenState = stash.token;
-          sessionStorage.setItem('amptive_signup_email', normalizedEmail);
-        } else {
-          toast.warning('Could not prepare auto sign-in. You can still complete verification.');
-        }
-      } catch (e) {
-        sessionStorage.removeItem('amptive_signup_pending');
-        toast.warning('Network issue preparing secure sign-in. You can still complete verification.');
-      }
-
-      // Navigate to OTP verification page with email in query param (for back navigation)
-      // Token stored in sessionStorage (not URL) - cleared on tab close
-      navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`, { state: { token: tokenState } });
-      return;
-    } catch (err: any) {
-      console.error('Unexpected signup error:', err);
-      setError('Something went wrong. Please try again.');
+      sessionStorage.setItem(SIGNUP_KEYS.email, normalizedEmail);
+      navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`);
+    } catch (err) {
+      console.error('Email check failed:', err);
+      setError('Failed to check email. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
@@ -229,14 +163,8 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
         <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(0,0,0,0.1)' }}></div>
       </div>
 
-      {/* Email step */}
-      <div style={{
-        opacity: step === 'email' ? 1 : 0,
-        maxHeight: step === 'email' ? 140 : 0,
-        overflow: 'hidden',
-        transform: step === 'email' ? 'translateY(0)' : 'translateY(-4px)',
-        transition: 'opacity 150ms ease-in-out, max-height 150ms ease-in-out, transform 150ms ease-in-out'
-      }}>
+      {/* Email input */}
+      <div style={{ marginBottom: '12px' }}>
         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
           Email
         </label>
@@ -255,7 +183,7 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
           paddingBottom: '4px',
           paddingInline: '10px',
           marginTop: '4px',
-          marginBottom: step === 'email' ? '12px' : '0px',
+          marginBottom: '12px',
           height: '40px',
           boxSizing: 'border-box'
         }}>
@@ -280,8 +208,8 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
             }}
             onFocus={() => { setEmailFocused(true); setError(null); }}
             onBlur={() => setEmailFocused(false)}
-            required={step === 'email'}
-            autoFocus={step === 'email'}
+            required
+            autoFocus
           />
           {email && (
             <div style={{ display: 'contents' }}>
@@ -315,143 +243,6 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
         </div>
       </div>
 
-      {/* Password step */}
-      <div style={{
-        opacity: step === 'password' ? 1 : 0,
-        maxHeight: step === 'password' ? 140 : 0,
-        overflow: 'hidden',
-        transform: step === 'password' ? 'translateY(0)' : 'translateY(4px)',
-        transition: 'opacity 150ms ease-in-out, max-height 150ms ease-in-out, transform 150ms ease-in-out'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-          <button
-            type="button"
-            onClick={() => setStep('email')}
-            aria-label="Go back to email"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 8px',
-              borderRadius: '9999px',
-              backgroundColor: 'rgba(0,0,0,0.04)',
-              border: '1px solid rgba(0,0,0,0.08)',
-              maxWidth: '100%',
-              cursor: 'pointer'
-            }}
-          >
-            <svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14" style={{ display: 'block', fill: 'currentColor', color: 'rgba(0,0,0,0.7)' }}>
-              <path d="M12.707 15.707a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 011.414 1.414L8.414 10l4.293 4.293a1 1 0 010 1.414z" />
-            </svg>
-            <span style={{
-              fontSize: '12px',
-              color: 'rgba(0,0,0,0.75)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: '200px'
-            }}>{email}</span>
-          </button>
-        </div>
-        <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-          Password
-        </label>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          width: '100%',
-          fontSize: '15px',
-          lineHeight: '26px',
-          position: 'relative',
-          borderRadius: '10px',
-          border: (password && password.length < 8) ? '1px solid #b91c1c' : (passwordFocused ? '1px solid #000' : '1px solid rgba(15, 15, 15, 0.1)'),
-          background: 'transparent',
-          cursor: 'text',
-          paddingTop: '4px',
-          paddingBottom: '4px',
-          paddingInline: '10px',
-          marginTop: '4px',
-          marginBottom: step === 'password' ? '2px' : '0px',
-          height: '40px',
-          boxSizing: 'border-box'
-        }}>
-          <input
-            id="password"
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Create a password..."
-            aria-label="Create a password..."
-            aria-describedby="password-help"
-            aria-invalid={password.length > 0 && password.length < 8}
-            minLength={8}
-            style={{
-              fontSize: 'inherit',
-              lineHeight: 'inherit',
-              border: 'none',
-              background: 'none',
-              width: '100%',
-              display: 'block',
-              resize: 'none',
-              padding: '0px 28px 0 0',
-              outline: 'none'
-            }}
-            onFocus={() => { setPasswordFocused(true); setError(null); }}
-            onBlur={() => setPasswordFocused(false)}
-            required={step === 'password'}
-            autoFocus={step === 'password'}
-          />
-          {/* Toggle password visibility */}
-          <button
-            type="button"
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
-            aria-pressed={showPassword}
-            onClick={() => setShowPassword(v => !v)}
-            style={{
-              position: 'absolute',
-              right: '8px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              margin: 0,
-              cursor: 'pointer',
-              color: 'rgba(0,0,0,0.6)'
-            }}
-          >
-            {showPassword ? (
-              // Eye-off icon
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M17.94 17.94C16.23 19.22 14.2 20 12 20 5.48 20 1 12.99 1 12.99S3.29 9.42 6.56 7.53" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M9.9 5.96C10.57 5.82 11.28 5.75 12 5.75c6.52 0 11 7 11 7s-1.18 1.83-3.24 3.43" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M14.12 9.88A3 3 0 0 1 12 15a3 3 0 0 1-3-3c0-.5.12-.98.33-1.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M3 3l18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            ) : (
-              // Eye icon
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
-              </svg>
-            )}
-          </button>
-        </div>
-        <div style={{ marginTop: '0px' }}>
-          <span
-            id="password-help"
-            style={{
-              fontSize: '12px',
-              color: password && password.length > 0 && password.length < 8 ? '#b91c1c' : 'rgba(0,0,0,0.6)',
-              paddingBottom: '12px',
-              display: 'block'
-            }}
-          >
-            Your password should be at least 8 characters.
-          </span>
-        </div>
-      </div>
-
       {/* Submit */}
       <div style={{ marginBottom: '16px' }}>
         <button
@@ -470,14 +261,8 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
             transition: 'opacity 0.2s ease, background-color 0.2s ease',
             opacity: loading ? 0.7 : 1
           }}
-          onClick={(e) => {
-            if (loading) {
-              e.preventDefault();
-              return;
-            }
-          }}
         >
-          {step === 'email' ? (loading ? 'Continue...' : 'Continue') : (loading ? 'Creating account...' : 'Create account')}
+          {loading ? 'Continue...' : 'Continue'}
         </button>
       </div>
       {error && (

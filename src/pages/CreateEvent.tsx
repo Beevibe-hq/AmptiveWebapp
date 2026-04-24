@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
+import { Loader2, Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent } from '@/lib/api/events';
@@ -9,6 +9,7 @@ import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import RichTextEditor from '@/components/RichTextEditor';
 import LocationPicker from '@/components/LocationPicker';
 import { QRCodeSVG } from 'qrcode.react';
+import { api } from '@/lib/api/client';
 
 type TicketTheme = 'silver' | 'bronze' | 'gold' | 'platinum' | 'obsidian';
 
@@ -87,15 +88,10 @@ type FormState = {
   coverImage: string;
   locationType: 'physical' | 'online';
   tickets: EventTicket[];
+  showType: 'free' | 'paid';
+  handRaising: boolean;
+  allowWhispers: boolean;
 };
-
-const PREVIEW_GRADIENTS = [
-  'from-gray-100 via-orange-50/30 to-gray-100',
-  'from-blue-50 via-indigo-50/30 to-slate-50',
-  'from-rose-50 via-orange-50/30 to-yellow-50',
-  'from-emerald-50 via-teal-50/30 to-cyan-50',
-  'from-violet-50 via-fuchsia-50/30 to-purple-50'
-];
 
 const GALLERY_IMAGES = [
   '/images/2684.jpg',
@@ -144,6 +140,9 @@ const buildInitialFormState = (): FormState => {
     coverImage: '',
     locationType: 'physical',
     tickets: [],
+    showType: 'free',
+    handRaising: false,
+    allowWhispers: false,
   };
 };
 
@@ -361,7 +360,7 @@ const CreateEvent = () => {
 
   const handleCancelTicketForm = () => {
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
 
@@ -371,7 +370,10 @@ const CreateEvent = () => {
     return new Promise((resolve) => {
       const img = new window.Image();
       img.crossOrigin = 'Anonymous';
-      img.src = imageUrl;
+      const isExternal = /^https?:\/\//.test(imageUrl);
+      img.src = isExternal
+        ? api.getProxiedImageUrl(imageUrl)
+        : imageUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
@@ -422,7 +424,7 @@ const CreateEvent = () => {
               navigate('/login');
             }
           } else {
-            const u =  await getCurrentUser()
+            const u = await getCurrentUser()
             setUserId(u?.user_id || '');
             setReady(true);
           }
@@ -466,37 +468,23 @@ const CreateEvent = () => {
         const event = await getEvent(id);
         if (!event) throw new Error('Event not found');
 
-        if (event.user_id !== userId) {
+        if (event.host?.user_id !== userId) {
           toastError("You don't have permission to edit this event.");
           navigate('/dashboard/events');
           return;
         }
 
-        const tickets = await getTicketsForEvent(id);
+        await getTicketsForEvent(id);
 
-        setForm({
+        setForm(prev => ({
+          ...prev,
           title: event.title || '',
-          summary: event.summary || '',
           description: event.description || '',
-          startDateTime: safeFormat(event.start_time),
-          endDateTime: safeFormat(event.end_time),
-          venue: event.venue || '',
-          city: event.city || '',
-          latitude: event.latitude,
-          longitude: event.longitude,
-          coverImage: event.cover_image || '',
-          locationType: event.location_type || 'physical',
-          tickets: (tickets || []).map((t: any) => ({
-            id: t.id,
-            title: t.label,
-            price: t.price,
-            currency: t.currency,
-            benefits: t.benefits || [],
-            colorTheme: t.color_theme,
-            quantity: t.quantity
-          }))
-        });
-        setCoverPreview(event.cover_image || '');
+          startDateTime: safeFormat(event.scheduled_for),
+          endDateTime: safeFormat(event.ended_at),
+          coverImage: event.thumbnail_url || '',
+        }));
+        setCoverPreview(event.thumbnail_url || '');
       } catch (error) {
         console.error('Error fetching event for edit:', error);
         toastError('Failed to load event data.');
@@ -655,17 +643,12 @@ const CreateEvent = () => {
 
       const insertPayload = {
         title: trimmedTitle,
-        description: form.description.trim() || null,
-        start_time: startTime.toISOString(),
-        end_time: endTimeIso,
-        location_type: form.locationType,
-        venue: form.locationType === 'online' ? null : (form.venue.trim() || null),
-        city: form.locationType === 'online' ? null : (form.city.trim() || null),
-        latitude: form.locationType === 'online' ? null : form.latitude,
-        longitude: form.locationType === 'online' ? null : form.longitude,
-        cover_image: coverImageUrl.trim() || null,
-        user_id: userId,
-        status: 'published',
+        description: form.description.trim() || undefined,
+        thumbnail_url: coverImageUrl.trim() || undefined,
+        show_type: form.showType,
+        scheduled_for: startTime.toISOString(),
+        hand_raising: form.handRaising,
+        allow_whispers: form.allowWhispers,
       };
 
       console.log('Submitting event payload:', insertPayload);
@@ -705,7 +688,7 @@ const CreateEvent = () => {
         const existingTickets = form.tickets.filter(t => !t.id.startsWith('ticket-'));
 
         // Insert new tickets
-        if (newTickets.length > 0) {
+        if (newTickets.length > 0 && eventId) {
           const ticketInserts = newTickets.map(ticket => ({
             event_id: eventId,
             label: ticket.title,
@@ -717,7 +700,7 @@ const CreateEvent = () => {
             is_physical: false,
           }));
 
-          await createTickets(eventId!, ticketInserts);
+          await createTickets(eventId, ticketInserts);
         }
 
         // Update existing tickets
@@ -834,6 +817,67 @@ const CreateEvent = () => {
                         onChange={(value) => setForm(prev => ({ ...prev, description: value }))}
                         placeholder="Description"
                       />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Event Settings */}
+                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    Settings
+                  </div>
+
+                  <div className="space-y-4 lg:px-2">
+                    {/* Free / Paid Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Paid Event</p>
+                        <p className="text-xs text-gray-500">Charge for tickets</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, showType: prev.showType === 'free' ? 'paid' : 'free' }))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.showType === 'paid' ? 'bg-amber-500' : 'bg-gray-200'}`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.showType === 'paid' ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Hand Raising Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Hand Raising</p>
+                        <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Allow Whispers Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
+                        <p className="text-xs text-gray-500">Private messages between attendees</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
                     </div>
                   </div>
                 </section>

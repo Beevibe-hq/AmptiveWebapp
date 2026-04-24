@@ -79,8 +79,6 @@ export default function Explore() {
         try {
             const eventsData = await listEvents({ page_size: 100 });
 
-            console.log('Fetch Events Debug:', { eventsData });
-
             let enriched: any[] = [];
             if (eventsData && eventsData.length > 0) {
                 enriched = eventsData.map(e => ({

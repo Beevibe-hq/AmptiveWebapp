@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { Plus, Search, CalendarDays, Ticket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getSession } from '@/lib/api/auth';
-import { getEventsByUser } from '@/lib/api/events';
+import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 
 export default function DashboardEvents() {
-    const [events, setEvents] = useState<any[]>([]);
+    const [events, setEvents] = useState<StandaloneEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [activeFilter, setActiveFilter] = useState('Upcoming');
@@ -20,7 +20,7 @@ export default function DashboardEvents() {
                     return;
                 }
 
-                const data = await getEventsByUser(session.user.user_id);
+                const data = await getEventsByUser();
                 setEvents(data || []);
             } catch (error) {
                 console.error('Error fetching events:', error);
@@ -44,20 +44,20 @@ export default function DashboardEvents() {
     const filteredEvents = events
         .filter((event) => {
             if (activeFilter === 'All') return true;
-            if (activeFilter === 'Upcoming') return new Date(event.start_time || event.created_at) >= new Date();
-            if (activeFilter === 'Past') return new Date(event.start_time || event.created_at) < new Date();
-            if (activeFilter === 'Draft') return event.status === 'draft' || event.status === 'Draft';
+            if (activeFilter === 'Upcoming') return new Date(event.scheduled_for ?? '') >= new Date();
+            if (activeFilter === 'Past') return new Date(event.scheduled_for ?? '') < new Date();
+            if (activeFilter === 'Draft') return event.status.toLowerCase() === 'draft' || event.status === 'Draft';
             return true;
         })
         .sort((a, b) => {
             if (activeFilter === 'Upcoming') {
-                return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+                return new Date(a.scheduled_for!).getTime() - new Date(b.scheduled_for!).getTime();
             }
             if (activeFilter === 'Past') {
-                return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+                return new Date(b.scheduled_for!).getTime() - new Date(a.scheduled_for!).getTime();
             }
             // Default to newest first for All/Drafts
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            return new Date(b.scheduled_for!).getTime() - new Date(a.scheduled_for!).getTime();
         });
 
     useEffect(() => {
@@ -161,9 +161,9 @@ export default function DashboardEvents() {
                     ))
                 ) : (
                     paginatedEvents.map((event) => (
-                        <Link to={`/dashboard/events/${event.id}/edit`} key={event.id} className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm block group">
+                        <Link to={`/dashboard/events/${event.event_id}/edit`} key={event.event_id} className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm block group">
                             <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl overflow-hidden">
-                                <img src={event.cover_image || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87'} alt={event.title} className="w-full h-full object-cover rounded-lg group-hover:scale-[1.02] transition-transform duration-300" />
+                                <img src={event.thumbnail_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87'} alt={event.title} className="w-full h-full object-cover rounded-lg group-hover:scale-[1.02] transition-transform duration-300" />
 
                                 {/* Ticket Count Pill */}
                                 <div className="absolute top-4 right-4">
@@ -178,12 +178,12 @@ export default function DashboardEvents() {
                             <div className="p-3">
                                 <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
                                     <CalendarDays className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" />
-                                    <span>{event.start_time ? formatDate(event.start_time) : formatDate(event.created_at)}</span>
+                                    <span>{event.scheduled_for ? formatDate(event.scheduled_for!) : formatDate(event.created_at!)}</span>
                                 </div>
                                 <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{event.title}</h3>
                                 <div className="flex flex-col mb-2 mt-1">
                                     <span className="text-xs text-gray-500">Location</span>
-                                    <span className="font-medium text-sm text-gray-600 line-clamp-1">{event.venue || event.city || 'TBA'}</span>
+                                    <span className="font-medium text-sm text-gray-600 line-clamp-1">{event.location?.venue || event.location?.city || 'TBA'}</span>
                                 </div>
                                 <div className="mt-1.5 w-full">
                                     <div className="rounded-lg py-1.5 px-3 text-center w-full bg-[#F1F7FE] group-hover:bg-blue-100 transition-colors">
