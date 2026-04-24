@@ -1,22 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { signOut } from '@/lib/supabase/auth';
+import { useMemo, useState } from 'react';
+import { signOut } from '@/lib/api/auth';
 import { useNavigate } from 'react-router-dom';
-import { getProfileById } from '@/lib/supabase/profiles';
+import { useAuth } from '@/contexts/AuthContext';
 
-type SupaUser = {
-  id?: string;
-  email?: string;
-  user_metadata?: Record<string, any>;
-};
 
-export default function UserAvatar({ user }: { user: SupaUser }) {
+export default function UserAvatar() {
   const [isOpen, setIsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -24,50 +19,14 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
     window.location.reload();
   };
 
-  // Load avatar_url from profiles table (preferred)
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        setIsLoading(true);
-        if (!user?.id) return;
-        
-        // Small delay to show the skeleton (for demo purposes)
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const profile = await getProfileById(user.id);
-        if (cancelled) return;
-        
-        // If no avatar in profile but we have one in user_metadata, update the profile
-        if (!profile?.avatar_url && (user.user_metadata?.avatar_url || user.user_metadata?.picture)) {
-          const avatarUrl = user.user_metadata.avatar_url || user.user_metadata.picture;
-          await updateProfileAvatar(user.id, avatarUrl);
-          if (!cancelled) setProfileAvatarUrl(avatarUrl);
-        } else {
-          if (!cancelled) setProfileAvatarUrl(profile?.avatar_url || null);
-        }
-      } catch (error) {
-        console.error('Error loading profile avatar:', error);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-    run();
-    return () => { cancelled = true; };
-  }, [user?.id, user?.user_metadata?.avatar_url, user?.user_metadata?.picture]);
-
-  // Determine preferred avatar source: profiles.avatar_url -> provider avatar -> legacy data url
-  const uploadedAvatar: string | undefined =
-    profileAvatarUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || user?.user_metadata?.avatar_data_url;
-
   // Deterministic emoji avatar fallback
-  const seed = (user?.user_metadata?.username || user?.email || 'guest').toLowerCase();
+  const seed = (user?.username || user?.email || 'guest').toLowerCase();
   const emojiSet = useMemo(
-    () => ['😀','😎','🤠','🦄','🐼','🐸','🐯','🐵','🐧','🐰','🐨','🦊','🐙','🐳','🐝','🐢','🐞','🌸','🌼','🍀','🍉','🍓','🍍','⚡','⭐','🌙','☀️','🔥','🎧','🎨','🎯','🚀','🧠','💎','💜','💛','💚','💙','🧸'],
+    () => ['😀', '😎', '🤠', '🦄', '🐼', '🐸', '🐯', '🐵', '🐧', '🐰', '🐨', '🦊', '🐙', '🐳', '🐝', '🐢', '🐞', '🌸', '🌼', '🍀', '🍉', '🍓', '🍍', '⚡', '⭐', '🌙', '☀️', '🔥', '🎧', '🎨', '🎯', '🚀', '🧠', '💎', '💜', '💛', '💚', '💙', '🧸'],
     []
   );
   const bgSet = useMemo(
-    () => ['#FDE68A','#FFEDD5','#E9D5FF','#DBEAFE','#DCFCE7','#FCE7F3','#FFE4E6','#F3E8FF','#E0E7FF','#D1FAE5'],
+    () => ['#FDE68A', '#FFEDD5', '#E9D5FF', '#DBEAFE', '#DCFCE7', '#FCE7F3', '#FFE4E6', '#F3E8FF', '#E0E7FF', '#D1FAE5'],
     []
   );
   const hash = useMemo(() => {
@@ -79,45 +38,37 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
     return Math.abs(h);
   }, [seed]);
   const emoji = emojiSet[hash % emojiSet.length];
-  const emojiBg = bgSet[hash % bgSet.length];
 
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 text-black/80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black overflow-hidden"
-        aria-label="Account menu"
+        className="relative flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 overflow-hidden"
       >
-        {isLoading ? (
-          <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
-        ) : uploadedAvatar && !imgError ? (
+        {user?.profile_picture && !imgError && (
           <img
-            src={uploadedAvatar}
+            src={user.profile_picture}
             alt="Profile"
             className="w-full h-full object-cover"
-            onLoad={() => setIsLoading(false)}
+            onLoad={() => {
+              setIsLoading(false);
+            }}
             onError={() => {
               setImgError(true);
               setIsLoading(false);
             }}
           />
-        ) : (
-          <span 
-            className="text-base select-none" 
-            aria-hidden="true" 
-            style={{ 
-              background: 'transparent', 
-              width: '100%', 
-              height: '100%', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              backgroundColor: emojiBg 
-            }}
-          >
+        )}
+
+        {isLoading && (
+          <div className="absolute inset-0 bg-gray-200 animate-pulse rounded-full" />
+        )}
+
+        {!user?.profile_picture || imgError ? (
+          <span className="absolute inset-0 flex items-center justify-center">
             {emoji}
           </span>
-        )}
+        ) : null}
       </button>
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
@@ -138,3 +89,4 @@ export default function UserAvatar({ user }: { user: SupaUser }) {
     </div>
   );
 }
+

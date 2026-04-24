@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, Calendar, MapPin, Image as ImageIcon, StickyNote, Ticket, Clock, Upload, Sparkles, Wand2, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { Loader2, Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getEvent, createEvent as createNewEvent, updateEvent } from '@/lib/api/events';
+import { getTicketsForEvent, createTickets, updateTicket, deleteTickets } from '@/lib/api/tickets';
+import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import RichTextEditor from '@/components/RichTextEditor';
 import LocationPicker from '@/components/LocationPicker';
 import { QRCodeSVG } from 'qrcode.react';
+import { api } from '@/lib/api/client';
 
 type TicketTheme = 'silver' | 'bronze' | 'gold' | 'platinum' | 'obsidian';
 
@@ -85,15 +88,10 @@ type FormState = {
   coverImage: string;
   locationType: 'physical' | 'online';
   tickets: EventTicket[];
+  showType: 'free' | 'paid';
+  handRaising: boolean;
+  allowWhispers: boolean;
 };
-
-const PREVIEW_GRADIENTS = [
-  'from-gray-100 via-orange-50/30 to-gray-100',
-  'from-blue-50 via-indigo-50/30 to-slate-50',
-  'from-rose-50 via-orange-50/30 to-yellow-50',
-  'from-emerald-50 via-teal-50/30 to-cyan-50',
-  'from-violet-50 via-fuchsia-50/30 to-purple-50'
-];
 
 const GALLERY_IMAGES = [
   '/images/2684.jpg',
@@ -142,6 +140,9 @@ const buildInitialFormState = (): FormState => {
     coverImage: '',
     locationType: 'physical',
     tickets: [],
+    showType: 'free',
+    handRaising: false,
+    allowWhispers: false,
   };
 };
 
@@ -242,7 +243,6 @@ const AVAILABILITY_BADGE_CLASSES: Record<AvailabilityStatus, string> = {
 const CreateEvent = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const supabase = useMemo(() => createClient(), []);
 
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitting, setSubmitting] = useState(false);
@@ -360,7 +360,7 @@ const CreateEvent = () => {
 
   const handleCancelTicketForm = () => {
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
 
@@ -370,7 +370,10 @@ const CreateEvent = () => {
     return new Promise((resolve) => {
       const img = new window.Image();
       img.crossOrigin = 'Anonymous';
-      img.src = imageUrl;
+      const isExternal = /^https?:\/\//.test(imageUrl);
+      img.src = isExternal
+        ? api.getProxiedImageUrl(imageUrl)
+        : imageUrl;
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
@@ -409,21 +412,20 @@ const CreateEvent = () => {
     let cancelled = false;
     const hydrate = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (session) {
-          setUserId(session.user.id);
+        const user = await getCurrentUser();
+        if (user) {
+          setUserId(user.user_id);
           setReady(true);
         } else {
-          // If no session, try to refresh or redirect
-          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-          if (refreshError || !refreshed.session) {
+          const refreshed = await refreshSession();
+          if (!refreshed.data) {
             if (!cancelled) {
               toastError('Please sign in to create an event.');
               navigate('/login');
             }
           } else {
-            setUserId(refreshed.session.user.id);
+            const u = await getCurrentUser()
+            setUserId(u?.user_id || '');
             setReady(true);
           }
         }
@@ -440,7 +442,7 @@ const CreateEvent = () => {
     return () => {
       cancelled = true;
     };
-  }, [navigate, supabase]);
+  }, [navigate]);
 
   useEffect(() => {
     if (!ready || !id || !userId) return;
@@ -463,45 +465,26 @@ const CreateEvent = () => {
 
       setLoadingEvent(true);
       try {
-        const { data: event, error: eventError } = await supabase
-          .from('events')
-          .select('*, event_tickets(*)')
-          .eq('id', id)
-          .single();
+        const event = await getEvent(id);
+        if (!event) throw new Error('Event not found');
 
-        if (eventError) throw eventError;
-
-        if (event) {
-          if (event.user_id !== userId) {
-            toastError("You don't have permission to edit this event.");
-            navigate('/dashboard/events');
-            return;
-          }
-
-          setForm({
-            title: event.title || '',
-            summary: event.summary || '',
-            description: event.description || '',
-            startDateTime: safeFormat(event.start_time),
-            endDateTime: safeFormat(event.end_time),
-            venue: event.venue || '',
-            city: event.city || '',
-            latitude: event.latitude,
-            longitude: event.longitude,
-            coverImage: event.cover_image || '',
-            locationType: event.location_type || 'physical',
-            tickets: (event.event_tickets || []).map((t: any) => ({
-              id: t.id,
-              title: t.label,
-              price: t.price,
-              currency: t.currency,
-              benefits: t.benefits || [],
-              colorTheme: t.color_theme,
-              quantity: t.quantity
-            }))
-          });
-          setCoverPreview(event.cover_image || '');
+        if (event.host?.user_id !== userId) {
+          toastError("You don't have permission to edit this event.");
+          navigate('/dashboard/events');
+          return;
         }
+
+        await getTicketsForEvent(id);
+
+        setForm(prev => ({
+          ...prev,
+          title: event.title || '',
+          description: event.description || '',
+          startDateTime: safeFormat(event.scheduled_for),
+          endDateTime: safeFormat(event.ended_at),
+          coverImage: event.thumbnail_url || '',
+        }));
+        setCoverPreview(event.thumbnail_url || '');
       } catch (error) {
         console.error('Error fetching event for edit:', error);
         toastError('Failed to load event data.');
@@ -511,7 +494,7 @@ const CreateEvent = () => {
     };
 
     fetchEventData();
-  }, [id, ready, userId, supabase, navigate]);
+  }, [id, ready, userId, navigate]);
 
   useEffect(() => {
     setCoverPreview(form.coverImage);
@@ -591,74 +574,21 @@ const CreateEvent = () => {
   }, []);
 
   const uploadCoverImage = async (file: File): Promise<string> => {
+    const { uploadFile, getPublicUrl } = await import('@/lib/api/storage');
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const filePath = fileName;
 
     console.log('Upload Path:', filePath);
 
-    // Timeout Promise using a function so we can recreate it
-    const createTimeout = () => new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Upload timed out after 20 seconds')), 20000);
-    });
-
-    // Probe
-    console.log('Probing bucket access...');
     try {
-      const listPromise = supabase.storage.from('event-covers').list();
-      const probeTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Probe timed out')), 5000));
-      const { data: listData, error: listError } = await Promise.race([listPromise, probeTimeout]) as any;
-
-      if (listError) {
-        console.error('PROBE FAILED:', listError);
-        throw new Error(`Bucket probe failed: ${listError.message}`);
-      }
-      console.log('PROBE SUCCESS. Found', listData?.length, 'files.');
-    } catch (error) {
-      console.error('Probe Exception:', error);
-      // Continue to upload attempt anyway
+      const publicUrl = await uploadFile('event-covers', filePath, file);
+      console.log('UPLOAD SUCCESS:', publicUrl);
+      return getPublicUrl('event-covers', filePath);
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      throw new Error(`Upload failed: ${err.message}`);
     }
-
-    // Retry Loop
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      attempts++;
-      console.log(`Starting upload attempt ${attempts} of ${maxAttempts}...`);
-
-      try {
-        const uploadPromise = supabase.storage
-          .from('event-covers')
-          .upload(filePath, file, {
-            upsert: false
-          });
-
-        // Race upload vs timeout
-        const result = await Promise.race([uploadPromise, createTimeout()]) as any;
-
-        if (result.error) {
-          console.error(`Attempt ${attempts} Supabase error:`, result.error);
-          throw result.error;
-        }
-
-        console.log('UPLOAD SUCCESS:', result.data);
-        const { data } = supabase.storage.from('event-covers').getPublicUrl(filePath);
-        return data.publicUrl;
-
-      } catch (err: any) {
-        console.error(`Attempt ${attempts} Exception:`, err);
-
-        if (attempts >= maxAttempts) {
-          throw new Error(`Upload failed after ${maxAttempts} attempts: ${err.message}`);
-        }
-
-        console.log('Waiting 1s before retry...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-
-    throw new Error('Upload failed unexpectedly');
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -713,74 +643,42 @@ const CreateEvent = () => {
 
       const insertPayload = {
         title: trimmedTitle,
-        description: form.description.trim() || null,
-        start_time: startTime.toISOString(),
-        end_time: endTimeIso,
-        location_type: form.locationType,
-        venue: form.locationType === 'online' ? null : (form.venue.trim() || null),
-        city: form.locationType === 'online' ? null : (form.city.trim() || null),
-        latitude: form.locationType === 'online' ? null : form.latitude,
-        longitude: form.locationType === 'online' ? null : form.longitude,
-        cover_image: coverImageUrl.trim() || null,
-        user_id: userId,
-        status: 'published',
+        description: form.description.trim() || undefined,
+        thumbnail_url: coverImageUrl.trim() || undefined,
+        show_type: form.showType,
+        scheduled_for: startTime.toISOString(),
+        hand_raising: form.handRaising,
+        allow_whispers: form.allowWhispers,
       };
 
       console.log('Submitting event payload:', insertPayload);
 
       let eventId = id;
       if (id) {
-        const { error } = await supabase
-          .from('events')
-          .update(insertPayload)
-          .eq('id', id);
-
-        if (error) {
-          console.error('Failed to update event', error);
-          toastError(error.message || 'We could not update this event. Please try again.');
+        const result = await updateEvent(id, insertPayload);
+        if (!result.ok) {
+          console.error('Failed to update event', result.error);
+          toastError(result.error || 'We could not update this event. Please try again.');
           return;
         }
       } else {
-        const { data, error } = await supabase
-          .from('events')
-          .insert(insertPayload)
-          .select('id')
-          .maybeSingle();
-
-        if (error) {
-          console.error('Failed to create event', error);
-          toastError(error.message || 'We could not create this event. Please try again.');
-          return;
-        }
-
-        if (!data?.id) {
+        const result = await createNewEvent(insertPayload);
+        if (!result.id) {
           toastError('Event was created but we could not retrieve its ID.');
           return;
         }
-        eventId = data.id;
+        eventId = result.id;
       }
 
       // Handle tickets
       if (id) {
-        // Find existing tickets in DB to determine which ones were deleted
-        const { data: currentTickets } = await supabase
-          .from('event_tickets')
-          .select('id')
-          .eq('event_id', id);
-
+        const currentTickets = await getTicketsForEvent(id);
         const currentTicketIds = (currentTickets || []).map(t => t.id);
         const formTicketIds = new Set(form.tickets.map(t => t.id).filter(id => !id.startsWith('ticket-')));
         const ticketsToDelete = currentTicketIds.filter(tid => !formTicketIds.has(tid));
 
         if (ticketsToDelete.length > 0) {
-          const { error: deleteError } = await supabase
-            .from('event_tickets')
-            .delete()
-            .in('id', ticketsToDelete);
-
-          if (deleteError) {
-            console.error('Failed to clean up removed tickets', deleteError);
-          }
+          await deleteTickets(ticketsToDelete);
         }
       }
 
@@ -790,7 +688,7 @@ const CreateEvent = () => {
         const existingTickets = form.tickets.filter(t => !t.id.startsWith('ticket-'));
 
         // Insert new tickets
-        if (newTickets.length > 0) {
+        if (newTickets.length > 0 && eventId) {
           const ticketInserts = newTickets.map(ticket => ({
             event_id: eventId,
             label: ticket.title,
@@ -802,35 +700,20 @@ const CreateEvent = () => {
             is_physical: false,
           }));
 
-          const { error: insertError } = await supabase
-            .from('event_tickets')
-            .insert(ticketInserts);
-
-          if (insertError) {
-            console.error('Failed to save new tickets', insertError);
-            toastError('Some new tickets could not be saved.');
-          }
+          await createTickets(eventId, ticketInserts);
         }
 
         // Update existing tickets
         if (existingTickets.length > 0) {
-          // We update them one by one to keep it simple, or we could upsert if we mapped all fields.
           for (const ticket of existingTickets) {
-            const { error: updateError } = await supabase
-              .from('event_tickets')
-              .update({
-                label: ticket.title,
-                price: ticket.price,
-                currency: ticket.currency,
-                quantity: ticket.quantity,
-                benefits: ticket.benefits,
-                color_theme: ticket.colorTheme,
-              })
-              .eq('id', ticket.id);
-
-            if (updateError) {
-              console.error(`Failed to update ticket ${ticket.id}`, updateError);
-            }
+            await updateTicket(ticket.id, {
+              label: ticket.title,
+              price: ticket.price,
+              currency: ticket.currency,
+              quantity: ticket.quantity,
+              benefits: ticket.benefits,
+              color_theme: ticket.colorTheme,
+            });
           }
         }
       }
@@ -934,6 +817,67 @@ const CreateEvent = () => {
                         onChange={(value) => setForm(prev => ({ ...prev, description: value }))}
                         placeholder="Description"
                       />
+                    </div>
+                  </div>
+                </section>
+
+                {/* Event Settings */}
+                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    Settings
+                  </div>
+
+                  <div className="space-y-4 lg:px-2">
+                    {/* Free / Paid Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Paid Event</p>
+                        <p className="text-xs text-gray-500">Charge for tickets</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, showType: prev.showType === 'free' ? 'paid' : 'free' }))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.showType === 'paid' ? 'bg-amber-500' : 'bg-gray-200'}`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.showType === 'paid' ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Hand Raising Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Hand Raising</p>
+                        <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Allow Whispers Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
+                        <p className="text-xs text-gray-500">Private messages between attendees</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
                     </div>
                   </div>
                 </section>

@@ -1,21 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate, Routes, Route } from 'react-router-dom';
 import {
-    LayoutDashboard,
     Calendar,
     Wallet,
     ShoppingCart,
-    LineChart,
-    Settings,
     LogOut,
-    ChevronRight,
     Menu,
     X,
     RefreshCw,
-    FileText,
-    Star,
     Users,
-    Eye,
     ChevronDown,
     Clock,
     MapPin,
@@ -23,18 +16,14 @@ import {
     Copy,
     Ticket,
     Share2,
-    Download,
-    ArrowLeft,
-    Play,
-    Pause
-} from 'lucide-react';
-import { getCurrentUser, signOut } from '@/lib/supabase/auth';
-import { getProfileById } from '@/lib/supabase/profiles';
-import { createClient } from '@/lib/supabase/client';
+    Download} from 'lucide-react';
+import { logout as apiSignOut, getSession } from '@/lib/api/auth';
+import { getEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
 import DashboardOrders from './DashboardOrders';
 import CreateEvent from './CreateEvent';
+import { useAuth } from '@/contexts/AuthContext';
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
     const [count, setCount] = useState(0);
@@ -123,7 +112,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const [eventsLoading, setEventsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshCount, setRefreshCount] = useState(0);
-    const [realEvents, setRealEvents] = useState<any[]>([]);
+    const [realEvents, setRealEvents] = useState<StandaloneEvent[]>([]);
 
     const [isPaused, setIsPaused] = useState(false);
     const [currentStatIndex, setCurrentStatIndex] = useState(0);
@@ -132,11 +121,11 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const CAROUSEL_DURATION = 5000;
 
     const upcomingEvents = realEvents.filter(event =>
-        new Date(event.start_time || event.created_at) >= new Date()
+        new Date(event.scheduled_for ?? event.created_at!) >= new Date()
     ).slice(0, 3);
 
     const upcomingCount = realEvents.filter(event =>
-        new Date(event.start_time || event.created_at) >= new Date()
+        new Date(event.scheduled_for ?? event.created_at!) >= new Date()
     ).length;
 
     const stats = [
@@ -237,18 +226,11 @@ function DashboardHome({ displayName }: { displayName: string }) {
     };
 
     const fetchRealEvents = async () => {
-        const supabase = createClient();
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return;
+            const session = await getSession();
+            if (!session || !session.user) return;
 
-            const { data, error } = await supabase
-                .from('events')
-                .select('*, event_tickets(quantity)')
-                .eq('user_id', session.user.id)
-                .order('start_time', { ascending: true });
-
-            if (error) throw error;
+            const data = await getEventsByUser();
             setRealEvents(data || []);
         } catch (error) {
             console.error('Error fetching dashboard events:', error);
@@ -790,7 +772,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                 ) : (
                                     // Real event cards
                                     upcomingEvents.map((event) => {
-                                        const startDate = new Date(event.start_time || event.created_at);
+                                        const startDate = new Date(event.scheduled_for ?? event.created_at!);
                                         const month = startDate.toLocaleString('default', { month: 'short' });
                                         const day = startDate.getDate().toString().padStart(2, '0');
                                         const time = startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -800,7 +782,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                         const total = totalCapacity;
 
                                         return (
-                                            <div key={event.id} className="flex items-center justify-between p-4 border border-black/5 rounded-xl hover:border-black/10 transition-colors group/card">
+                                            <div key={event.event_id} className="flex items-center justify-between p-4 border border-black/5 rounded-xl hover:border-black/10 transition-colors group/card">
                                                 <div className="flex items-center gap-4 min-w-0 flex-1">
                                                     {/* Date Box */}
                                                     <div className="bg-red-50 rounded-lg p-3 text-center min-w-[64px] shrink-0">
@@ -823,7 +805,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                             </div>
                                                             <div className="flex items-center gap-1 text-[11px] font-medium truncate">
                                                                 <MapPin className="w-3.5 h-3.5 shrink-0" />
-                                                                <span className="truncate">{event.venue || event.city || 'TBA'}</span>
+                                                                <span className="truncate">{event.location?.venue || event.location?.city || 'TBA'}</span>
                                                             </div>
                                                         </div>
 
@@ -894,25 +876,23 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
 export default function Dashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [user, setUser] = useState<any>(null);
+    const { user, loading } = useAuth();
     const [profile, setProfile] = useState<any>(null);
     const [editingEventTitle, setEditingEventTitle] = useState<string | null>(null);
     const location = useLocation();
     const navigate = useNavigate();
 
     useEffect(() => {
-        const fetchUserData = async () => {
-            const currentUser = await getCurrentUser();
-            if (currentUser) {
-                setUser(currentUser);
-                const profileData = await getProfileById(currentUser.id);
-                setProfile(profileData);
-            } else {
-                navigate('/login');
-            }
-        };
-        fetchUserData();
-    }, [navigate]);
+        if (!loading && !user) {
+            navigate('/login');
+        }
+    }, [user, loading, navigate]);
+
+    useEffect(() => {
+        if (user) {
+            setProfile(user);
+        }
+    }, [user]);
 
     // Fetch editing event title if in edit mode
     useEffect(() => {
@@ -920,10 +900,9 @@ export default function Dashboard() {
             const match = location.pathname.match(/\/dashboard\/events\/([^\/]+)\/edit/);
             if (match && match[1]) {
                 const eventId = match[1];
-                const supabase = createClient();
-                const { data } = await supabase.from('events').select('title').eq('id', eventId).single();
-                if (data) {
-                    setEditingEventTitle(data.title);
+                const event = await getEvent(eventId);
+                if (event) {
+                    setEditingEventTitle(event.title);
                 }
             } else {
                 setEditingEventTitle(null);
@@ -941,10 +920,10 @@ export default function Dashboard() {
         { name: 'Settings', path: '/dashboard/settings', icon: null as any, customIcon: 'settings' },
     ];
 
-    const displayName = profile?.username || profile?.display_name || profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Organizer';
+    const displayName = profile?.username || profile?.name || user?.name || user?.email?.split('@')[0] || 'Organizer';
 
     const handleSignOut = async () => {
-        await signOut();
+        await apiSignOut();
         navigate('/');
     };
 

@@ -1,29 +1,32 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, MapPin, Share2, Ticket, Globe, X, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { MapPin, Share2, Ticket, Check } from 'lucide-react';
 import amptiveLogo from '@/assets/amptivelogo.svg';
-import { createClient } from '@/lib/supabase/client';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { QRCodeSVG } from 'qrcode.react';
-import { toastError, toastSuccess } from '@/lib/ui/toast';
+import { toastSuccess } from '@/lib/ui/toast';
+import { getCurrentUser } from '@/lib/api/auth';
+import { getEvent, getRelatedEvents, StandaloneEvent } from '@/lib/api/events';
+import { getTicketsForEvent } from '@/lib/api/tickets';
+import { getProfile, getProfileByUserId } from '@/lib/api/profiles';
 
 
-type EventRecord = {
-  id: string;
-  title?: string | null;
-  start_time?: string | null;
-  end_time?: string | null;
-  venue?: string | null;
-  city?: string | null;
-  cover_image?: string | null;
-  details_url?: string | null;
-  manage_url?: string | null;
-  description?: string | null;
-  summary?: string | null;
-  user_id?: string | null;
-  location_type?: 'physical' | 'online' | null;
-};
+// type EventRecord = {
+//   id: string;
+//   title?: string | null;
+//   start_time?: string | null;
+//   end_time?: string | null;
+//   venue?: string | null;
+//   city?: string | null;
+//   cover_image?: string | null;
+//   details_url?: string | null;
+//   manage_url?: string | null;
+//   description?: string | null;
+//   summary?: string | null;
+//   user_id?: string | null;
+//   location_type?: 'physical' | 'online' | null;
+// };
 
 type EventTicket = {
   id: string;
@@ -136,13 +139,11 @@ const deriveAvailabilityStatus = (ticket: EventTicket, index: number): Availabil
 
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const supabase = createClient();
 
-  const [event, setEvent] = useState<EventRecord | null>(null);
+  const [event, setEvent] = useState<StandaloneEvent | null>(null);
   const [tickets, setTickets] = useState<EventTicket[]>([]);
   const [organizerProfile, setOrganizerProfile] = useState<any | null>(null);
-  const [relatedEvents, setRelatedEvents] = useState<EventRecord[]>([]);
+  const [relatedEvents, setRelatedEvents] = useState<StandaloneEvent[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [loading, setLoading] = useState(true);
@@ -186,26 +187,23 @@ const EventDetail = () => {
       setError(null);
 
       // Fetch Current User
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentUser();
       setCurrentUser(user);
 
       try {
         // Fetch Event
-        const { data: eventData, error: eventError } = await supabase
-          .from('events')
-          .select('*')
-          .eq('id', id)
-          .single();
-
-        if (eventError) throw eventError;
+        const eventData = await getEvent(id);
+        if (!eventData) throw new Error('Event not found');
         setEvent(eventData);
 
         // Fetch Dominant Color
-        if (eventData.cover_image) {
-          extractDominantColors(eventData.cover_image).then(colors => {
-            if (colors.primary) {
+        if (eventData.thumbnail_url) {
+                  console.log("event data =>", eventData);
+
+          extractDominantColors(eventData.thumbnail_url).then(colors => {
+            if (colors[0]) {
               // Convert hex to rgb for background style
-              const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(colors.primary);
+              const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(colors[0]);
               if (result) {
                 setDominantColor({
                   r: parseInt(result[1], 16),
@@ -218,44 +216,32 @@ const EventDetail = () => {
         }
 
         // Fetch Tickets
-        const { data: ticketData } = await supabase
-          .from('event_tickets')
-          .select('*')
-          .eq('event_id', id);
-
-        if (ticketData) setTickets(ticketData);
+        const ticketData = await getTicketsForEvent(id);
+        console.log("tickets daata", ticketData);
+        
+        setTickets(ticketData);
 
         // Fetch Organizer
-        if (eventData.user_id) {
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('user_id', eventData.user_id)
-            .single();
-
-          if (profileError) {
-            console.error('Error fetching organizer profile:', profileError);
-            // Set a default profile if fetch fails
+        if (eventData.host?.user_id) {
+          // const profile = await getProfileByUserId(eventData.host!.user_id);
+          const profile = eventData.host
+          if (profile) {
+            setOrganizerProfile(profile);
+          } else {
+            console.error('Error fetching organizer profile');
             setOrganizerProfile({
-              id: eventData.user_id,
+              id: eventData.host.user_id,
               username: 'Event Host',
               full_name: 'Event Host',
               avatar_url: null
             });
-          } else {
-            setOrganizerProfile(profile);
           }
         }
 
         // Fetch Related (Events by same organizer)
-        if (eventData.user_id) {
-          const { data: related } = await supabase
-            .from('events')
-            .select('id, title, venue, city, cover_image, start_time')
-            .eq('user_id', eventData.user_id)
-            .neq('id', id)
-            .limit(4);
-          if (related) setRelatedEvents(related);
+        if (eventData.host?.user_id) {
+          const related = await getRelatedEvents(eventData.host?.user_id, id, 4);          
+          setRelatedEvents(related);
         }
 
       } catch (err: any) {
@@ -266,7 +252,7 @@ const EventDetail = () => {
       }
     }
     fetchData();
-  }, [id, supabase]);
+  }, [id]);
 
   const timeZoneMeta = useMemo(() => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
@@ -334,13 +320,13 @@ const EventDetail = () => {
     );
   }
 
-  const mapSrc = event.venue ?
-    `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(event.venue + (event.city ? `, ${event.city}` : ''))}`
+  const mapSrc = event.location?.venue ?
+    `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(event.location?.venue + (event.location?.city ? `, ${event.location?.city}` : ''))}`
     : null;
 
   const renderActionContent = (mobile = false) => {
-    const isOrganizer = currentUser?.id === event.user_id;
-    const isEventEnded = event.end_time && new Date(event.end_time) < new Date();
+    const isOrganizer = currentUser?.id === event.host?.user_id;
+    const isEventEnded = event.ended_at && new Date(event.ended_at) < new Date();
     const hasTickets = tickets.length > 0;
 
     // Base classes
@@ -351,7 +337,7 @@ const EventDetail = () => {
     if (isOrganizer) {
       return {
         button: (
-          <Link to={`/events/${event.id}/manage`} className={`${baseClasses} bg-black text-white block`}>
+          <Link to={`/events/${event.event_id}/manage`} className={`${baseClasses} bg-black text-white block`}>
             Manage Event
           </Link>
         ),
@@ -384,7 +370,7 @@ const EventDetail = () => {
     return {
       button: (
         <Link
-          to={`/events/${event.id}/checkout`}
+          to={`/events/${event.event_id}/checkout`}
           className={`${baseClasses} bg-black text-white block`}
         >
           Get Tickets
@@ -423,7 +409,7 @@ const EventDetail = () => {
                   <div>
                     {/* Organizer Badge */}
                     {displayProfile && (
-                      <Link to={`/profile/${displayProfile.username || event.user_id}`} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors mb-4 group/badge">
+                      <Link to={`/profile/${displayProfile.username || event.host?.user_id}`} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors mb-4 group/badge">
                         <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-600 overflow-hidden flex-shrink-0">
                           {displayProfile.avatar_url ? (
                             <>
@@ -471,11 +457,11 @@ const EventDetail = () => {
                     </div>
                     <div>
                       <h3 className="text-base font-semibold text-gray-900 leading-tight">
-                        {event.start_time ? new Date(event.start_time).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Date TBD'}
+                        {event.scheduled_for ? new Date(event.scheduled_for).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Date TBD'}
                       </h3>
                       <p className="text-sm text-gray-500 mt-1">
-                        {event.start_time ? new Date(event.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}
-                        {event.end_time ? ` - ${new Date(event.end_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}
+                        {event.scheduled_for ? new Date(event.scheduled_for).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}
+                        {event.scheduled_for ? ` - ${new Date(event.scheduled_for).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}
                       </p>
                     </div>
                   </div>
@@ -489,12 +475,12 @@ const EventDetail = () => {
                     </div>
                     <div>
                       <h3 className="text-base font-semibold text-gray-900 leading-tight">
-                        {event.location_type === 'online' ? 'Online Event' : (event.venue || 'Venue TBD')}
+                        {event.location?.type === 'online' ? 'Online Event' : (event.location?.venue || 'Venue TBD')}
                       </h3>
-                      {event.location_type !== 'online' && event.city && (
-                        <p className="text-sm text-gray-500 mt-1">{event.city}</p>
+                      {event.location?.type !== 'online' && event.location?.city && (
+                        <p className="text-sm text-gray-500 mt-1">{event.location?.city}</p>
                       )}
-                      {event.location_type === 'online' && (
+                      {event.location?.type === 'online' && (
                         <p className="text-sm text-gray-500 mt-1">Link visible to attendees</p>
                       )}
                     </div>
@@ -529,7 +515,7 @@ const EventDetail = () => {
                 <div>
                   <div className="prose prose-lg max-w-none relative group/description">
                     <div
-                      dangerouslySetInnerHTML={{ __html: event.description || event.summary || '<p>No description provided.</p>' }}
+                      dangerouslySetInnerHTML={{ __html: event.description || '<p>No description provided.</p>' }}
                       className={`text-base text-black leading-relaxed [&>h1]:text-xl [&>h1]:font-bold [&>h1]:text-black [&>h1]:mb-3 [&>p]:mb-4 [&>ul]:list-disc [&>ul]:pl-5 [&>img]:rounded-2xl [&>img]:my-6 [&>img]:w-full transition-all duration-500 ease-in-out overflow-hidden ${isDescriptionExpanded ? 'max-h-[5000px]' : 'max-h-[240px]'
                         }`}
                     />
@@ -626,7 +612,7 @@ const EventDetail = () => {
                                 </div>
                                 <div className={`flex flex-col items-end ${theme.text}`}>
                                   {/* QR Code placeholder or reduced size */}
-                                  <QRCodeSVG value={`EVENT-${event.id}-TICKET-${ticket.id}`} size={48} fgColor="currentColor" bgColor="transparent" />
+                                  <QRCodeSVG value={`EVENT-${event.event_id}-TICKET-${ticket.id}`} size={48} fgColor="currentColor" bgColor="transparent" />
                                 </div>
                               </div>
                             </div>
@@ -643,7 +629,7 @@ const EventDetail = () => {
               </section>
 
               {/* Location Map Section */}
-              {event.location_type !== 'online' && mapSrc && (
+              {event.location?.type !== 'online' && mapSrc && (
                 <section className="pt-12 border-t border-gray-100">
                   <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
                     <MapPin className="h-4 w-4 text-blue-500" />
@@ -669,11 +655,11 @@ const EventDetail = () => {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {relatedEvents.slice(0, 4).map((evt) => (
-                      <Link key={evt.id} to={`/events/${evt.id}`} className="group flex items-center gap-3 bg-gray-50/50 p-2 rounded-xl hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
+                      <Link key={evt.event_id} to={`/events/${evt.event_id}`} className="group flex items-center gap-3 bg-gray-50/50 p-2 rounded-xl hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
                         <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-200">
-                          {evt.cover_image ? (
+                          {evt.thumbnail_url ? (
                             <img
-                              src={evt.cover_image}
+                              src={evt.thumbnail_url}
                               alt={evt.title || 'Event'}
                               className="h-full w-full object-cover"
                             />
@@ -688,7 +674,7 @@ const EventDetail = () => {
                             {evt.title || 'Untitled Event'}
                           </h4>
                           <p className="text-xs font-medium text-gray-500 line-clamp-1">
-                            {new Date(evt.start_time).toLocaleDateString(undefined, {
+                            {new Date(evt.scheduled_for!).toLocaleDateString(undefined, {
                               month: 'short',
                               day: 'numeric',
                               hour: 'numeric',
@@ -712,9 +698,9 @@ const EventDetail = () => {
 
             {/* Cover Image Card */}
             <div className="relative w-full aspect-square rounded-3xl overflow-hidden bg-gray-100">
-              {event.cover_image ? (
+              {event.thumbnail_url ? (
                 <img
-                  src={event.cover_image}
+                  src={event.thumbnail_url}
                   alt={event.title || 'Event Cover'}
                   className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
                 />

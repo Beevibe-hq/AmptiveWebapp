@@ -14,7 +14,6 @@ import Community from './pages/Community';
 import AITool from './pages/AITool';
 import NewChat from './pages/NewChat';
 import ChatMode from './pages/ChatMode';
-import Help from './pages/Help';
 import Download from './pages/Download';
 import LoginPage from './pages/Login';
 import SignupPage from './pages/Signup';
@@ -32,14 +31,14 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
-        <ScrollToTop />
-        <Routes>
-          <Route path="/dashboard/*" element={<Dashboard />} />
-          <Route path="*" element={<MainLayout />} />
-        </Routes>
-        <Toaster position="top-center" richColors closeButton expand={false} />
-      </Router>
-    </ThemeProvider>
+          <ScrollToTop />
+          <Routes>
+            <Route path="/dashboard/*" element={<Dashboard />} />
+            <Route path="*" element={<MainLayout />} />
+          </Routes>
+          <Toaster position="top-center" richColors closeButton expand={false} />
+        </Router>
+      </ThemeProvider>
   );
 }
 

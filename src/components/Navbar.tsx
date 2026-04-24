@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -6,12 +6,8 @@ import Logo from './Logo';
 import TextLogo from './TextLogo';
 import MobileMenu from './MobileMenu';
 import UserAvatar from './UserAvatar';
-import { getCurrentUser, signOutSilent } from '@/lib/supabase/auth';
-import { getProfileById, isProfileComplete } from '@/lib/supabase/profiles';
-import { createClient } from '@/lib/supabase/client';
-import { useTheme } from '@/contexts/ThemeContext';
-
-const supabase = createClient();
+import { useAuth } from '@/contexts/AuthContext';
+import { isProfileComplete } from '@/lib/api/profiles';
 
 type MenuItem = {
   name: string;
@@ -35,57 +31,28 @@ const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const { dominantColor } = useTheme();
-
-  useEffect(() => {
-    const checkUser = async () => {
-      try {
-        const currentUser = await getCurrentUser();
-        if (!currentUser) {
-          setUser(null);
-          return;
-        }
-        const profile = await getProfileById(currentUser.id);
-        if (!isProfileComplete(profile)) {
-          await signOutSilent();
-          setUser(null);
-        } else {
-          setUser(currentUser);
-        }
-      } catch (error) {
-        console.error('Error fetching user/profile:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const u = session?.user || null;
-      if (!u) { setUser(null); return; }
-      try {
-        const profile = await getProfileById(u.id);
-        if (!isProfileComplete(profile)) {
-          await signOutSilent();
-          setUser(null);
-        } else {
-          setUser(u);
-        }
-      } catch (e) {
-        console.error('Auth state profile check failed:', e);
-        setUser(null);
-      }
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, []);
+  const [checkingProfile, setCheckingProfile] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const checkedProfileRef = useRef(false);
+  const { user: authUser, loading, refreshUser } = useAuth();
+
+  useEffect(() => {
+    const handleIncompleteProfile = async () => {
+      if (loading || checkingProfile || checkedProfileRef.current) return;
+      if (!authUser) return;
+      checkedProfileRef.current = true;
+      setCheckingProfile(true);
+      try {
+        if (!isProfileComplete(authUser)) {
+          navigate('/complete-profile');
+        }
+      } finally {
+        setCheckingProfile(false);
+      }
+    };
+    void handleIncompleteProfile();
+  }, [authUser, loading, refreshUser]);
   const isProfilePage = location.pathname === '/profile' || location.pathname === '/profile/';
 
   useEffect(() => {
@@ -134,7 +101,7 @@ const Navbar = () => {
     }
   ];
 
-  const links = user ? authLinks : guestLinks;
+  const links = authUser ? authLinks : guestLinks;
 
   // Search handler
   const handleSearch = (e: React.FormEvent) => {
@@ -424,10 +391,10 @@ const Navbar = () => {
             )}
 
             {/* User Avatar or Sign In button - hidden on chat pages */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !loading && !checkingProfile && (
               <div className="hidden xl:flex items-center">
-                {user ? (
-                  <UserAvatar user={user} />
+                {authUser ? (
+                  <UserAvatar />
                 ) : (
                   <Link
                     to="/login"

@@ -14,8 +14,9 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { getCurrentUser, signOut } from '@/lib/supabase/auth';
+import { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { logout } from '@/lib/api/auth';
 import UserAvatar from './UserAvatar';
 
 type BaseLink = {
@@ -44,51 +45,12 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const userData = await getCurrentUser();
-        setUser(userData);
-      } catch (error) {
-        console.error('Error fetching user:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (isOpen) {
-      getUser();
-    }
-  }, [isOpen]);
-
-  // Track scroll position and handle body scroll
-  useEffect(() => {
-    if (isOpen) {
-      // Save current scroll position
-      const scrollY = window.scrollY;
-
-      // Prevent body scroll
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollY}px`;
-      document.body.style.width = '100%';
-
-      // Cleanup function to restore scroll position when menu closes
-      return () => {
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.width = '';
-        window.scrollTo(0, scrollY);
-      };
-    }
-  }, [isOpen]);
+  const { user, loading } = useAuth();
 
   // Navigation links for authenticated users with icons
   const authLinks: LinkItem[] = [
-    { 
-      name: 'My Dashboard', 
+    {
+      name: 'My Dashboard',
       path: '/dashboard',
       icon: <LayoutDashboard className="w-5 h-5 mr-3" />
     },
@@ -108,11 +70,11 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
     { name: 'divider-small', path: '#' },
 
     // Second group (next 3 items)
-    {
-      name: 'My Dashboard',
-      path: '/dashboard',
-      icon: <LayoutDashboard className="w-5 h-5 mr-3" />
-    },
+    // {
+    //   name: 'My Dashboard',
+    //   path: '/dashboard',
+    //   icon: <LayoutDashboard className="w-5 h-5 mr-3" />
+    // },
     {
       name: 'My Tickets',
       path: '/my-tickets',
@@ -148,9 +110,8 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
       path: '#',
       icon: <LogOut className="w-5 h-5 mr-3" />,
       onClick: async () => {
-        await signOut();
+        await logout();
         navigate('/');
-        window.location.reload();
       }
     }
   ];
@@ -283,23 +244,8 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                   return <div key="divider-small" className="h-4"></div>; // Smaller space between first two and next three items
                 }
 
-                // Regular link with icon
-                if (!('hasDropdown' in link)) {
-                  return (
-                    <Link
-                      key={link.name}
-                      to={link.path}
-                      className="flex items-center w-full text-left px-6 py-3 text-2xl font-semibold text-gray-900 hover:bg-gray-50 cursor-pointer leading-8"
-                      onClick={() => onClose()}
-                    >
-                      {link.icon}
-                      {link.name}
-                    </Link>
-                  );
-                }
-
-                // Sign out button with onClick
-                if (link.onClick) {
+                // Sign out button with onClick - check this first
+                if ('onClick' in link && link.onClick) {
                   return (
                     <div
                       key={link.name}
@@ -313,6 +259,21 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                       {link.icon}
                       {link.name}
                     </div>
+                  );
+                }
+
+                // Regular link with icon
+                if (!('hasDropdown' in link)) {
+                  return (
+                    <Link
+                      key={link.name}
+                      to={link.path}
+                      className="flex items-center w-full text-left px-6 py-3 text-2xl font-semibold text-gray-900 hover:bg-gray-50 cursor-pointer leading-8"
+                      onClick={() => onClose()}
+                    >
+                      {link.icon}
+                      {link.name}
+                    </Link>
                   );
                 }
                 if ('hasDropdown' in link) {
@@ -353,19 +314,6 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                     </div>
                   );
                 }
-
-                return (
-                  <div key={link.name}>
-                    <Link
-                      to={link.path}
-                      className="block px-6 py-1.5 text-2xl font-semibold hover:bg-gray-50 leading-8"
-                      style={{ color: 'rgb(22, 22, 26)' }}
-                      onClick={onClose}
-                    >
-                      {link.name}
-                    </Link>
-                  </div>
-                );
               })}
             </div>
 
@@ -373,7 +321,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
             <div className="p-4 pr-6 space-y-3">
               {!loading && user && (
                 <div className="flex justify-center py-2">
-                  <UserAvatar user={user} />
+                  <UserAvatar />
                 </div>
               )}
               {!loading && !user && (

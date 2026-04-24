@@ -1,3 +1,9 @@
+export const SIGNUP_KEYS = {
+  email: 'amptive_signup_email',
+} as const;
+
+export const EMAIL_KEY = SIGNUP_KEYS.email;
+
 export const TICKET_THEMES: Record<string, {
     name: string;
     gradient: string;

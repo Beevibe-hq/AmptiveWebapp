@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { createClient } from '@/lib/supabase/client';
 import { Loader2, Plus, Minus, ChevronDown, CheckCircle2, Ticket } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { TICKET_THEMES } from '@/lib/constants';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getCurrentUser } from '@/lib/api/auth';
+import { getEvent } from '@/lib/api/events';
+import { getTicketsForEvent } from '@/lib/api/tickets';
+import { createPurchase, getPurchasesByUser } from '@/lib/api/purchases';
 
 type EventRecord = {
     id: string;
@@ -28,7 +31,6 @@ type EventTicket = {
 export default function CheckoutPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const supabase = createClient();
 
     const [event, setEvent] = useState<EventRecord | null>(null);
     const [tickets, setTickets] = useState<EventTicket[]>([]);
@@ -54,26 +56,16 @@ export default function CheckoutPage() {
         const fetchData = async () => {
             if (!id) return;
             try {
-                const { data: { user } } = await supabase.auth.getUser();
+                const user = await getCurrentUser();
                 setCurrentUser(user);
 
-                const { data: eventData, error: eventError } = await supabase
-                    .from('events')
-                    .select('id, title, start_time, venue, user_id')
-                    .eq('id', id)
-                    .single();
-
-                if (eventError) throw eventError;
+                const eventData = await getEvent(id);
+                if (!eventData) throw new Error('Event not found');
                 setEvent(eventData);
 
-                const { data: ticketData, error: ticketError } = await supabase
-                    .from('event_tickets')
-                    .select('*')
-                    .eq('event_id', id);
+                const ticketData = await getTicketsForEvent(id);
 
-                if (ticketError) throw ticketError;
-
-                const formattedTickets = (ticketData || []).map(t => {
+                const formattedTickets = ticketData.map(t => {
                     let parsedBenefits: string[] = [];
                     const raw = t.benefits;
 
@@ -130,7 +122,7 @@ export default function CheckoutPage() {
             }
         };
         fetchData();
-    }, [id, supabase]);
+    }, [id]);
 
     const updateQuantity = (ticketId: string, delta: number) => {
         setLastDirection(delta > 0 ? 1 : -1);
@@ -229,7 +221,7 @@ export default function CheckoutPage() {
                         event_id: event.id,
                         ticket_type_id: ticketId,
                         buyer_id: currentUser.id,
-                        buyer_name: currentUser.user_metadata?.full_name || currentUser.email || 'Guest',
+                        buyer_name: currentUser.name || currentUser.email || 'Guest',
                         buyer_email: currentUser.email || 'guest@example.com',
                         purchase_date: timestamp,
                         ticket_status: 'valid',
@@ -250,11 +242,8 @@ export default function CheckoutPage() {
                 }
             }
 
-            const { error: dbError } = await supabase
-                .from('ticket_purchases')
-                .insert(purchases);
-
-            if (dbError) throw dbError;
+            const result = await createPurchase(purchases);
+            if (!result.ok) throw new Error(result.error);
 
             setSuccess(true);
             toastSuccess("Payment successful!");

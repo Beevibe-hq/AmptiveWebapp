@@ -1,15 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createClient } from '@/lib/supabase/client';
-import { User } from '@supabase/supabase-js';
-import { getProfileById, upsertProfile, updateProfileAvatar, checkUsernameAvailability, ProfileRow } from '@/lib/supabase/profiles';
+import { checkUsernameAvailability, updateProfile, Profile } from '@/lib/api/profiles';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
-import { ArrowLeft, Camera, Loader2, Save, User as UserIcon } from 'lucide-react';
+import { Camera, Loader2, Save } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import { getCurrentUser } from '@/lib/api/auth';
+import { uploadFile, getPublicUrl } from '@/lib/api/storage';
 
 export default function EditProfile() {
     const navigate = useNavigate();
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
@@ -30,7 +30,6 @@ export default function EditProfile() {
     const initialUsernameRef = useRef<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const supabase = createClient();
 
     // Check Username Availability Effect
     useEffect(() => {
@@ -59,7 +58,7 @@ export default function EditProfile() {
             }
 
             // Prevent checking if we don't have a user ID yet
-            if (!user?.id) return;
+            if (!user?.user_id) return;
 
             if (!aborted) {
                 setCheckingUsername(true);
@@ -67,7 +66,7 @@ export default function EditProfile() {
             }
 
             try {
-                const isAvailable = await checkUsernameAvailability(username, user.id);
+                const isAvailable = await checkUsernameAvailability(username, user.user_id);
 
                 if (aborted) return;
 
@@ -103,7 +102,7 @@ export default function EditProfile() {
     // Auth Check & Data Fetch
     useEffect(() => {
         const checkAuth = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await getCurrentUser();
             if (!user) {
                 navigate('/login');
                 return;
@@ -112,9 +111,9 @@ export default function EditProfile() {
 
             // Load Profile
             try {
-                const profile = await getProfileById(user.id);
+                const profile = await getCurrentUser();
                 if (profile) {
-                    setFullName(profile.full_name || '');
+                    setFullName(profile.name || '');
                     setUsername(profile.username || '');
                     initialUsernameRef.current = profile.username || '';
                     setDob(profile.dob || '');
@@ -148,14 +147,8 @@ export default function EditProfile() {
             const fileName = `${userId}-${Math.random()}.${fileExt}`;
             const filePath = `avatars/${fileName}`;
 
-            const { error: uploadError } = await supabase.storage
-                .from('avatars')
-                .upload(filePath, avatarFile);
-
-            if (uploadError) throw uploadError;
-
-            const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
-            return data.publicUrl;
+            const publicUrl = await uploadFile('avatars', filePath, avatarFile);
+            return publicUrl;
         } catch (error) {
             console.error('Error uploading avatar:', error);
             throw error;
@@ -171,14 +164,14 @@ export default function EditProfile() {
             // 1. Upload new avatar if selected
             let finalAvatarUrl = avatarUrl;
             if (avatarFile) {
-                const newUrl = await uploadAvatar(user.id);
+                const newUrl = await uploadAvatar(user.user_id);
                 if (newUrl) finalAvatarUrl = newUrl;
             }
 
             // 2. Prepare update data
-            const updates: ProfileRow = {
-                user_id: user.id,
-                full_name: fullName,
+            const updates: Profile = {
+                user_id: user.user_id,
+                name: fullName,
                 username: username,
                 email: user.email,
                 dob: dob || null,
@@ -191,7 +184,7 @@ export default function EditProfile() {
             if (!ok) throw new Error(error || 'Failed to update profile');
 
             toastSuccess('Profile updated successfully!');
-            navigate(`/profile/${user.id}`);
+            navigate(`/profile/${user.user_id}`);
         } catch (error: any) {
             console.error('Error saving profile:', error);
             toastError(error.message || 'Failed to save changes.');
@@ -209,7 +202,7 @@ export default function EditProfile() {
     }
 
     // Colors for default avatar
-    const seed = (user?.user_metadata?.username || user?.email || 'guest').toLowerCase();
+    const seed = (user?.username || user?.email || 'guest').toLowerCase();
     const emojiSet = ['😀', '😎', '🤠', '🦄', '🐼', '🐸', '🐯', '🐵', '🐧', '🐰', '🐨', '🦊', '🐙', '🐳', '🐝', '🐢', '🐞', '🌸', '🌼', '🍀', '🍉', '🍓', '🍍', '⚡', '⭐', '🌙', '☀️', '🔥', '🎧', '🎨', '🎯', '🚀', '🧠', '💎', '💜', '💛', '💚', '💙', '🧸'];
     const bgSet = ['#FDE68A', '#FFEDD5', '#E9D5FF', '#DBEAFE', '#DCFCE7', '#FCE7F3', '#FFE4E6', '#F3E8FF', '#E0E7FF', '#D1FAE5'];
     let h = 0;
