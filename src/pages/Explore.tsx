@@ -1,26 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, MoreHorizontal, Play, X, Filter, Eye, ShoppingCart } from 'lucide-react';
+import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, X } from 'lucide-react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { listEvents, StandaloneEvent } from '@/lib/api/events';
 import { Link, useNavigate } from 'react-router-dom';
 import ReactCalendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 
-// Types
-interface Event {
-    id: string;
-    title: string;
-    city: string | null;
-    venue: string | null;
-    cover_image: string | null;
-    start_time: string;
-    latitude: number | null;
-    longitude: number | null;
-    location_type: string;
-    // mock price for now as it's not in the main table yet
-    price_min?: number;
-    tickets?: { price: number }[];
-}
 
 // Mock Communities
 const COMMUNITIES = [
@@ -33,12 +18,11 @@ const COMMUNITIES = [
     { id: 'other', label: 'Other' },
 ];
 
-const mapContainerStyle = { w: '100%', h: '100%' };
 const defaultCenter = { lat: 6.5244, lng: 3.3792 };
 
 export default function Explore() {
     const [viewMode, setViewMode] = useState<'list' | 'map'>(() => sessionStorage.getItem('explore_viewMode') as 'list' | 'map' || 'list');
-    const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('explore_searchQuery') || '');
+    const [searchQuery, _setSearchQuery] = useState(() => sessionStorage.getItem('explore_searchQuery') || '');
     const [events, setEvents] = useState<StandaloneEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [map, setMap] = useState<google.maps.Map | null>(null);

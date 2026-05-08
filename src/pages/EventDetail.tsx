@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { MapPin, Share2, Ticket, Check, Globe } from 'lucide-react';
 import amptiveLogo from '@/assets/amptivelogo.svg';
@@ -55,22 +55,6 @@ function VenueMap({ latitude, longitude, venueName }: { latitude: number; longit
 }
 
 
-// type EventRecord = {
-//   id: string;
-//   title?: string | null;
-//   start_time?: string | null;
-//   end_time?: string | null;
-//   venue?: string | null;
-//   city?: string | null;
-//   cover_image?: string | null;
-//   details_url?: string | null;
-//   manage_url?: string | null;
-//   description?: string | null;
-//   summary?: string | null;
-//   user_id?: string | null;
-//   location_type?: 'physical' | 'online' | null;
-// };
-
 type EventTicket = {
   id: string;
   label: string;
@@ -81,10 +65,6 @@ type EventTicket = {
   color_theme?: string | null;
 };
 
-type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
-
-const DEFAULT_COVER =
-  'https://www.shazam.com/mkimage/image/thumb/AMCArtistImages116/v4/7d/b1/4f/7db14f51-0978-2d7e-9add-f0d205bae318/883bda85-96d8-4515-a288-31e25bd8f216_ami-identity-b4d7093c3e0926436905c4b9df9223c0-2023-03-24T20-43-10.454Z_cropped.png/1552x1552bb.webp';
 
 const TICKET_THEMES: Record<string, {
   name: string;
@@ -136,13 +116,6 @@ const TICKET_THEMES: Record<string, {
   }
 };
 
-const AVAILABILITY_BADGE_CLASSES: Record<AvailabilityStatus, string> = {
-  Available: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  'Almost Sold Out': 'border-amber-200 bg-amber-50 text-amber-700',
-  'Limited Spots': 'border-orange-200 bg-orange-50 text-orange-700',
-  'Sold Out': 'border-rose-200 bg-rose-50 text-rose-700',
-};
-
 // Helper Functions
 const formatTicketPrice = (price: number, currency: string = 'NGN'): string => {
   if (price === 0) return 'Free';
@@ -173,12 +146,7 @@ const deriveTicketBenefits = (ticket: EventTicket): string[] => {
   return Array.from(benefits);
 };
 
-const deriveAvailabilityStatus = (ticket: EventTicket, index: number): AvailabilityStatus => {
-  const label = ticket.label?.toLowerCase() ?? '';
-  if (label.includes('sold out')) return 'Sold Out';
-  if (label.includes('vip') || ticket.price >= 50000) return 'Limited Spots';
-  return 'Available';
-};
+
 
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -236,7 +204,7 @@ const EventDetail = () => {
 
       try {
         // Fetch Event
-        const eventData = await getEvent(id);        
+        const eventData = await getEvent(id);
         if (!eventData) throw new Error('Event not found');
         setEvent(eventData);
 
@@ -296,53 +264,6 @@ const EventDetail = () => {
     fetchData();
   }, [id]);
 
-  const timeZoneMeta = useMemo(() => {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
-    const now = new Date();
-    const offsetMinutes = -now.getTimezoneOffset();
-    const sign = offsetMinutes >= 0 ? '+' : '-';
-    const hours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
-    const minutes = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
-    return { offsetLabel: `GMT${sign}${hours}:${minutes}`, timeZone: tz.replace('_', ' ') };
-  }, []);
-
-  const formatLocalDateTime = (isoString?: string | null) => {
-    if (!isoString) return 'TBD';
-    const date = new Date(isoString);
-    const day = date.getDate();
-    const month = date.toLocaleString('en-US', { month: 'short' });
-    const year = date.getFullYear();
-    const time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-    return `${day} ${month} ${year} at ${time}`;
-  };
-
-  const formatDateRange = (startTime?: string | null, endTime?: string | null) => {
-    if (!startTime) return 'TBD';
-    const start = new Date(startTime);
-    const startDay = start.getDate();
-    const startMonth = start.toLocaleString('en-US', { month: 'short' });
-    const startYear = start.getFullYear();
-    const startTimeStr = start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-    if (!endTime) {
-      return `${startDay} ${startMonth} ${startYear} at ${startTimeStr}`;
-    }
-
-    const end = new Date(endTime);
-    const endDay = end.getDate();
-    const endMonth = end.toLocaleString('en-US', { month: 'short' });
-    const endYear = end.getFullYear();
-    const endTimeStr = end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-    // Check if same day
-    const isSameDay = start.toDateString() === end.toDateString();
-
-    if (isSameDay) {
-      return `${startDay} ${startMonth} ${startYear} at ${startTimeStr} - ${endTimeStr}`;
-    } else {
-      return `${startDay} ${startMonth} ${startYear} at ${startTimeStr} - ${endDay} ${endMonth} ${endYear} at ${endTimeStr}`;
-    }
-  };
 
   if (loading) {
     return (
@@ -671,7 +592,7 @@ const EventDetail = () => {
 
                 {tickets.length > 0 ? (
                   <div className="flex overflow-x-auto pb-4 snap-x gap-4 md:gap-6 -mx-4 px-4 md:mx-0 md:px-0 hide-scrollbar">
-                    {tickets.map((ticket, index) => {
+                    {tickets.map((ticket, _index) => {
                       const benefits = deriveTicketBenefits(ticket);
                       const theme = TICKET_THEMES[ticket.color_theme || 'silver'] || TICKET_THEMES.silver;
 
