@@ -16,7 +16,6 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { logout } from '@/lib/api/auth';
 import UserAvatar from './UserAvatar';
 
 type BaseLink = {
@@ -45,7 +44,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const { user, loading } = useAuth();
+  const { user, loading, logout: contextLogout } = useAuth();
 
   // Navigation links for authenticated users with icons
   const authLinks: LinkItem[] = [
@@ -110,7 +109,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
       path: '#',
       icon: <LogOut className="w-5 h-5 mr-3" />,
       onClick: async () => {
-        await logout();
+        await contextLogout();
         navigate('/');
       }
     }

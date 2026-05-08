@@ -17,13 +17,15 @@ import {
     Ticket,
     Share2,
     Download} from 'lucide-react';
-import { logout as apiSignOut, getSession } from '@/lib/api/auth';
+import { getSession } from '@/lib/api/auth';
 import { getEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
 import DashboardOrders from './DashboardOrders';
 import CreateEvent from './CreateEvent';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
+
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
     const [count, setCount] = useState(0);
@@ -876,23 +878,11 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
 export default function Dashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const { user, loading } = useAuth();
-    const [profile, setProfile] = useState<any>(null);
+    const { user: profile, logout: contextLogout } = useAuth();
     const [editingEventTitle, setEditingEventTitle] = useState<string | null>(null);
     const location = useLocation();
     const navigate = useNavigate();
 
-    useEffect(() => {
-        if (!loading && !user) {
-            navigate('/login');
-        }
-    }, [user, loading, navigate]);
-
-    useEffect(() => {
-        if (user) {
-            setProfile(user);
-        }
-    }, [user]);
 
     // Fetch editing event title if in edit mode
     useEffect(() => {
@@ -920,10 +910,10 @@ export default function Dashboard() {
         { name: 'Settings', path: '/dashboard/settings', icon: null as any, customIcon: 'settings' },
     ];
 
-    const displayName = profile?.username || profile?.name || user?.name || user?.email?.split('@')[0] || 'Organizer';
+    const displayName = profile?.username || profile?.name || profile?.email?.split('@')[0] || 'Organizer';
 
     const handleSignOut = async () => {
-        await apiSignOut();
+        await contextLogout();
         navigate('/');
     };
 
@@ -1066,7 +1056,7 @@ export default function Dashboard() {
                 <Routes>
                     <Route path="/" element={<DashboardHome displayName={displayName} />} />
                     <Route path="/events" element={<DashboardEvents />} />
-                    <Route path="/events/:id/edit" element={<CreateEvent />} />
+                    <Route path="/events/:id/edit" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
                     <Route path="/finance" element={<DashboardFinance />} />
                     <Route path="/orders" element={<DashboardOrders />} />
                 </Routes>

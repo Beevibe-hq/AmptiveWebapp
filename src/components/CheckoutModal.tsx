@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Loader2, Minus, Plus, X, CheckCircle2, Ticket } from 'lucide-react';
-import { createPurchase } from '@/lib/api/purchases';
+import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 
 type EventTicket = {
     id: string;
@@ -30,6 +30,11 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
     const [totalAmount, setTotalAmount] = useState(0);
     const [step, setStep] = useState<'selection' | 'processing' | 'success'>('selection');
     const [error, setError] = useState<string | null>(null);
+    const [buyerEmail, setBuyerEmail] = useState('');
+    const [buyerName, setBuyerName] = useState('');
+    const [buyerPhone, setBuyerPhone] = useState('');
+
+    const isGuest = !currentUser;
 
     // Reset state when modal opens
     useEffect(() => {
@@ -38,6 +43,9 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
             setTotalAmount(0);
             setStep('selection');
             setError(null);
+            setBuyerEmail('');
+            setBuyerName('');
+            setBuyerPhone('');
         }
     }, [isOpen]);
 
@@ -67,15 +75,14 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
 
     const hasSelection = Object.keys(selection).length > 0;
 
-    const generateTicketId = (eventId: string, ticketTypeId: string) => {
-        const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-        return `TKT-${eventId.substring(0, 4)}-${random}`;
-    };
+    const handleCheckout = async () => {
+        if (isGuest && !buyerEmail.trim()) {
+            setError("Your email is required for guest checkout.");
+            return;
+        }
 
-    const handleSimulatedPayment = async () => {
-        if (!currentUser) {
-            // In a real app, we'd redirect to login or allow guest checkout
-            setError("You must be logged in to purchase tickets.");
+        if (!isGuest && !currentUser?.email) {
+            setError("Your account email is required for checkout.");
             return;
         }
 
@@ -83,54 +90,68 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
         setError(null);
 
         try {
-            // 1. Simulate Network Delay (2 seconds)
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            const items: CheckoutItem[] = Object.entries(selection).map(([ticketId, qty]) => ({
+                ticket_type_id: ticketId,
+                quantity: qty,
+            }));
 
-            // 2. Prepare Database Records
-            const purchases = [];
-            const timestamp = new Date().toISOString();
-
-            for (const [ticketId, qty] of Object.entries(selection)) {
-                const ticketType = tickets.find(t => t.id === ticketId);
-                if (!ticketType) continue;
-
+            const attendeesList: Attendee[] = [];
+            Object.entries(selection).forEach(([ticketId, qty]) => {
                 for (let i = 0; i < qty; i++) {
-                    const uniqueTicketId = generateTicketId(event.id, ticketId);
-
-                    purchases.push({
-                        ticket_id: uniqueTicketId,
-                        event_id: event.id,
+                    attendeesList.push({
                         ticket_type_id: ticketId,
-                        buyer_id: currentUser.id,
-                        buyer_name: currentUser.name || currentUser.email || 'Guest',
-                        buyer_email: currentUser.email || 'guest@example.com',
-                        purchase_date: timestamp,
-                        ticket_status: 'valid',
-                        qr_code_data: JSON.stringify({
-                            t: uniqueTicketId,
-                            e: event.id,
-                            u: currentUser.id,
-                            s: 'valid'
-                        }),
-                        metadata: {
-                            simulated: true,
-                            price_paid: ticketType.price,
-                            currency: ticketType.currency || 'NGN'
-                        }
+                        name: isGuest ? (buyerName || 'Guest') : (currentUser?.name || ''),
+                        email: isGuest ? buyerEmail : (currentUser?.email || ''),
+                        is_me: !isGuest,
                     });
+                }
+            });
+
+            const request: CheckoutRequest = {
+                items,
+                attendees: attendeesList,
+                wants_physical_delivery: false,
+                metadata: {},
+            };
+
+            if (isGuest) {
+                request.buyer_email = buyerEmail.trim();
+                if (buyerName.trim()) {
+                    request.buyer_name = buyerName.trim();
+                }
+                if (buyerPhone.trim()) {
+                    request.buyer_phone = buyerPhone.trim();
                 }
             }
 
-            // 3. Insert into Database using API
-            const result = await createPurchase(purchases);
-            if (!result.ok) throw new Error(result.error);
+            const result = await checkoutTicket(event.id, request, { skipAuth: isGuest });
 
-            // 4. Success!
-            setStep('success');
+            if (result.purchase.status === 'successful' && result.purchase.amount === 0) {
+                setStep('success');
+            } else if (result.payment_url) {
+                if (isGuest) {
+                    sessionStorage.setItem('guest-purchase', JSON.stringify({
+                        purchase: result.purchase,
+                        buyer_email: buyerEmail,
+                        buyer_name: buyerName,
+                        buyer_phone: buyerPhone,
+                        event_id: event.id,
+                        event_title: event.title,
+                        tickets: Object.entries(selection).map(([ticketId, qty]) => {
+                            const t = tickets.find(tk => tk.id === ticketId);
+                            return { label: t?.label || 'Ticket', quantity: qty, price: t?.price || 0 };
+                        }),
+                        total_amount: totalAmount,
+                    }));
+                }
+                window.location.href = result.payment_url;
+            } else {
+                throw new Error("No payment URL received");
+            }
 
         } catch (err: any) {
-            console.error('Payment failed:', err);
-            setError(err.message || "Payment simulation failed. Please try again.");
+            console.error('Checkout failed:', err);
+            setError(err.message || "Checkout failed. Please try again.");
             setStep('selection');
         }
     };
@@ -176,9 +197,9 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                                 <CheckCircle2 className="h-10 w-10 text-green-600" />
                             </div>
                             <div>
-                                <h3 className="text-2xl font-bold text-gray-900 mb-2">You're going! 🎉</h3>
+                                <h3 className="text-2xl font-bold text-gray-900 mb-2">You're going!</h3>
                                 <p className="text-gray-500">
-                                    Your tickets have been sent to <span className="font-semibold text-gray-900">{currentUser?.email}</span>
+                                    Your tickets have been sent to <span className="font-semibold text-gray-900">{isGuest ? buyerEmail : currentUser?.email}</span>
                                 </p>
                             </div>
 
@@ -247,6 +268,41 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                                 ))}
                             </div>
 
+                            {isGuest && (
+                                <div className="mt-6 space-y-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address <span className="text-red-500">*</span></label>
+                                        <input
+                                            type="email"
+                                            value={buyerEmail}
+                                            onChange={(e) => setBuyerEmail(e.target.value)}
+                                            placeholder="your@email.com"
+                                            className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 text-sm font-medium"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name (Optional)</label>
+                                        <input
+                                            type="text"
+                                            value={buyerName}
+                                            onChange={(e) => setBuyerName(e.target.value)}
+                                            placeholder="Your full name"
+                                            className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 text-sm font-medium"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Phone Number (Optional)</label>
+                                        <input
+                                            type="tel"
+                                            value={buyerPhone}
+                                            onChange={(e) => setBuyerPhone(e.target.value)}
+                                            placeholder="+2348012345678"
+                                            className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 text-sm font-medium"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Summary & Pay Button */}
                             <div className="mt-8 pt-6 border-t border-gray-100 space-y-4">
                                 <div className="flex items-center justify-between text-sm">
@@ -275,14 +331,14 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                                 )}
 
                                 <button
-                                    onClick={handleSimulatedPayment}
+                                    onClick={handleCheckout}
                                     disabled={!hasSelection}
                                     className="w-full rounded-full bg-black py-4 font-bold text-white transition-all hover:bg-gray-800 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none shadow-lg shadow-black/10"
                                 >
                                     Pay {new Intl.NumberFormat(undefined, { style: 'currency', currency: 'NGN' }).format(totalAmount)}
                                 </button>
                                 <p className="text-center text-xs text-gray-400">
-                                    This is a simulated payment. No real money will be charged.
+                                    Secure checkout powered by Paystack
                                 </p>
                             </div>
                         </>

@@ -15,6 +15,7 @@ export interface StandaloneEvent {
   playback_url?: string | null;
   livestream_id?: string | null;
   event_type?: string | null;
+  show_type?: 'free' | 'paid';
   viewer_count?: number;
   peak_viewers?: number;
   reaction_count?: number;

@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Filter, MapPin, Calendar, Users, Plus, TrendingUp } from 'lucide-react';
+import { Search, Filter, MapPin, Calendar, Users, Plus } from 'lucide-react';
+import { listEvents, StandaloneEvent } from '@/lib/api/events';
 
 const Events = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [events, setEvents] = useState<StandaloneEvent[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const filters = [
     { id: 'all', name: 'All Events' },
@@ -14,97 +17,25 @@ const Events = () => {
     { id: 'business', name: 'Business' },
   ];
 
-  const events = [
-    {
-      id: 1,
-      title: 'Electronic Fusion Night',
-      artist: 'DJ Synthesis',
-      date: 'Feb 15, 2025',
-      time: '8:00 PM',
-      location: 'Virtual Event',
-      type: 'music',
-      image: 'https://images.pexels.com/photos/1105666/pexels-photo-1105666.jpeg?auto=compress&cs=tinysrgb&w=400&h=250&dpr=2',
-      price: '$25',
-      attendees: 234,
-      investment: 75,
-      trending: true,
-    },
-    {
-      id: 2,
-      title: 'Acoustic Sessions',
-      artist: 'Luna & The Waves',
-      date: 'Feb 22, 2025',
-      time: '7:30 PM',
-      location: 'Brooklyn, NY',
-      type: 'music',
-      image: 'https://images.pexels.com/photos/1190298/pexels-photo-1190298.jpeg?auto=compress&cs=tinysrgb&w=400&h=250&dpr=2',
-      price: '$35',
-      attendees: 156,
-      investment: 60,
-      trending: false,
-    },
-    {
-      id: 3,
-      title: 'Tech Talk: AI in Music',
-      artist: 'Innovation Labs',
-      date: 'Mar 1, 2025',
-      time: '6:00 PM',
-      location: 'San Francisco, CA',
-      type: 'tech',
-      image: 'https://images.pexels.com/photos/2004161/pexels-photo-2004161.jpeg?auto=compress&cs=tinysrgb&w=400&h=250&dpr=2',
-      price: '$15',
-      attendees: 89,
-      investment: 90,
-      trending: true,
-    },
-    {
-      id: 4,
-      title: 'Digital Art Showcase',
-      artist: 'Pixel Collective',
-      date: 'Mar 5, 2025',
-      time: '5:00 PM',
-      location: 'Los Angeles, CA',
-      type: 'art',
-      image: 'https://images.pexels.com/photos/1269968/pexels-photo-1269968.jpeg?auto=compress&cs=tinysrgb&w=400&h=250&dpr=2',
-      price: '$20',
-      attendees: 78,
-      investment: 45,
-      trending: false,
-    },
-    {
-      id: 5,
-      title: 'Startup Pitch Night',
-      artist: 'Entrepreneur Hub',
-      date: 'Mar 8, 2025',
-      time: '7:00 PM',
-      location: 'Austin, TX',
-      type: 'business',
-      image: 'https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=400&h=250&dpr=2',
-      price: '$30',
-      attendees: 123,
-      investment: 80,
-      trending: false,
-    },
-    {
-      id: 6,
-      title: 'Jazz & Wine Evening',
-      artist: 'The Smooth Collective',
-      date: 'Mar 12, 2025',
-      time: '8:30 PM',
-      location: 'New Orleans, LA',
-      type: 'music',
-      image: 'https://images.pexels.com/photos/1370545/pexels-photo-1370545.jpeg?auto=compress&cs=tinysrgb&w=400&h=250&dpr=2',
-      price: '$45',
-      attendees: 67,
-      investment: 30,
-      trending: false,
-    },
-  ];
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  const fetchEvents = async () => {
+    try {
+      const eventsData = await listEvents({ page_size: 100 });
+      setEvents(eventsData || []);
+    } catch (error) {
+      console.error('Error fetching events:', error);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredEvents = events.filter(event => {
-    const matchesSearch = event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         event.artist.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || event.type === selectedFilter;
+    const matchesSearch = event.title?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = selectedFilter === 'all' || event.tags?.some(tag => tag.name?.toLowerCase() === selectedFilter);
     return matchesSearch && matchesFilter;
   });
 
@@ -163,69 +94,75 @@ const Events = () => {
         </div>
 
         {/* Events Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredEvents.map((event) => (
-            <Link
-              key={event.id}
-              to={`/events/${event.id}`}
-              className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group"
-            >
-              <div className="relative">
-                <img
-                  src={event.image}
-                  alt={event.title}
-                  className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                <div className="absolute top-4 left-4 flex gap-2">
-                  {event.trending && (
-                    <span className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center space-x-1">
-                      <TrendingUp className="w-3 h-3" />
-                      <span>Trending</span>
-                    </span>
-                  )}
-                </div>
-                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium text-gray-900">
-                  {event.price}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                <div className="h-48 bg-gray-100 animate-pulse" />
+                <div className="p-6 space-y-3">
+                  <div className="h-6 bg-gray-100 rounded w-3/4 animate-pulse" />
+                  <div className="h-4 bg-gray-100 rounded w-1/2 animate-pulse" />
+                  <div className="space-y-2">
+                    <div className="h-4 bg-gray-100 rounded w-full animate-pulse" />
+                    <div className="h-4 bg-gray-100 rounded w-2/3 animate-pulse" />
+                  </div>
                 </div>
               </div>
-              
-              <div className="p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-primary-600 transition-colors">
-                  {event.title}
-                </h3>
-                <p className="text-gray-600 mb-4">{event.artist}</p>
-                
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-sm text-gray-500">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    <span>{event.date} at {event.time}</span>
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <MapPin className="w-4 h-4 mr-2" />
-                    <span>{event.location}</span>
-                  </div>
-                  <div className="flex items-center text-sm text-gray-500">
-                    <Users className="w-4 h-4 mr-2" />
-                    <span>{event.attendees} attending</span>
-                  </div>
-                </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredEvents.map((event) => {
+              const eventDate = event.scheduled_for ? new Date(event.scheduled_for) : null;
+              const dateStr = eventDate ? eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBA';
+              const timeStr = eventDate ? eventDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+              const priceMin = event.event_tickets && event.event_tickets.length > 0
+                ? Math.min(...event.event_tickets.map((t: any) => t.price || 0))
+                : 0;
 
-                <div className="border-t pt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Investment Progress</span>
-                    <span className="text-sm font-medium text-primary-600">{event.investment}%</span>
+              return (
+                <Link
+                  key={event.event_id}
+                  to={`/events/${event.event_id}`}
+                  className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group"
+                >
+                  <div className="relative">
+                    <img
+                      src={event.thumbnail_url || 'https://images.pexels.com/photos/1105666/pexels-photo-1105666.jpeg?auto=compress&cs=tinysrgb&w=400&h=250&dpr=2'}
+                      alt={event.title}
+                      className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-medium text-gray-900">
+                      {priceMin === 0 ? 'Free' : `₦${priceMin.toLocaleString()}`}
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-gradient-to-r from-primary-600 to-electric-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${event.investment}%` }}
-                    ></div>
+
+                  <div className="p-6">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-primary-600 transition-colors">
+                      {event.title}
+                    </h3>
+                    <p className="text-gray-600 mb-4">{event.host?.name || 'Unknown Host'}</p>
+
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        <span>{dateStr} {timeStr && `at ${timeStr}`}</span>
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <MapPin className="w-4 h-4 mr-2" />
+                        <span>{event.location?.venue || event.location?.city || 'TBA'}</span>
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <Users className="w-4 h-4 mr-2" />
+                        <span>{event.going_count || 0} attending</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
 
         {/* No Results */}
         {filteredEvents.length === 0 && (

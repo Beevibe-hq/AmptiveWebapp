@@ -1,6 +1,6 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { MapPin, Share2, Ticket, Check } from 'lucide-react';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { extractDominantColors } from '@/utils/colorExtractor';
@@ -9,7 +9,6 @@ import { toastSuccess } from '@/lib/ui/toast';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent, getRelatedEvents, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
-import { getProfile, getProfileByUserId } from '@/lib/api/profiles';
 
 
 // type EventRecord = {
@@ -186,19 +185,21 @@ const EventDetail = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch Current User
+      // Fetch Current User if logged in
       const user = await getCurrentUser();
       setCurrentUser(user);
 
       try {
         // Fetch Event
         const eventData = await getEvent(id);
+        console.log('EEE', eventData);
+        
         if (!eventData) throw new Error('Event not found');
         setEvent(eventData);
 
         // Fetch Dominant Color
         if (eventData.thumbnail_url) {
-                  console.log("event data =>", eventData);
+          console.log("event data =>", eventData);
 
           extractDominantColors(eventData.thumbnail_url).then(colors => {
             if (colors[0]) {
@@ -218,7 +219,7 @@ const EventDetail = () => {
         // Fetch Tickets
         const ticketData = await getTicketsForEvent(id);
         console.log("tickets daata", ticketData);
-        
+
         setTickets(ticketData);
 
         // Fetch Organizer
@@ -240,7 +241,7 @@ const EventDetail = () => {
 
         // Fetch Related (Events by same organizer)
         if (eventData.host?.user_id) {
-          const related = await getRelatedEvents(eventData.host?.user_id, id, 4);          
+          const related = await getRelatedEvents(eventData.host?.user_id, id, 4);
           setRelatedEvents(related);
         }
 
@@ -376,7 +377,7 @@ const EventDetail = () => {
           Get Tickets
         </Link>
       ),
-      footerText: "Secure checkout powered by Flutterwave"
+      footerText: "Secure checkout powered by Paystack"
     };
   };
 

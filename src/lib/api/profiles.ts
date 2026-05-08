@@ -1,29 +1,5 @@
-import { $users, $auth } from './services';
+import { $users, $auth, type UserProfile } from './services';
 
-export interface UserProfile {
-  id: string;
-  user_id: string;
-  name: string;
-  username: string;
-  email?: string | null;
-  phone_number?: string | null;
-  dob?: string | null;
-  profile_picture?: string | null;
-  avatar_url?: string | null;
-  country?: string | null;
-  bio?: string | null;
-  cover_photo?: string | null;
-  website_url?: string | null;
-  instagram_url?: string | null;
-  linkedin_url?: string | null;
-  x_url?: string | null;
-  followers_count?: number;
-  following_count?: number;
-  has_hosted_shows?: boolean;
-  has_hosted_events?: boolean;
-  created_at?: string;
-  updated_at?: string;
-}
 
 export interface UpdateProfilePayload {
   profile_picture?: string | undefined;
@@ -114,7 +90,6 @@ export async function getProfileByUserId(targetUserId: string): Promise<UserProf
 }
 
 export async function updateProfile(
-  _userId: string,
   data: Partial<UserProfile>
 ): Promise<{ ok: boolean; error?: string; profile?: UserProfile | null }> {
   try {
@@ -156,8 +131,8 @@ export async function checkUsernameAvailability(username: string, _excludeUserId
   }
 }
 
-export async function updateProfileAvatar(userId: string, avatarUrl: string): Promise<{ ok: boolean; error?: string }> {
-  const result = await updateProfile(userId, { profile_picture: avatarUrl, avatar_url: avatarUrl });
+export async function updateProfileAvatar(avatarUrl: string): Promise<{ ok: boolean; error?: string }> {
+  const result = await updateProfile({ profile_picture: avatarUrl, avatar_url: avatarUrl });
   return { ok: result.ok, error: result.error };
 }
 

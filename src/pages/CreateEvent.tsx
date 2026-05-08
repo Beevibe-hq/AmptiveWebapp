@@ -4,14 +4,14 @@ import { Loader2, Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent } from '@/lib/api/events';
-import { getTicketsForEvent, createTickets, updateTicket, deleteTickets } from '@/lib/api/tickets';
+import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme } from '@/lib/api/tickets';
 import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import RichTextEditor from '@/components/RichTextEditor';
 import LocationPicker from '@/components/LocationPicker';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api/client';
+import { uploadImage } from '@/lib/api/storage';
 
-type TicketTheme = 'silver' | 'bronze' | 'gold' | 'platinum' | 'obsidian';
 
 const TICKET_THEMES: Record<TicketTheme, {
   name: string;
@@ -63,15 +63,7 @@ const TICKET_THEMES: Record<TicketTheme, {
   }
 };
 
-type EventTicket = {
-  id: string;
-  title: string;
-  price: number;
-  currency: string;
-  benefits: string[];
-  colorTheme?: TicketTheme;
-  quantity?: number;
-};
+
 
 type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
 
@@ -79,8 +71,7 @@ type FormState = {
   title: string;
   summary: string;
   description: string;
-  startDateTime: string;
-  endDateTime: string;
+  startDateTime: string | null;
   venue: string;
   city: string;
   latitude?: number | null;
@@ -89,6 +80,7 @@ type FormState = {
   locationType: 'physical' | 'online';
   tickets: EventTicket[];
   showType: 'free' | 'paid';
+  price: number;
   handRaising: boolean;
   allowWhispers: boolean;
 };
@@ -118,21 +110,12 @@ const GALLERY_IMAGES = [
   'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=800', // Crowd Energy
 ];
 
-const formatLocalDateTime = (date: Date) => {
-  const copy = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
-  return copy.toISOString().slice(0, 16);
-};
-
 const buildInitialFormState = (): FormState => {
-  const now = new Date();
-  const start = formatLocalDateTime(now);
-  const end = formatLocalDateTime(new Date(now.getTime() + 60 * 60 * 1000));
   return {
     title: '',
     summary: '',
     description: '',
-    startDateTime: start,
-    endDateTime: end,
+    startDateTime: null,
     venue: '',
     city: '',
     latitude: null,
@@ -141,6 +124,7 @@ const buildInitialFormState = (): FormState => {
     locationType: 'physical',
     tickets: [],
     showType: 'free',
+    price: 0,
     handRaising: false,
     allowWhispers: false,
   };
@@ -177,12 +161,17 @@ const formatCompactPrice = (price: number, currency: string = 'NGN'): string => 
   return formatTicketPrice(price, currency);
 };
 
+const deriveEventPrice = (tickets: EventTicket[]): number => {
+  if (tickets.length === 0) return 0;  
+  return Math.min(...tickets.map(t => t.price));
+};
+
 const deriveTicketBenefits = (ticket: EventTicket): string[] => {
   if (ticket.benefits && ticket.benefits.length > 0) {
     return ticket.benefits;
   }
 
-  const label = ticket.title?.toLowerCase() ?? '';
+  const label = ticket.label?.toLowerCase() ?? '';
   const benefits = new Set<string>();
 
   if (label.includes('vip') || label.includes('premium')) {
@@ -218,7 +207,7 @@ const deriveTicketBenefits = (ticket: EventTicket): string[] => {
 };
 
 const deriveAvailabilityStatus = (ticket: EventTicket, index: number): AvailabilityStatus => {
-  const label = ticket.title?.toLowerCase() ?? '';
+  const label = ticket.label?.toLowerCase() ?? '';
   if (label.includes('sold out')) return 'Sold Out';
   if (ticket.price === 0 || label.includes('free') || label.includes('general') || label.includes('standard') || label.includes('regular')) {
     return 'Available';
@@ -249,6 +238,7 @@ const CreateEvent = () => {
   const [ready, setReady] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [eventStatus, setEventStatus] = useState<string>('');
   const [coverPreviewError, setCoverPreviewError] = useState(false);
   const [coverPreview, setCoverPreview] = useState('');
   const [activeTheme, setActiveTheme] = useState(0);
@@ -259,8 +249,6 @@ const CreateEvent = () => {
   const filePreviewUrlRef = useRef<string | null>(null);
   const coverInputId = useMemo(() => `cover-upload-${Math.random().toString(36).slice(2)}`, []);
 
-  // Animation state for preview card
-  const [isHoveringPreview, setIsHoveringPreview] = useState(false);
 
   // Mobile modal states
   const [showMobileUploadOptions, setShowMobileUploadOptions] = useState(false);
@@ -275,7 +263,7 @@ const CreateEvent = () => {
     price: string;
     currency: string;
     benefits: string;
-    colorTheme: TicketTheme;
+    color_theme: TicketTheme;
     quantity: string;
   }>({
     title: '',
@@ -283,12 +271,12 @@ const CreateEvent = () => {
     currency: 'NGN',
     quantity: '',
     benefits: '',
-    colorTheme: 'silver',
+    color_theme: 'silver',
   });
 
   // Ticket handlers
   const handleAddTicket = () => {
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
     setEditingTicketId(null);
     setMobileTab('details');
     setShowTicketForm(true);
@@ -296,11 +284,11 @@ const CreateEvent = () => {
 
   const handleEditTicket = (ticket: EventTicket) => {
     setTicketForm({
-      title: ticket.title,
+      title: ticket.label,
       price: ticket.price.toString(),
       currency: ticket.currency,
-      benefits: ticket.benefits.join('\n'),
-      colorTheme: ticket.colorTheme || 'silver',
+      benefits: ticket.benefits?.join('\n') ?? "",
+      color_theme: ticket.color_theme || 'silver',
       quantity: ticket.quantity?.toString() || '',
     });
     setEditingTicketId(ticket.id);
@@ -323,44 +311,57 @@ const CreateEvent = () => {
       .filter(Boolean);
 
     if (editingTicketId) {
-      // Update existing ticket
       setForm(prev => ({
         ...prev,
         tickets: prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, colorTheme: ticketForm.colorTheme, quantity }
+            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
             : t
         ),
+        price: deriveEventPrice(prev.tickets.map(t =>
+          t.id === editingTicketId
+            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
+            : t
+        )),
       }));
     } else {
-      // Add new ticket
       const newTicket: EventTicket = {
         id: `ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        title: ticketForm.title,
+        label: ticketForm.title,
         price,
         currency: ticketForm.currency,
         benefits,
-        colorTheme: ticketForm.colorTheme,
+        color_theme: ticketForm.color_theme,
         quantity,
+        event_id: '',
+        quantity_total: null,
+        quantity_sold: 0,
+        quantity_remaining: 0,
+        reserved_quantity: 0,
+        is_active: false
       };
-      setForm(prev => ({ ...prev, tickets: [...prev.tickets, newTicket] }));
+      setForm(prev => ({ ...prev, tickets: [...prev.tickets, newTicket], price: deriveEventPrice([...prev.tickets, newTicket]) }));
     }
 
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
 
   const handleDeleteTicket = (ticketId: string) => {
-    setForm(prev => ({
-      ...prev,
-      tickets: prev.tickets.filter(t => t.id !== ticketId),
-    }));
+    setForm(prev => {
+      const remaining = prev.tickets.filter(t => t.id !== ticketId);
+      return {
+        ...prev,
+        tickets: remaining,
+        price: deriveEventPrice(remaining),
+      };
+    });
   };
 
   const handleCancelTicketForm = () => {
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
 
@@ -421,7 +422,6 @@ const CreateEvent = () => {
           if (!refreshed.data) {
             if (!cancelled) {
               toastError('Please sign in to create an event.');
-              navigate('/login');
             }
           } else {
             const u = await getCurrentUser()
@@ -433,7 +433,6 @@ const CreateEvent = () => {
         console.error('Failed to fetch session', error);
         if (!cancelled) {
           toastError('We could not verify your session. Please sign in again.');
-          navigate('/login');
         }
       }
     };
@@ -474,16 +473,24 @@ const CreateEvent = () => {
           return;
         }
 
-        await getTicketsForEvent(id);
-
+        const tickets = await getTicketsForEvent(id);        
+        
         setForm(prev => ({
           ...prev,
           title: event.title || '',
           description: event.description || '',
           startDateTime: safeFormat(event.scheduled_for),
-          endDateTime: safeFormat(event.ended_at),
           coverImage: event.thumbnail_url || '',
+          price: deriveEventPrice(tickets || []),
+          tickets: tickets,
+          handRaising: event.hand_raising!,
+          showType: event.show_type!
+
         }));
+
+        console.log("kkk", form);
+        
+        setEventStatus(event.status || 'draft');
         setCoverPreview(event.thumbnail_url || '');
       } catch (error) {
         console.error('Error fetching event for edit:', error);
@@ -574,17 +581,11 @@ const CreateEvent = () => {
   }, []);
 
   const uploadCoverImage = async (file: File): Promise<string> => {
-    const { uploadFile, getPublicUrl } = await import('@/lib/api/storage');
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = fileName;
-
-    console.log('Upload Path:', filePath);
 
     try {
-      const publicUrl = await uploadFile('event-covers', filePath, file);
+      const publicUrl = await uploadImage(file, 'livestream-banner');
       console.log('UPLOAD SUCCESS:', publicUrl);
-      return getPublicUrl('event-covers', filePath);
+      return publicUrl;
     } catch (err: any) {
       console.error('Upload failed:', err);
       throw new Error(`Upload failed: ${err.message}`);
@@ -601,36 +602,25 @@ const CreateEvent = () => {
       return;
     }
 
+    const isPublished = id && eventStatus !== 'draft';
+
     if (!form.startDateTime) {
-      toastError('Please select a start date and time.');
-      return;
-    }
-
-    const startTime = new Date(form.startDateTime);
-    if (Number.isNaN(startTime.getTime())) {
-      toastError('Start time is invalid.');
-      return;
-    }
-
-    let endTimeIso: string | null = null;
-    if (form.endDateTime) {
-      const endTime = new Date(form.endDateTime);
-      if (Number.isNaN(endTime.getTime())) {
-        toastError('End time is invalid.');
+      if (isPublished) {
+        toastError('Published events must have a start date. You cannot unset it.');
         return;
       }
-      if (endTime <= startTime) {
-        toastError('End time must be after the start time.');
+    } else {
+      const startTime = new Date(form.startDateTime);
+      if (Number.isNaN(startTime.getTime())) {
+        toastError('Start time is invalid.');
         return;
       }
-      endTimeIso = endTime.toISOString();
     }
 
     setSubmitting(true);
     try {
       let coverImageUrl = form.coverImage;
 
-      // Upload image if a new file is selected
       if (coverFile) {
         try {
           coverImageUrl = await uploadCoverImage(coverFile);
@@ -641,12 +631,15 @@ const CreateEvent = () => {
         }
       }
 
+      const startTime = form.startDateTime ? new Date(form.startDateTime) : null;
+
       const insertPayload = {
         title: trimmedTitle,
         description: form.description.trim() || undefined,
         thumbnail_url: coverImageUrl.trim() || undefined,
         show_type: form.showType,
-        scheduled_for: startTime.toISOString(),
+        price: form.price,
+        scheduled_for: startTime ? startTime.toISOString() : undefined,
         hand_raising: form.handRaising,
         allow_whispers: form.allowWhispers,
       };
@@ -683,36 +676,37 @@ const CreateEvent = () => {
       }
 
       // Insert or Update tickets
-      if (form.tickets.length > 0) {
+      if (form.tickets.length > 0 && eventId) {
         const newTickets = form.tickets.filter(t => t.id.startsWith('ticket-'));
         const existingTickets = form.tickets.filter(t => !t.id.startsWith('ticket-'));
 
-        // Insert new tickets
-        if (newTickets.length > 0 && eventId) {
-          const ticketInserts = newTickets.map(ticket => ({
-            event_id: eventId,
-            label: ticket.title,
-            price: ticket.price,
-            currency: ticket.currency,
-            quantity: ticket.quantity,
-            benefits: ticket.benefits,
-            color_theme: ticket.colorTheme,
-            is_physical: false,
-          }));
+        // Insert new tickets (one at a time - no bulk)
+        if (newTickets.length > 0) {
+          for (const ticket of newTickets) {
+            const ticketPayload = {
+              label: ticket.label,
+              price: ticket.price,
+              currency: ticket.currency,
+              quantity_total: ticket.quantity ?? null,
+              benefits: ticket.benefits,
+              color_theme: ticket.color_theme,
+              is_physical: false,
+            };
 
-          await createTickets(eventId, ticketInserts);
+            await createNewTicket(ticketPayload, eventId);
+          }
         }
 
         // Update existing tickets
         if (existingTickets.length > 0) {
           for (const ticket of existingTickets) {
             await updateTicket(ticket.id, {
-              label: ticket.title,
+              label: ticket.label,
               price: ticket.price,
               currency: ticket.currency,
-              quantity: ticket.quantity,
+              quantity_total: ticket.quantity ?? null,
               benefits: ticket.benefits,
-              color_theme: ticket.colorTheme,
+              color_theme: ticket.color_theme,
             });
           }
         }
@@ -733,7 +727,7 @@ const CreateEvent = () => {
     }
   };
 
-  const datetimeValue = (value: string) => {
+  const datetimeValue = (value: string | null) => {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
@@ -767,6 +761,8 @@ const CreateEvent = () => {
       </div>
     );
   }
+
+  const isPublished = !!id && eventStatus !== 'draft';
 
   return (
     <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">
@@ -846,6 +842,17 @@ const CreateEvent = () => {
                       </button>
                     </div>
 
+                    {/* Event Price (auto-derived) */}
+                    {form.showType === 'paid' && form.tickets.length > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50/50 border border-amber-100">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Event Price</p>
+                          <p className="text-xs text-gray-500">Auto-derived from regular ticket</p>
+                        </div>
+                        <span className="text-lg font-bold text-gray-900">{formatTicketPrice(form.price)}</span>
+                      </div>
+                    )}
+
                     {/* Hand Raising Toggle */}
                     <div className="flex items-center justify-between">
                       <div>
@@ -889,28 +896,25 @@ const CreateEvent = () => {
                     Schedule
                   </div>
 
-                  <div className="grid gap-6 sm:grid-cols-2 lg:px-2">
-                    <div>
-                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start</label>
-                      <input
-                        type="datetime-local"
-                        min={nowIsoLocal}
-                        value={datetimeValue(form.startDateTime)}
-                        onChange={handleChange('startDateTime')}
-                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">End (Optional)</label>
-                      <input
-                        type="datetime-local"
-                        min={datetimeValue(form.startDateTime)}
-                        value={datetimeValue(form.endDateTime)}
-                        onChange={handleChange('endDateTime')}
-                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
-                      />
-                    </div>
+                  <div className="lg:px-2">
+                    <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      min={nowIsoLocal}
+                      value={form.startDateTime ? datetimeValue(form.startDateTime) : ''}
+                      onChange={(e) => {
+                        if (isPublished && !e.target.value) {
+                          toastError('Published events must have a start date.');
+                          return;
+                        }
+                        setForm(prev => ({ ...prev, startDateTime: e.target.value || null }));
+                      }}
+                      className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                      placeholder="Leave empty to save as draft"
+                    />
+                    {!form.startDateTime && !id && (
+                      <p className="mt-2 text-xs text-gray-400">Leave empty to save as a draft</p>
+                    )}
                   </div>
                   <div className="mx-2 flex items-center gap-2 text-xs text-gray-500 bg-gray-100/50 px-4 py-2 rounded-full w-fit border border-gray-100">
                     <Globe className="h-3.5 w-3.5" />
@@ -1001,7 +1005,7 @@ const CreateEvent = () => {
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
-                                <h5 className="font-bold text-gray-900">{ticket.title}</h5>
+                                <h5 className="font-bold text-gray-900">{ticket.label}</h5>
                                 <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
                                   {formatTicketPrice(ticket.price, ticket.currency)}
                                 </span>
@@ -1415,11 +1419,11 @@ const CreateEvent = () => {
                         <button
                           key={key}
                           type="button"
-                          onClick={() => setTicketForm(prev => ({ ...prev, colorTheme: key }))}
-                          className={`group relative w-12 h-12 rounded-full transition-all duration-200 ${ticketForm.colorTheme === key ? 'ring-2 ring-offset-2 ring-blue-500 scale-110' : 'hover:scale-105'}`}
+                          onClick={() => setTicketForm(prev => ({ ...prev, color_theme: key }))}
+                          className={`group relative w-12 h-12 rounded-full transition-all duration-200 ${ticketForm.color_theme === key ? 'ring-2 ring-offset-2 ring-blue-500 scale-110' : 'hover:scale-105'}`}
                         >
                           <div className={`absolute inset-0 rounded-full ${theme.gradient} shadow-sm border border-black/5`} />
-                          {ticketForm.colorTheme === key && (
+                          {ticketForm.color_theme === key && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <div className="w-2 h-2 bg-white rounded-full shadow-sm" />
                             </div>
@@ -1495,7 +1499,7 @@ const CreateEvent = () => {
                   {/* Card Preview */}
                   <div className="group relative w-full max-w-[360px] sm:max-w-[420px] min-h-[15rem] [perspective:1600px]">
                     {(() => {
-                      const theme = TICKET_THEMES[ticketForm.colorTheme || 'silver'];
+                      const theme = TICKET_THEMES[ticketForm.color_theme || 'silver'];
                       // Generate preview ticket ID
                       const previewTicketId = `PREVIEW-${Date.now().toString(36).toUpperCase()}`;
                       const qrData = JSON.stringify({
