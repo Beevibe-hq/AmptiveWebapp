@@ -1,13 +1,14 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { getSession } from '@/lib/api/auth';
-import { UserProfile } from '@/lib/api/profiles';
+import { getSession, logout as apiLogout } from '@/lib/api/auth';
+import { UserProfile } from '@/lib/api/services';
 
 type AuthContextType = {
   user: UserProfile | null;
   loading: boolean;
   refreshUser: () => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,12 +30,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const logout = useCallback(async () => {
+    try {
+      await apiLogout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshUser();
   }, [refreshUser]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, refreshUser }}>
+      <AuthContext.Provider value={{ user, loading, refreshUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,4 +1,4 @@
-import { $purchases } from './services';
+import { $tickets } from './services';
 
 export interface Purchase {
   id: string;
@@ -21,6 +21,11 @@ export interface TicketPurchase {
   status: string;
   purchase_date: string;
   qr_code_data: string;
+  purchase_id?: string;
+  ticket_code?: string;
+  color_theme?: string;
+  attendee_name?: string;
+  attendee_email?: string;
   events?: {
     title: string;
     cover_image: string;
@@ -47,35 +52,46 @@ export interface PurchaseInput {
   currency: string;
 }
 
-export async function createPurchase(purchases: PurchaseInput[]): Promise<{ ok: boolean; error?: string }> {
+export async function getPurchasesByUser(): Promise<TicketPurchase[]> {
   try {
-    await $purchases.create(purchases);
-    return { ok: true, error: undefined };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
+    const response = await $tickets.getMine();
+    const tickets = response?.tickets || [];
 
-export async function getPurchasesByUser(userId: string): Promise<TicketPurchase[]> {
-  const data: TicketPurchase[] = []
-  const error = 'error'
+    const mapped: TicketPurchase[] = tickets.map((ticket: any) => ({
+      id: ticket.id || '',
+      ticket_id: ticket.id || '',
+      event_id: ticket.event_id || '',
+      ticket_type_id: ticket.ticket_type_id || '',
+      status: ticket.status || 'valid',
+      purchase_date: ticket.created_at || ticket.purchase_date || '',
+      qr_code_data: ticket.qr_code_data || '',
+      ticket_code: ticket.ticket_code || '',
+      purchase_id: ticket.purchase_id,
+      color_theme: ticket.color_theme || 'silver',
+      attendee_name: ticket.attendee_name || '',
+      attendee_email: ticket.attendee_email || '',
+      events: {
+        title: ticket.event_title || 'Unknown Event',
+        cover_image: ticket.event_thumbnail_url || '',
+        start_time: ticket.scheduled_for || '',
+        venue: '',
+        city: '',
+        location_type: 'physical',
+      },
+      metadata: {
+        price_paid: ticket.price_paid || 0,
+        currency: ticket.currency || 'NGN',
+        physical_delivery: ticket.is_physical || false,
+      },
+    }));
 
-  if (error) {
-    console.error('Error fetching purchases:', error);
+    return mapped;
+  } catch (error) {
+    console.error('Error fetching tickets:', error);
     return [];
   }
-
-  return data
 }
 
 export async function getPurchasesByEvent(eventId: string): Promise<Purchase[]> {
   return [] as Purchase[];
-}
-
-export async function getPurchase(purchaseId: string): Promise<Purchase | null> {
-  try {
-    return await $purchases.getById(purchaseId) as Purchase;
-  } catch {
-    return null;
-  }
 }

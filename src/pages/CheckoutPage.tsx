@@ -7,8 +7,9 @@ import { TICKET_THEMES } from '@/lib/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent } from '@/lib/api/events';
-import { getTicketsForEvent } from '@/lib/api/tickets';
-import { createPurchase, getPurchasesByUser } from '@/lib/api/purchases';
+import { EventTicket, getTicketsForEvent } from '@/lib/api/tickets';
+import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
+import { UserProfile } from '@/lib/api/services';
 
 type EventRecord = {
     id: string;
@@ -16,26 +17,21 @@ type EventRecord = {
     start_time?: string | null;
     venue?: string | null;
     user_id?: string | null;
-};
-
-type EventTicket = {
-    id: string;
-    label: string;
-    price: number;
-    currency?: string | null;
-    quantity?: number | null;
-    color_theme?: string | null;
-    benefits?: string[] | null;
+    event_id?: string;
 };
 
 export default function CheckoutPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const eventId = id;
 
     const [event, setEvent] = useState<EventRecord | null>(null);
     const [tickets, setTickets] = useState<EventTicket[]>([]);
     const [loading, setLoading] = useState(true);
-    const [currentUser, setCurrentUser] = useState<any>(null);
+    const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+    const [buyerEmail, setBuyerEmail] = useState('');
+    const [buyerName, setBuyerName] = useState('');
+    const [buyerPhone, setBuyerPhone] = useState('');
 
     const [selection, setSelection] = useState<Record<string, number>>({});
     const [selectedTicketIdForPreview, setSelectedTicketIdForPreview] = useState<string | null>(null);
@@ -49,19 +45,46 @@ export default function CheckoutPage() {
     const [attendees, setAttendees] = useState<Array<{ ticketId: string; name: string; email: string; phone?: string; isMe: boolean }>>([]);
     const [showBulkForm, setShowBulkForm] = useState(false);
 
+    const isGuest = !currentUser;
+
     const PHYSICAL_DELIVERY_FEE = 5000;
+
+    // Pre-fill attendee name/email when isMe is true
+    useEffect(() => {
+        if (!currentUser) return;
+        const hasChanges = attendees.some(a => a.isMe && (!a.name || !a.email));
+        if (!hasChanges) return;
+
+        setAttendees(prev => prev.map(a => {
+            if (a.isMe && (!a.name || !a.email)) {
+                return {
+                    ...a,
+                    name: a.name || currentUser.name || '',
+                    email: a.email || currentUser.email || '',
+                };
+            }
+            return a;
+        }));
+    }, [currentUser, attendees]);
 
     // Initial Data Fetch
     useEffect(() => {
         const fetchData = async () => {
             if (!id) return;
             try {
-                const user = await getCurrentUser();
+                const user = await getCurrentUser().catch(() => null);
                 setCurrentUser(user);
 
                 const eventData = await getEvent(id);
                 if (!eventData) throw new Error('Event not found');
-                setEvent(eventData);
+                setEvent({
+                    ...eventData,
+                    id: eventData.event_id || '',
+                    title: eventData.title || '',
+                    start_time: eventData.scheduled_for || null,
+                    venue: eventData.location?.venue || null,
+                    user_id: eventData.host?.user_id || null,
+                });
 
                 const ticketData = await getTicketsForEvent(id);
 
@@ -71,28 +94,6 @@ export default function CheckoutPage() {
 
                     if (Array.isArray(raw)) {
                         parsedBenefits = raw.map(String);
-                    } else if (typeof raw === 'string' && raw.trim()) {
-                        const trimmed = raw.trim();
-                        if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-                            try {
-                                const parsed = JSON.parse(trimmed);
-                                if (Array.isArray(parsed)) {
-                                    parsedBenefits = parsed.map(String);
-                                } else if (parsed && typeof parsed === 'object') {
-                                    parsedBenefits = Object.values(parsed).map(String);
-                                } else {
-                                    parsedBenefits = [parsed.toString()];
-                                }
-                            } catch (e) {
-                                if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-                                    parsedBenefits = trimmed.slice(1, -1).split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-                                } else {
-                                    parsedBenefits = trimmed.split(/[\n,;]/).map(s => s.trim()).filter(Boolean);
-                                }
-                            }
-                        } else {
-                            parsedBenefits = trimmed.split(/[\n,;]/).map(s => s.trim()).filter(Boolean);
-                        }
                     }
 
                     if (parsedBenefits.length === 0) {
@@ -108,7 +109,7 @@ export default function CheckoutPage() {
 
                     return {
                         ...t,
-                        label: t.label || t.title || 'Standard Ticket',
+                        label: t.label || 'Standard Ticket',
                         benefits: parsedBenefits.map(String)
                     };
                 });
@@ -156,23 +157,24 @@ export default function CheckoutPage() {
     const totalAmount = ticketCost + (wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0);
 
     const handlePayment = async () => {
-        if (!currentUser) {
-            navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
-            return;
-        }
+        // if (!currentUser) {
+        //     navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
+        //     return;
+        // }
         if (!event) return;
 
         if (checkoutStep === 'selection') {
-            // Initialize attendees based on selection
-            const initialAttendees: any[] = [];
+            console.log(selection);
+
+            const initialAttendees: Array<{ ticketId: string; name: string; email: string; phone?: string; isMe: boolean }> = [];
             Object.entries(selection).forEach(([ticketId, qty]) => {
                 for (let i = 0; i < qty; i++) {
                     const isFirst = initialAttendees.length === 0;
                     initialAttendees.push({
                         ticketId,
-                        name: isFirst ? (currentUser.user_metadata?.full_name || '') : '',
-                        email: isFirst ? (currentUser.email || '') : '',
-                        isMe: isFirst,
+                        name: isFirst && currentUser ? (currentUser.name || '') : '',
+                        email: isFirst && currentUser ? (currentUser.email || '') : '',
+                        isMe: currentUser ? isFirst : false,
                         phone: ''
                     });
                 }
@@ -184,73 +186,96 @@ export default function CheckoutPage() {
         }
 
         if (checkoutStep === 'attendees') {
-            // Validate attendee details if in manual mode
+            if (isGuest && !buyerEmail.trim()) {
+                toastError('Your email is required for guest checkout.');
+                return;
+            }
             const incomplete = attendees.some(a => !a.name.trim() || !a.email.trim());
             if (incomplete) {
                 toastError("Please fill in all attendee names and emails.");
                 return;
             }
 
-            if (attendees.length === 1) {
-                setCheckoutStep('summary');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            } else {
-                setCheckoutStep('summary');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                return;
-            }
+            setCheckoutStep('summary');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
         }
 
         setProcessing(true);
         try {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            const items: CheckoutItem[] = Object.entries(selection).map(([ticketId, qty]) => ({
+                ticket_type_id: ticketId,
+                quantity: qty,
+            }));
 
-            const purchases = [];
-            const timestamp = new Date().toISOString();
+            const attendeesList: Attendee[] = attendees.map(a => ({
+                ticket_type_id: a.ticketId,
+                name: a.name.trim(),
+                email: a.email.trim() || undefined,
+                phone: a.phone?.trim() || undefined,
+                is_me: a.isMe,
+            }));
 
-            for (const [ticketId, qty] of Object.entries(selection)) {
-                const ticketType = tickets.find(t => t.id === ticketId);
-                if (!ticketType) continue;
+            const request: CheckoutRequest = {
+                items,
+                attendees: attendeesList,
+                wants_physical_delivery: wantsPhysicalDelivery,
+                metadata: {
+                    physical_delivery_fee: wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0,
+                },
+            };
 
-                for (let i = 0; i < qty; i++) {
-                    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-                    const uniqueTicketId = `TKT-${event.id.substring(0, 4)}-${random}`;
-
-                    purchases.push({
-                        ticket_id: uniqueTicketId,
-                        event_id: event.id,
-                        ticket_type_id: ticketId,
-                        buyer_id: currentUser.id,
-                        buyer_name: currentUser.name || currentUser.email || 'Guest',
-                        buyer_email: currentUser.email || 'guest@example.com',
-                        purchase_date: timestamp,
-                        ticket_status: 'valid',
-                        qr_code_data: JSON.stringify({
-                            t: uniqueTicketId,
-                            e: event.id,
-                            u: currentUser.id,
-                            s: 'valid'
-                        }),
-                        metadata: {
-                            simulated: true,
-                            price_paid: ticketType.price,
-                            currency: ticketType.currency || 'NGN',
-                            physical_delivery: wantsPhysicalDelivery,
-                            delivery_fee: wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0
-                        }
-                    });
+            if (isGuest) {
+                if (!buyerEmail.trim()) {
+                    toastError('Your email is required for guest checkout.');
+                    setProcessing(false);
+                    return;
+                }
+                request.buyer_email = buyerEmail.trim();
+                if (buyerName.trim()) {
+                    request.buyer_name = buyerName.trim();
+                }
+                if (buyerPhone.trim()) {
+                    request.buyer_phone = buyerPhone.trim();
                 }
             }
 
-            const result = await createPurchase(purchases);
-            if (!result.ok) throw new Error(result.error);
+            // Add callback URL for Paystack redirect
+            const callbackUrl = `${window.location.origin}/paystack/callback?event_id=${eventId}`;
+            const requestWithCallback = {
+                ...request,
+                callback_url: callbackUrl,
+            };
 
-            setSuccess(true);
-            toastSuccess("Payment successful!");
+            const result = await checkoutTicket(eventId!, requestWithCallback, { skipAuth: isGuest });
+
+            if (result.purchase.status === 'successful' && result.purchase.amount === 0) {
+                setSuccess(true);
+                toastSuccess("Tickets secured!");
+            } else if (result.payment_url) {
+                if (isGuest) {
+                    sessionStorage.setItem('guest-purchase', JSON.stringify({
+                        purchase: result.purchase,
+                        buyer_email: buyerEmail,
+                        buyer_name: buyerName,
+                        buyer_phone: buyerPhone,
+                        event_id: eventId,
+                        event_title: event.title,
+                        tickets: Object.entries(selection).map(([ticketId, qty]) => {
+                            const t = tickets.find(tk => tk.id === ticketId);
+                            return { label: t?.label || 'Ticket', quantity: qty, price: t?.price || 0 };
+                        }),
+                        total_amount: totalAmount,
+                    }));
+                }
+                window.location.href = result.payment_url;
+            } else {
+                throw new Error("No payment URL received");
+            }
 
         } catch (error: any) {
-            console.error('Payment error:', error);
-            toastError(error.message || 'Payment failed');
+            console.error('Checkout error:', error);
+            toastError(error.message || 'Checkout failed');
         } finally {
             setProcessing(false);
         }
@@ -283,7 +308,9 @@ export default function CheckoutPage() {
                     </div>
                     <h2 className="text-3xl font-black text-gray-900">Payment Successful!</h2>
                     <p className="text-gray-500 font-medium leading-relaxed">
-                        Your tickets have been sent to your email. You can also view them in your My Ticket page.
+                        {isGuest
+                            ? `Your tickets have been sent to ${buyerEmail || 'your email'}.`
+                            : 'Your tickets have been sent to your email. You can also view them in your My Ticket page.'}
                     </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-4 mt-8">
@@ -293,12 +320,14 @@ export default function CheckoutPage() {
                     >
                         Back to Event
                     </button>
-                    <button
-                        onClick={() => navigate('/profile')}
-                        className="px-8 py-3 rounded-full bg-black text-white font-bold hover:bg-gray-900 transition-colors"
-                    >
-                        View My Tickets
-                    </button>
+                    {!isGuest && (
+                        <button
+                            onClick={() => navigate('/profile')}
+                            className="px-8 py-3 rounded-full bg-black text-white font-bold hover:bg-gray-900 transition-colors"
+                        >
+                            View My Tickets
+                        </button>
+                    )}
                 </div>
             </div>
         );
@@ -323,6 +352,48 @@ export default function CheckoutPage() {
     const renderAttendeeStep = () => {
         const totalTickets = attendees.length;
 
+        const guestInfoSection = isGuest ? (
+            <div className="space-y-6 bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
+                <div>
+                    <h3 className="text-lg font-bold text-gray-900">Contact Information</h3>
+                    <p className="text-sm text-gray-500 mt-1">We'll send your tickets to this email</p>
+                </div>
+                <div className="space-y-4">
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address <span className="text-red-500">*</span></label>
+                        <input
+                            type="email"
+                            value={buyerEmail}
+                            onChange={(e) => setBuyerEmail(e.target.value)}
+                            placeholder="your@email.com"
+                            required
+                            className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name (Optional)</label>
+                        <input
+                            type="text"
+                            value={buyerName}
+                            onChange={(e) => setBuyerName(e.target.value)}
+                            placeholder="Your full name"
+                            className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Phone Number (Optional)</label>
+                        <input
+                            type="tel"
+                            value={buyerPhone}
+                            onChange={(e) => setBuyerPhone(e.target.value)}
+                            placeholder="+2348012345678"
+                            className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                        />
+                    </div>
+                </div>
+            </div>
+        ) : null;
+
         if (totalTickets === 1) {
             const ticketType = tickets.find(t => t.id === attendees[0].ticketId);
             return (
@@ -337,6 +408,7 @@ export default function CheckoutPage() {
                         <div className="space-y-4">
                             <div className="flex items-center gap-3 p-4 rounded-2xl bg-gray-50/50 border border-gray-100">
                                 <input
+                                    disabled={currentUser ? false : true}
                                     type="checkbox"
                                     id="isMe"
                                     checked={attendees[0]?.isMe}
@@ -346,7 +418,7 @@ export default function CheckoutPage() {
                                             {
                                                 ...prev[0],
                                                 isMe: checked,
-                                                name: checked ? (currentUser?.user_metadata?.full_name || '') : '',
+                                                name: checked ? (currentUser?.name || '') : '',
                                                 email: checked ? (currentUser?.email || '') : ''
                                             }
                                         ]);
@@ -392,6 +464,7 @@ export default function CheckoutPage() {
                             </div>
                         </div>
                     </div>
+                    {guestInfoSection}
                 </div>
             );
         }
@@ -416,6 +489,7 @@ export default function CheckoutPage() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <input
+                                                disabled={currentUser ? false : true}
                                                 type="checkbox"
                                                 id={`isMe-${idx}`}
                                                 checked={attendee.isMe}
@@ -426,7 +500,7 @@ export default function CheckoutPage() {
                                                         next[idx] = {
                                                             ...next[idx],
                                                             isMe: checked,
-                                                            name: checked ? (currentUser?.user_metadata?.full_name || '') : '',
+                                                            name: checked ? (currentUser?.name || '') : '',
                                                             email: checked ? (currentUser?.email || '') : ''
                                                         };
                                                         return next;
@@ -474,6 +548,7 @@ export default function CheckoutPage() {
                             );
                         })}
                     </div>
+                    {guestInfoSection}
                 </div>
             );
         }
@@ -510,6 +585,7 @@ export default function CheckoutPage() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <input
+                                                disabled={currentUser ? false : true}
                                                 type="checkbox"
                                                 id={`isMe-${idx}`}
                                                 checked={attendee.isMe}
@@ -520,7 +596,7 @@ export default function CheckoutPage() {
                                                         next[idx] = {
                                                             ...next[idx],
                                                             isMe: checked,
-                                                            name: checked ? (currentUser?.user_metadata?.full_name || '') : '',
+                                                            name: checked ? (currentUser?.name || '') : '',
                                                             email: checked ? (currentUser?.email || '') : ''
                                                         };
                                                         return next;
@@ -566,6 +642,7 @@ export default function CheckoutPage() {
                             );
                         })}
                     </div>
+                    {guestInfoSection}
                 </div>
             );
         }
@@ -584,7 +661,7 @@ export default function CheckoutPage() {
                         onClick={() => {
                             setAttendees(prev => prev.map(a => ({
                                 ...a,
-                                name: currentUser?.user_metadata?.full_name || '',
+                                name: currentUser?.name || '',
                                 email: currentUser?.email || '',
                                 isMe: true
                             })));
@@ -634,6 +711,7 @@ export default function CheckoutPage() {
                         </p>
                     </button>
                 </div>
+                {guestInfoSection}
             </div>
         );
     };
@@ -721,6 +799,12 @@ export default function CheckoutPage() {
                                                             <p className="text-xs font-semibold text-gray-400 mt-1 uppercase tracking-tight">
                                                                 {ticket.price === 0 ? 'Free' : formatPrice(ticket.price)}
                                                             </p>
+                                                            {ticket.quantity_remaining !== undefined && ticket.quantity_remaining <= 0 && (
+                                                                <span className="text-xs font-bold text-red-600 mt-1 block">Sold Out</span>
+                                                            )}
+                                                            {ticket.quantity_remaining !== undefined && ticket.quantity_remaining > 0 && ticket.quantity_remaining <= 10 && (
+                                                                <span className="text-xs font-bold text-amber-600 mt-1 block">Only {ticket.quantity_remaining} left</span>
+                                                            )}
 
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); toggleBenefits(ticket.id); }}
@@ -758,7 +842,8 @@ export default function CheckoutPage() {
                                                         </div>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); updateQuantity(ticket.id, 1); }}
-                                                            className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-gray-800 transition-all shadow-md active:scale-95 font-sans"
+                                                            disabled={ticket.quantity_remaining !== null && ticket.quantity_remaining !== undefined && (selection[ticket.id] || 0) >= ticket.quantity_remaining}
+                                                            className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-gray-800 transition-all shadow-md active:scale-95 font-sans disabled:opacity-30 disabled:cursor-not-allowed"
                                                         >
                                                             <Plus className="h-4 w-4" />
                                                         </button>
@@ -778,7 +863,7 @@ export default function CheckoutPage() {
                                                                 <div className="space-y-3">
                                                                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Included Benefits</p>
                                                                     <ul className="grid grid-cols-1 gap-2">
-                                                                        {(ticket.benefits || []).map((benefit, i) => (
+                                                                        {(Array.isArray(ticket.benefits) ? ticket.benefits : []).map((benefit, i) => (
                                                                             <li key={i} className="flex items-start gap-2.5 text-[13px] font-medium text-gray-600 leading-tight">
                                                                                 <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
                                                                                 <span>{benefit}</span>
@@ -866,7 +951,7 @@ export default function CheckoutPage() {
                                         )}
                                     </button>
                                     <p className="text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                        Secure simulated transaction by Flutterwave
+                                        Secure checkout powered by Paystack
                                     </p>
                                 </div>
                             </div>
@@ -955,6 +1040,30 @@ export default function CheckoutPage() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {isGuest && (
+                                    <div className="space-y-4 bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
+                                        <h3 className="font-bold text-gray-900">Contact Information</h3>
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Email</span>
+                                                <span className="font-medium">{buyerEmail || '—'}</span>
+                                            </div>
+                                            {buyerName && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500">Name</span>
+                                                    <span className="font-medium">{buyerName}</span>
+                                                </div>
+                                            )}
+                                            {buyerPhone && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-500">Phone</span>
+                                                    <span className="font-medium">{buyerPhone}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="pt-8 space-y-4">
                                     <button

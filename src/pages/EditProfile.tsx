@@ -1,15 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { checkUsernameAvailability, updateProfile, Profile } from '@/lib/api/profiles';
+import { checkUsernameAvailability, updateProfile } from '@/lib/api/profiles';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { Camera, Loader2, Save } from 'lucide-react';
 import Navbar from '@/components/Navbar';
-import { getCurrentUser } from '@/lib/api/auth';
-import { uploadFile, getPublicUrl } from '@/lib/api/storage';
+import { useAuth } from '@/contexts/AuthContext';
+import { uploadImage } from '@/lib/api/storage';
+import { UserProfile } from '@/lib/api/services';
 
 export default function EditProfile() {
     const navigate = useNavigate();
-    const [user, setUser] = useState<Profile | null>(null);
+    const {user} =  useAuth()
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
@@ -99,37 +100,6 @@ export default function EditProfile() {
     }, [username, user]);
 
 
-    // Auth Check & Data Fetch
-    useEffect(() => {
-        const checkAuth = async () => {
-            const user = await getCurrentUser();
-            if (!user) {
-                navigate('/login');
-                return;
-            }
-            setUser(user);
-
-            // Load Profile
-            try {
-                const profile = await getCurrentUser();
-                if (profile) {
-                    setFullName(profile.name || '');
-                    setUsername(profile.username || '');
-                    initialUsernameRef.current = profile.username || '';
-                    setDob(profile.dob || '');
-                    setAvatarUrl(profile.avatar_url || null);
-                }
-            } catch (error) {
-                console.error('Error loading profile:', error);
-                toastError('Failed to load profile data.');
-            } finally {
-                setInitialLoading(false);
-                setLoading(false);
-            }
-        };
-        checkAuth();
-    }, [navigate]);
-
     const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
@@ -139,15 +109,11 @@ export default function EditProfile() {
         }
     };
 
-    const uploadAvatar = async (userId: string): Promise<string | null> => {
+    const uploadAvatar = async (): Promise<string | null> => {
         if (!avatarFile) return null;
 
         try {
-            const fileExt = avatarFile.name.split('.').pop();
-            const fileName = `${userId}-${Math.random()}.${fileExt}`;
-            const filePath = `avatars/${fileName}`;
-
-            const publicUrl = await uploadFile('avatars', filePath, avatarFile);
+            const publicUrl = await uploadImage(avatarFile, 'profile-picture');
             return publicUrl;
         } catch (error) {
             console.error('Error uploading avatar:', error);
@@ -164,23 +130,22 @@ export default function EditProfile() {
             // 1. Upload new avatar if selected
             let finalAvatarUrl = avatarUrl;
             if (avatarFile) {
-                const newUrl = await uploadAvatar(user.user_id);
+                const newUrl = await uploadAvatar();
                 if (newUrl) finalAvatarUrl = newUrl;
             }
 
             // 2. Prepare update data
-            const updates: Profile = {
+            const updates: Partial<UserProfile> = {
                 user_id: user.user_id,
                 name: fullName,
                 username: username,
-                email: user.email,
-                dob: dob || null,
+                dob: dob,
                 avatar_url: finalAvatarUrl,
                 updated_at: new Date().toISOString(),
             };
 
             // 3. Save to DB
-            const { ok, error } = await upsertProfile(updates);
+            const { ok, error } = await updateProfile(updates);
             if (!ok) throw new Error(error || 'Failed to update profile');
 
             toastSuccess('Profile updated successfully!');

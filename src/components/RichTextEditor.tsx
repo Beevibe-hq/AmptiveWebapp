@@ -5,7 +5,6 @@ import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import { useState } from 'react';
 import { toastError } from '@/lib/ui/toast';
-import { uploadFile, getPublicUrl } from '@/lib/api/storage';
 import {
     Heading1,
     Heading2,
@@ -18,6 +17,7 @@ import {
     Strikethrough,
     Loader2
 } from 'lucide-react';
+import { uploadImage } from '@/lib/api/storage';
 
 interface RichTextEditorProps {
     value: string;
@@ -102,10 +102,8 @@ export default function RichTextEditor({
                     continue;
                 }
 
-                const fileName = `event-assets/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
-
                 try {
-                    const publicUrl = await uploadFile('event-assets', fileName, file);
+                    const publicUrl = await uploadImage(file, 'livestream-banner');
 
                     const isImage = file.type.startsWith('image/');
 

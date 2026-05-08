@@ -44,9 +44,9 @@ export default function DashboardEvents() {
     const filteredEvents = events
         .filter((event) => {
             if (activeFilter === 'All') return true;
-            if (activeFilter === 'Upcoming') return new Date(event.scheduled_for ?? '') >= new Date();
-            if (activeFilter === 'Past') return new Date(event.scheduled_for ?? '') < new Date();
-            if (activeFilter === 'Draft') return event.status.toLowerCase() === 'draft' || event.status === 'Draft';
+            if (activeFilter === 'Upcoming') return event.status.toLowerCase() !== 'draft' && new Date(event.scheduled_for ?? '') >= new Date();
+            if (activeFilter === 'Past') return event.status.toLowerCase() !== 'draft' && new Date(event.scheduled_for ?? '') < new Date();
+            if (activeFilter === 'Draft') return event.status.toLowerCase() === 'draft';
             return true;
         })
         .sort((a, b) => {
@@ -160,8 +160,14 @@ export default function DashboardEvents() {
                         </div>
                     ))
                 ) : (
-                    paginatedEvents.map((event) => (
-                        <Link to={`/dashboard/events/${event.event_id}/edit`} key={event.event_id} className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm block group">
+                    paginatedEvents.map((event) => {
+                        const isPast = new Date(event.scheduled_for ?? '') < new Date();
+                        return (
+                        <Link
+                            to={isPast ? `/events/${event.event_id}` : `/dashboard/events/${event.event_id}/edit`}
+                            key={event.event_id}
+                            className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm block group"
+                        >
                             <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl overflow-hidden">
                                 <img src={event.thumbnail_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87'} alt={event.title} className="w-full h-full object-cover rounded-lg group-hover:scale-[1.02] transition-transform duration-300" />
 
@@ -183,16 +189,17 @@ export default function DashboardEvents() {
                                 <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{event.title}</h3>
                                 <div className="flex flex-col mb-2 mt-1">
                                     <span className="text-xs text-gray-500">Location</span>
-                                    <span className="font-medium text-sm text-gray-600 line-clamp-1">{event.location?.venue || event.location?.city || 'TBA'}</span>
+                                    <span className="font-medium text-sm text-gray-600 line-clamp-1">{event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city || 'TBA'}</span>
                                 </div>
                                 <div className="mt-1.5 w-full">
                                     <div className="rounded-lg py-1.5 px-3 text-center w-full bg-[#F1F7FE] group-hover:bg-blue-100 transition-colors">
-                                        <span className="font-medium text-[13px] text-[#0C61D9]">Edit Event</span>
+                                        <span className="font-medium text-[13px] text-[#0C61D9]">{isPast ? 'View Event' : 'Edit Event'}</span>
                                     </div>
                                 </div>
                             </div>
                         </Link>
-                    ))
+                        );
+                    })
                 )}
             </div>
 

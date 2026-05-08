@@ -20,25 +20,27 @@ import SignupPage from './pages/Signup';
 import VerifyOtpPage from './pages/VerifyOtp';
 import CompleteProfilePage from './pages/CompleteProfile';
 import OAuthCallback from './pages/OAuthCallback';
+import PaystackCallback from './pages/PaystackCallback';
+import PurchaseConfirmed from './pages/PurchaseConfirmed';
 import ProfilePage from './pages/ProfilePage';
 import EditProfile from './pages/EditProfile';
 import MyTickets from './pages/MyTickets';
 import Dashboard from './pages/Dashboard';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './contexts/ThemeContext';
+import ProtectedRoute from './components/auth/ProtectedRoute';
 
 function App() {
   return (
     <ThemeProvider>
       <Router>
-          <ScrollToTop />
-          <Routes>
-            <Route path="/dashboard/*" element={<Dashboard />} />
-            <Route path="*" element={<MainLayout />} />
-          </Routes>
-          <Toaster position="top-center" richColors closeButton expand={false} />
-        </Router>
-      </ThemeProvider>
+        <ScrollToTop />
+        <Routes>
+          <Route path="*" element={<MainLayout />} />
+        </Routes>
+        <Toaster position="top-center" richColors closeButton expand={false} />
+      </Router>
+    </ThemeProvider>
   );
 }
 
@@ -66,6 +68,7 @@ function MainLayout() {
     location.pathname === '/events/create' ||
     (location.pathname.startsWith('/dashboard/events/') && location.pathname.endsWith('/edit')) ||
     location.pathname === '/profile/edit' ||
+    location.pathname === '/purchase/confirmed' ||
     isDashboard;
 
   return (
@@ -76,7 +79,7 @@ function MainLayout() {
           <Route path="/" element={<Homepage />} />
           <Route path="/explore" element={<Explore />} />
           <Route path="/events" element={<Events />} />
-          <Route path="/events/create" element={<CreateEvent />} />
+          <Route path="/events/create" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
           <Route path="/events/:id" element={<EventDetail />} />
           <Route path="/events/:id/checkout" element={<CheckoutPage />} />
           <Route path="/invest" element={<Invest />} />
@@ -91,10 +94,12 @@ function MainLayout() {
           <Route path="/verify-otp" element={<VerifyOtpPage />} />
           <Route path="/complete-profile" element={<CompleteProfilePage />} />
           <Route path="/auth/callback" element={<OAuthCallback />} />
+          <Route path="/paystack/callback" element={<PaystackCallback />} />
+          <Route path="/purchase/confirmed" element={<PurchaseConfirmed />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/profile/edit" element={<EditProfile />} />
+          <Route path="/profile/edit" element={<ProtectedRoute><EditProfile /></ProtectedRoute>} />
           <Route path="/profile/:id" element={<ProfilePage />} />
-          <Route path="/my-tickets" element={<MyTickets />} />
+          <Route path="/my-tickets" element={<ProtectedRoute><MyTickets /></ProtectedRoute>} />
           <Route path="/dashboard/*" element={<Dashboard />} />
         </Routes>
       </main>

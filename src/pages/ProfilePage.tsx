@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { updateProfileAvatar, UserProfile } from '@/lib/api/profiles';
+import { updateProfileAvatar } from '@/lib/api/profiles';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { UserProfile } from '@/lib/api/services';
 
 type EventStatus = 'upcoming' | 'live' | 'past';
 
@@ -260,7 +261,7 @@ const ProfilePage = () => {
     const updateAvatar = async () => {
       if (!user?.user_id || !profileAvatarUrl || (profile && profile.avatar_url === profileAvatarUrl)) return;
       try {
-        await updateProfileAvatar(user.user_id, profileAvatarUrl);
+        await updateProfileAvatar(profileAvatarUrl);
         if (!cancelled) {
           setProfile(prev => prev ? { ...prev, avatar_url: profileAvatarUrl } : null);
         }

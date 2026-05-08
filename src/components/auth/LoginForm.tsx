@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { login } from '@/lib/api/auth';
 import { isProfileComplete } from '@/lib/api/profiles';
 import { useAuth } from '@/contexts/AuthContext';
@@ -50,6 +50,7 @@ interface LoginFormProps {
 
 export default function LoginForm({ onSuccess }: LoginFormProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { refreshUser } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -107,10 +108,13 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
 
 
       if (needsCompletion) {
-        navigate(`/complete-profile?email=${encodeURIComponent(normalizedEmail)}`, { replace: true });
+        const from = location.state?.from || '/dashboard';
+        navigate(`/complete-profile?email=${encodeURIComponent(normalizedEmail)}`, { state: { from }, replace: true });
       } else {
         // Refresh AuthContext user state before navigating
         await refreshUser();
+        const redirectTo = location.state?.from || '/dashboard';
+        navigate(redirectTo, { replace: true });
         onSuccess?.();
       }
     } catch (err: any) {
