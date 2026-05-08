@@ -4,7 +4,6 @@ import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getCurrentUser } from '@/lib/api/auth';
 import { getPurchasesByUser, type TicketPurchase } from '@/lib/api/purchases';
 
 
@@ -91,10 +90,7 @@ const MyTickets = () => {
 
     const fetchTickets = async () => {
         try {
-            const user = await getCurrentUser();
-            if (!user) return;
-
-            const data = await getPurchasesByUser(user.id);
+            const data = await getPurchasesByUser();
             setTickets(data || []);
         } catch (err) {
             console.error('Unexpected error:', err);
@@ -131,7 +127,7 @@ const MyTickets = () => {
                 ) : (
                     <div className="flex flex-wrap gap-8 justify-center">
                         {tickets.map((ticket, index) => {
-                            const themeName = ('silver') as TicketTheme;
+                            const themeName = (ticket.color_theme || 'silver') as TicketTheme;
                             const theme = TICKET_THEMES[themeName] || TICKET_THEMES['silver'];
                             const price = ticket.metadata?.price_paid || 0;
                             const currency = ticket.metadata?.currency || 'NGN';
@@ -195,6 +191,13 @@ const MyTickets = () => {
                                                     </li>
                                                 </ul>
                                             </div>
+
+                                            {ticket.attendee_name && (
+                                                <div className="space-y-1">
+                                                    <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Attendee</p>
+                                                    <p className={`text-sm font-semibold ${theme.text} opacity-90`}>{ticket.attendee_name}</p>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="relative z-10 mt-4 flex items-center justify-between">
@@ -206,14 +209,17 @@ const MyTickets = () => {
                                         {/* QR Code & Ticket ID - Bottom Right */}
                                         <div className={`absolute bottom-4 right-4 z-20 flex flex-col items-end gap-1 ${theme.text}`}>
                                             <QRCodeSVG
-                                                value={ticket.qr_code_data}
+                                                value={ticket.qr_code_data || ticket.ticket_code || ''}
                                                 size={72}
                                                 level="M"
                                                 includeMargin={false}
                                                 fgColor="currentColor"
                                                 bgColor="transparent"
                                             />
-                                            <p className="text-[9px] font-mono opacity-60">{ticket.ticket_id}</p>
+                                            <p className="text-[9px] font-mono opacity-60">{ticket.ticket_code || ticket.ticket_id}</p>
+                                            {ticket.attendee_name && (
+                                                <p className="text-[9px] opacity-60">{ticket.attendee_name}</p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

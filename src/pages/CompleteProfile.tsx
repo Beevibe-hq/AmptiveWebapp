@@ -368,7 +368,8 @@ export default function CompleteProfilePage() {
       sessionStorage.removeItem(SIGNUP_KEYS.email);
       await refreshUser();
       toastSuccess('Account created! Welcome to Amptive.');
-      setTimeout(() => navigate('/'), 500);
+      const redirectTo = location.state?.from || '/';
+      setTimeout(() => navigate(redirectTo), 500);
     } catch (e) {
       toastError('Something went wrong. Please try again.');
     } finally {

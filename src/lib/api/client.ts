@@ -17,11 +17,12 @@ interface TokenRefreshResponse {
   expires_in?: number;
 }
 
-function getAuthHeaders(): HeadersInit {
+function getAuthHeaders(isFormData = false): HeadersInit {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
+  const headers: HeadersInit = {};
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -56,7 +57,7 @@ async function refreshAccessToken(): Promise<boolean> {
     const data: TokenRefreshResponse = await response.json();
     const expiresIn = data.expires_in ?? 3600;
     const expiresAt = Date.now() + (expiresIn * 1000);
-    
+
     localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
     localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
     localStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(expiresAt));
@@ -72,21 +73,21 @@ let refreshPromise: Promise<boolean> | null = null;
 function isTokenExpiringSoon(bufferMs = 5 * 60 * 1000): boolean {
   const expiryStr = localStorage.getItem(ACCESS_TOKEN_EXPIRY_KEY);
   if (!expiryStr) return true;
-  
+
   const expiry = parseInt(expiryStr, 10);
   if (isNaN(expiry)) return true;
-  
+
   return Date.now() + bufferMs > expiry;
 }
 
 async function ensureValidToken(): Promise<boolean> {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (!token) return false;
-  
+
   if (isTokenExpiringSoon(0)) {
     return false;
   }
-  
+
   if (isTokenExpiringSoon()) {
     if (!refreshPromise) {
       refreshPromise = refreshAccessToken();
@@ -95,15 +96,17 @@ async function ensureValidToken(): Promise<boolean> {
     refreshPromise = null;
     if (!success) return false;
   }
-  
+
   return true;
 }
 
-async function request<T>(
+async function executeRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit & { skipAuth?: boolean; isFormData?: boolean } = {}
 ): Promise<T> {
-  if (!endpoint.includes('/auth/')) {
+  const { isFormData, skipAuth, ...fetchOptions } = options;
+
+  if (!skipAuth && !endpoint.includes('/auth/')) {
     const hasValidToken = await ensureValidToken();
     if (!hasValidToken) {
       clearSessionTokens();
@@ -112,13 +115,13 @@ async function request<T>(
   }
 
   const url = `${API_BASE}${endpoint}`;
-  const headers = getAuthHeaders();
+  const headers = getAuthHeaders(isFormData);
 
   const response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
     headers: {
       ...headers,
-      ...options.headers,
+      ...fetchOptions.headers,
     },
   });
 
@@ -131,12 +134,12 @@ async function request<T>(
     refreshPromise = null;
 
     if (refreshSuccess) {
-      const retryHeaders = getAuthHeaders();
+      const retryHeaders = getAuthHeaders(isFormData);
       const retryResponse = await fetch(url, {
-        ...options,
+        ...fetchOptions,
         headers: {
           ...retryHeaders,
-          ...options.headers,
+          ...fetchOptions.headers,
         },
       });
 
@@ -175,10 +178,25 @@ async function request<T>(
   return data as T;
 }
 
+async function request<T>(
+  endpoint: string,
+  options: RequestInit & { skipAuth?: boolean } = {}
+): Promise<T> {
+  return executeRequest<T>(endpoint, { ...options, isFormData: false });
+}
+
+async function requestFormData<T>(
+  endpoint: string,
+  options: RequestInit & { skipAuth?: boolean } = {}
+): Promise<T> {
+  return executeRequest<T>(endpoint, { ...options, isFormData: true });
+}
+
 export const api = {
   request,
+  requestFormData,
 
-  get: <T>(endpoint: string) => request<T>(endpoint, { method: 'GET' }),
+  get: <T>(endpoint: string, options?: { skipAuth?: boolean }) => request<T>(endpoint, { method: 'GET', ...options }),
 
   patch: <T>(endpoint: string, body?: unknown) =>
     request<T>(endpoint, {
@@ -186,10 +204,29 @@ export const api = {
       body: body ? JSON.stringify(body) : undefined,
     }),
 
-  post: <T>(endpoint: string, body?: unknown) =>
+  post: <T>(endpoint: string, body?: unknown, options?: { skipAuth?: boolean }) =>
     request<T>(endpoint, {
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
+      ...options,
+    }),
+
+  postFormData: <T>(endpoint: string, formData?: FormData) =>
+    requestFormData<T>(endpoint, {
+      method: 'POST',
+      body: formData,
+    }),
+
+  patchFormData: <T>(endpoint: string, formData?: FormData) =>
+    requestFormData<T>(endpoint, {
+      method: 'PATCH',
+      body: formData,
+    }),
+
+  putFormData: <T>(endpoint: string, formData?: FormData) =>
+    requestFormData<T>(endpoint, {
+      method: 'PUT',
+      body: formData,
     }),
 
   put: <T>(endpoint: string, body?: unknown) =>
@@ -200,31 +237,6 @@ export const api = {
 
   delete: <T>(endpoint: string) =>
     request<T>(endpoint, { method: 'DELETE' }),
-
-  uploadFile: async (bucket: string, path: string, file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-    const headers: HeadersInit = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_BASE}/storage/${bucket}/${path}`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody.message || 'Upload failed');
-    }
-
-    const data = await response.json();
-    return data.url || `${API_BASE}/storage/${bucket}/${path}`;
-  },
 
   setToken: (token: string) => {
     localStorage.setItem(ACCESS_TOKEN_KEY, token);

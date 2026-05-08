@@ -1,15 +1,58 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { MapPin, Share2, Ticket, Check } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { MapPin, Share2, Ticket, Check, Globe } from 'lucide-react';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { QRCodeSVG } from 'qrcode.react';
-import { toastSuccess } from '@/lib/ui/toast';
+import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getEvent, getRelatedEvents, StandaloneEvent } from '@/lib/api/events';
+import { getEvent, getRelatedEvents, publishEvent, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
-import { getProfile, getProfileByUserId } from '@/lib/api/profiles';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+const MAP_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const MAP_TILE_ATTR = '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>';
+const MAP_PROVIDER = 'OpenStreetMap';
+
+function VenueMap({ latitude, longitude, venueName }: { latitude: number; longitude: number; venueName?: string }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstance.current) return;
+    const map = L.map(mapRef.current, {
+      center: [latitude, longitude],
+      zoom: 15,
+      zoomControl: false,
+      attributionControl: false,
+    });
+    L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTR }).addTo(map);
+    L.marker([latitude, longitude]).addTo(map);
+    mapInstance.current = map;
+    return () => {
+      map.remove();
+      mapInstance.current = null;
+    };
+  }, [latitude, longitude]);
+
+  return (
+    <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-gray-200 bg-gray-100 shadow-sm group">
+      <div ref={mapRef} className="absolute inset-0 h-full w-full z-10" />
+      <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-black/5 z-20" />
+      {venueName && (
+        <div className="absolute bottom-3 left-3 z-30 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-medium text-gray-700 shadow-sm">
+          {venueName}
+        </div>
+      )}
+      <div className="absolute top-3 right-3 z-30 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-full text-[10px] font-medium text-gray-500 shadow-sm flex items-center gap-1">
+        <MapPin className="h-3 w-3" />
+        {MAP_PROVIDER}
+      </div>
+    </div>
+  );
+}
 
 
 // type EventRecord = {
@@ -151,6 +194,7 @@ const EventDetail = () => {
   const [dominantColor, setDominantColor] = useState<{ r: number; g: number; b: number } | null>(null);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [showStickyButton, setShowStickyButton] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
   const mobileCtaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -186,20 +230,18 @@ const EventDetail = () => {
       setLoading(true);
       setError(null);
 
-      // Fetch Current User
+      // Fetch Current User if logged in
       const user = await getCurrentUser();
       setCurrentUser(user);
 
       try {
         // Fetch Event
-        const eventData = await getEvent(id);
+        const eventData = await getEvent(id);        
         if (!eventData) throw new Error('Event not found');
         setEvent(eventData);
 
         // Fetch Dominant Color
         if (eventData.thumbnail_url) {
-                  console.log("event data =>", eventData);
-
           extractDominantColors(eventData.thumbnail_url).then(colors => {
             if (colors[0]) {
               // Convert hex to rgb for background style
@@ -218,7 +260,7 @@ const EventDetail = () => {
         // Fetch Tickets
         const ticketData = await getTicketsForEvent(id);
         console.log("tickets daata", ticketData);
-        
+
         setTickets(ticketData);
 
         // Fetch Organizer
@@ -240,7 +282,7 @@ const EventDetail = () => {
 
         // Fetch Related (Events by same organizer)
         if (eventData.host?.user_id) {
-          const related = await getRelatedEvents(eventData.host?.user_id, id, 4);          
+          const related = await getRelatedEvents(eventData.host?.user_id, id, 4);
           setRelatedEvents(related);
         }
 
@@ -324,7 +366,29 @@ const EventDetail = () => {
     `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(event.location?.venue + (event.location?.city ? `, ${event.location?.city}` : ''))}`
     : null;
 
+  const handleScheduleEvent = async () => {
+    if (!event?.scheduled_for) {
+      toastError('Please set a start date and time before scheduling.');
+      return;
+    }
+    if (new Date(event.scheduled_for) <= new Date()) {
+      toastError('Start date and time must be in the future.');
+      return;
+    }
+    setIsScheduling(true);
+    const result = await publishEvent(event.event_id, event.scheduled_for);
+    setIsScheduling(false);
+    if (result.ok) {
+      toastSuccess('Event published!');
+      const updated = await getEvent(event.event_id);
+      if (updated) setEvent(updated);
+    } else {
+      toastError(result.error || 'Failed to publish event');
+    }
+  };
+
   const renderActionContent = (mobile = false) => {
+    const isDraft = event.status?.toLowerCase() === 'draft';
     const isOrganizer = currentUser?.id === event.host?.user_id;
     const isEventEnded = event.ended_at && new Date(event.ended_at) < new Date();
     const hasTickets = tickets.length > 0;
@@ -334,17 +398,6 @@ const EventDetail = () => {
       ? "w-full rounded-xl py-3 text-center font-bold shadow-lg active:scale-[0.98]"
       : "w-full rounded-2xl py-4 text-center font-bold transition-transform hover:scale-[1.02] active:scale-[0.98]";
 
-    if (isOrganizer) {
-      return {
-        button: (
-          <Link to={`/events/${event.event_id}/manage`} className={`${baseClasses} bg-black text-white block`}>
-            Manage Event
-          </Link>
-        ),
-        footerText: "Manage your event dashboard"
-      };
-    }
-
     if (isEventEnded) {
       return {
         button: (
@@ -353,6 +406,32 @@ const EventDetail = () => {
           </button>
         ),
         footerText: null
+      };
+    }
+
+    if (isDraft && isOrganizer) {
+      return {
+        button: (
+          <button
+            onClick={handleScheduleEvent}
+            disabled={isScheduling}
+            className={`${baseClasses} bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-60`}
+          >
+            {isScheduling ? 'Scheduling...' : 'Schedule Event'}
+          </button>
+        ),
+        footerText: "Publish this event to make it visible to attendees"
+      };
+    }
+
+    if (isOrganizer) {
+      return {
+        button: (
+          <Link to={`/events/${event.event_id}/manage`} className={`${baseClasses} bg-black text-white block`}>
+            Manage Event
+          </Link>
+        ),
+        footerText: "Manage your event dashboard"
       };
     }
 
@@ -376,7 +455,7 @@ const EventDetail = () => {
           Get Tickets
         </Link>
       ),
-      footerText: "Secure checkout powered by Flutterwave"
+      footerText: "Secure checkout powered by Paystack"
     };
   };
 
@@ -469,19 +548,51 @@ const EventDetail = () => {
                   {/* Location */}
                   <div className="flex items-start gap-3 group">
                     <div className="mt-1 p-2 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-100 transition-colors">
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                      </svg>
+                      {event.venue?.venue_type === 'virtual' ? (
+                        <Globe className="w-5 h-5" />
+                      ) : (
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                        </svg>
+                      )}
                     </div>
                     <div>
-                      <h3 className="text-base font-semibold text-gray-900 leading-tight">
-                        {event.location?.type === 'online' ? 'Online Event' : (event.location?.venue || 'Venue TBD')}
-                      </h3>
-                      {event.location?.type !== 'online' && event.location?.city && (
-                        <p className="text-sm text-gray-500 mt-1">{event.location?.city}</p>
-                      )}
-                      {event.location?.type === 'online' && (
-                        <p className="text-sm text-gray-500 mt-1">Link visible to attendees</p>
+                      {event.venue ? (
+                        <>
+                          <h3 className="text-base font-semibold text-gray-900 leading-tight">
+                            {event.venue.venue_type === 'virtual' ? (
+                              <span className="inline-flex items-center gap-2">
+                                On the Amptive App
+                                <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wider">Virtual</span>
+                              </span>
+                            ) : (
+                              event.venue.name
+                            )}
+                          </h3>
+                          {event.venue.venue_type === 'physical' && (
+                            <div className="text-sm text-gray-500 mt-1 space-y-0.5">
+                              {event.venue.address_line1 && <p>{event.venue.address_line1}</p>}
+                              <p>
+                                {[event.venue.city, event.venue.state, event.venue.country].filter(Boolean).join(', ')}
+                              </p>
+                            </div>
+                          )}
+                          {event.venue.venue_type === 'virtual' && event.venue.platform_note && (
+                            <p className="text-sm text-gray-500 mt-1">{event.venue.platform_note}</p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <h3 className="text-base font-semibold text-gray-900 leading-tight">
+                            {event.location?.type === 'online' ? 'Online Event' : (event.location?.venue || 'Venue TBD')}
+                          </h3>
+                          {event.location?.type !== 'online' && event.location?.city && (
+                            <p className="text-sm text-gray-500 mt-1">{event.location?.city}</p>
+                          )}
+                          {event.location?.type === 'online' && (
+                            <p className="text-sm text-gray-500 mt-1">Link visible to attendees</p>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -629,7 +740,19 @@ const EventDetail = () => {
               </section>
 
               {/* Location Map Section */}
-              {event.location?.type !== 'online' && mapSrc && (
+              {event.venue?.venue_type === 'physical' && event.venue.latitude && event.venue.longitude ? (
+                <section className="pt-12 border-t border-gray-100">
+                  <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
+                    <MapPin className="h-4 w-4 text-blue-500" />
+                    Location
+                  </div>
+                  <VenueMap
+                    latitude={event.venue.latitude}
+                    longitude={event.venue.longitude}
+                    venueName={event.venue.name}
+                  />
+                </section>
+              ) : event.location?.type !== 'online' && mapSrc ? (
                 <section className="pt-12 border-t border-gray-100">
                   <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
                     <MapPin className="h-4 w-4 text-blue-500" />
@@ -645,7 +768,7 @@ const EventDetail = () => {
                     <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-black/5" />
                   </div>
                 </section>
-              )}
+              ) : null}
 
               {/* More Events Widget (Right Column - Desktop) */}
               {relatedEvents.length > 0 && (

@@ -1,23 +1,31 @@
+import { verify } from 'crypto';
 import { api } from '../client';
 import type { StandardResponse } from '../client';
 
 export interface UserProfile {
   id: string;
-  user_id?: string;
-  email?: string;
-  username?: string;
-  name?: string;
-  dob?: string;
-  phone_number?: string;
-  profile_picture?: string;
-  bio?: string;
-  cover_image?: string;
-  linkedin_url?: string;
-  website_url?: string;
+  user_id: string;
+  name: string;
+  username: string;
+  email?: string | null;
+  phone_number?: string | null;
+  dob?: string | null;
+  profile_picture?: string | null;
+  avatar_url?: string | null;
+  country?: string | null;
+  bio?: string | null;
+  cover_photo?: string | null;
+  website_url?: string | null;
+  instagram_url?: string | null;
+  linkedin_url?: string | null;
+  x_url?: string | null;
+  followers_count?: number;
+  following_count?: number;
+  has_hosted_shows?: boolean;
+  has_hosted_events?: boolean;
   role?: string;
   created_at?: string;
   updated_at?: string;
-  [key: string]: unknown;
 }
 
 export interface LoginRequest {
@@ -74,13 +82,18 @@ export interface AvailabilityResponse {
   message: string;
 }
 
+export type ImageUploadPurpose = 'profile-picture' | 'livestream-banner' | 'community-image'
+
 const USERS_PREFIX = '/users';
 const AUTH_PREFIX = '/auth';
 const EVENTS_PREFIX = '/events';
 const COMMUNITIES_PREFIX = '/communities';
 const TICKETS_PREFIX = '/tickets';
 const PURCHASES_PREFIX = '/purchases';
-const STORAGE_PREFIX = '/storage';
+const EXTRA_PREFIX = '/extras';
+const PAYMENT_PREFIX = '/payments';
+const VENUES_PREFIX = '/venues';
+
 
 // ============================================
 // USERS SERVICE
@@ -130,11 +143,11 @@ export const $auth = {
 export const $events = {
   list: (params?: Record<string, string>) => {
     const endpoint = EVENTS_PREFIX + (params ? `/?${new URLSearchParams(params).toString()}` : '');
-    return api.get<{ events: unknown[]; total: number }>(endpoint);
+    return api.get<{ events: unknown[]; total: number }>(endpoint, { skipAuth: true });
   },
 
   getById: (eventId: string) =>
-    api.get<unknown>(`${EVENTS_PREFIX}/${eventId}`),
+    api.get<unknown>(`${EVENTS_PREFIX}/${eventId}`, { skipAuth: true }),
 
   create: (event: unknown) =>
     api.post<unknown>(`${EVENTS_PREFIX}/`, event),
@@ -148,8 +161,8 @@ export const $events = {
   getForCurrentUser: () =>
     api.get<{ events: unknown[]; total: number }>(`${EVENTS_PREFIX}/me/`),
 
-  publish: (eventId: string) =>
-    api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/publish`),
+  publish: (eventId: string, payload: { scheduled_date: string; reason?: string }) =>
+    api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/publish`, payload),
 
   getOrders: (eventId: string) =>
     api.get<unknown>(`${EVENTS_PREFIX}/${eventId}/orders`),
@@ -162,7 +175,7 @@ export const $events = {
 export const $communities = {
   list: (params?: Record<string, string>) => {
     const endpoint = COMMUNITIES_PREFIX + (params ? `/?${new URLSearchParams(params).toString()}` : '');
-    return api.get<{ communities: unknown[]; total: number }>(endpoint);
+    return api.get<{ communities: unknown[]; total: number }>(endpoint, { skipAuth: true });
   },
 
   getById: (communityId: string) =>
@@ -187,22 +200,31 @@ export const $communities = {
 
 export const $tickets = {
   getById: (ticketId: string) =>
-    api.get<unknown>(`${TICKETS_PREFIX}/${ticketId}`),
+    api.get<any>(`${TICKETS_PREFIX}/${ticketId}`),
 
   getForEvent: (eventId: string) =>
-    api.get<unknown>(`${TICKETS_PREFIX}/events/${eventId}/list`),
+    api.get<{ tickets: any }>(`${TICKETS_PREFIX}/events/${eventId}/list`, {skipAuth: true}),
 
-  create: (eventId: string, tickets: unknown) =>
-    api.post<unknown>(`${TICKETS_PREFIX}/event/${eventId}/create`, tickets),
+  getMine: () =>
+    api.get<{ tickets: any[] }>(`${TICKETS_PREFIX}/me`),
+
+  create: (eventId: string, ticket: unknown) =>
+    api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/create`, ticket),
 
   update: (ticketId: string, ticket: unknown) =>
-    api.put<unknown>(`${TICKETS_PREFIX}/${ticketId}/update`, ticket),
+    api.patch<unknown>(`${TICKETS_PREFIX}/${ticketId}/update`, ticket),
 
   delete: (ticketId: string) =>
     api.delete<unknown>(`${TICKETS_PREFIX}/${ticketId}/deactivate`),
 
   bulkDelete: (ticketIds: string[]) =>
     api.post<unknown>(`${TICKETS_PREFIX}/bulk-delete`, { ids: ticketIds }),
+
+  checkout: (eventId: string, data: unknown, options?: { skipAuth?: boolean }) =>
+    api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/checkout`, data, options),
+
+  walletPay: (eventId: string, data: unknown) =>
+    api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/wallet-pay`, data),
 };
 
 // ============================================
@@ -223,9 +245,43 @@ export const $purchases = {
 
 export const $storage = {
   listFiles: (bucket: string) =>
-    api.get<string[]>(`${STORAGE_PREFIX}/${bucket}`),
+    api.get<string[]>(`${EVENTS_PREFIX}/${bucket}`),
 
-  upload: (bucket: string, path: string, file: File) =>
-    api.uploadFile(bucket, path, file),
+  upload: (files: File[], purpose: ImageUploadPurpose) => {
+    const formData = new FormData();
+    files.forEach(file => formData.append('images', file));
+    formData.append('purpose', purpose);
+    return api.postFormData<{ urls: any[] }>(`${EXTRA_PREFIX}/upload-image`, formData);
+  }
 };
 
+
+// ============================================
+// PAYMENT SERVICE
+// ============================================
+
+export const $payment = {
+  verify: (reference: string, isGuest: boolean) =>
+    api.get<string[]>(`${PAYMENT_PREFIX}/verify?reference=${reference}`, {skipAuth: isGuest}),
+};
+
+// ============================================
+// VENUES SERVICE
+// ============================================
+
+export const $venues = {
+  list: () =>
+    api.get<{ venues: unknown[] }>(`${VENUES_PREFIX}/me/`),
+
+  getById: (venueId: string) =>
+    api.get<unknown>(`${VENUES_PREFIX}/${venueId}`),
+
+  create: (venue: unknown) =>
+    api.post<unknown>(`${VENUES_PREFIX}/`, venue),
+
+  update: (venueId: string, venue: unknown) =>
+    api.patch<unknown>(`${VENUES_PREFIX}/${venueId}`, venue),
+
+  delete: (venueId: string) =>
+    api.delete<unknown>(`${VENUES_PREFIX}/${venueId}`),
+};

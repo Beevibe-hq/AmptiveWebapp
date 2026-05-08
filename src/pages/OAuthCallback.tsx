@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { isProfileComplete, upsertProfile } from '@/lib/api/profiles';
 import { getCurrentUser, handleOAuthCallback as processOAuthCallback } from '@/lib/api/auth';
 
 export default function OAuthCallback() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState('Processing login...');
 
@@ -65,12 +66,14 @@ export default function OAuthCallback() {
         if (needsCompletion) {
           setStatus('Redirecting to complete your profile...');
           navigate(`/complete-profile?email=${encodeURIComponent(user.email || '')}`, {
+            state: { from: location.state?.from },
             replace: true
           });
         } else {
           setStatus('Login successful! Redirecting...');
+          const redirectTo = location.state?.from || '/';
           setTimeout(() => {
-            navigate('/', { replace: true });
+            navigate(redirectTo, { replace: true });
           }, 1000);
         }
       } catch (err) {

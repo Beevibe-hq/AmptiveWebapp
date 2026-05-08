@@ -75,7 +75,7 @@ interface EventType {
   location: string;
   country: string;
   ticket_status: string;
-  price: number | Array<{ type: string; price: number }>;
+  price: number;
   date: string;
   media: MediaSource;
 }
@@ -446,13 +446,15 @@ const Homepage: React.FC = () => {
         const eventsData = await listEvents({ page_size: 20 });
         // Transform database events to match EventType interface
         const transformedEvents: EventType[] = (eventsData || []).map((event: any) => {
+          const rawPrice = event.price_from;
+          const price = rawPrice != null ? Number(rawPrice) : 0;
           return {
             id: event.event_id,
             title: event.title,
-            location: event.venue || 'Online',
-            country: event.city || 'Nigeria',
+            location: event.venue?.name || event.location?.venue || event.location?.city || 'Online',
+            country: event.venue?.city || event.location?.city || 'Nigeria',
             ticket_status: event.is_sold_out? 'Sold Out': 'On Sale',
-            price: event.price_from,
+            price,
             date: event.scheduled_for ? new Date(event.scheduled_for).toISOString() : '',
             media: {
               type: 'image' as const,
@@ -1590,9 +1592,7 @@ const Homepage: React.FC = () => {
                     </div>
                     <div className="text-gray-600 truncate" title={event.location}>{event.location}</div>
                     <div className="font-medium">
-                      {Array.isArray(event.price)
-                        ? `₦${Math.min(...event.price.map(p => p.price)).toLocaleString()}+`
-                        : event.price === 0 ? 'Free' : `₦${event.price.toLocaleString()}`}
+                      {event.price && event.price > 0 ? `₦${event.price.toLocaleString()}` : 'Free'}
                     </div>
                     <div>
                       <div className="inline-block">

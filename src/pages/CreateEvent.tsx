@@ -3,15 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getEvent, createEvent as createNewEvent, updateEvent } from '@/lib/api/events';
-import { getTicketsForEvent, createTickets, updateTicket, deleteTickets } from '@/lib/api/tickets';
+import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
+import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme } from '@/lib/api/tickets';
+import { createVenue, type VenueCreateRequest } from '@/lib/api/venues';
 import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import RichTextEditor from '@/components/RichTextEditor';
-import LocationPicker from '@/components/LocationPicker';
+import VenueSelector from '@/components/VenueSelector';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api/client';
+import { uploadImage } from '@/lib/api/storage';
 
-type TicketTheme = 'silver' | 'bronze' | 'gold' | 'platinum' | 'obsidian';
 
 const TICKET_THEMES: Record<TicketTheme, {
   name: string;
@@ -63,15 +64,7 @@ const TICKET_THEMES: Record<TicketTheme, {
   }
 };
 
-type EventTicket = {
-  id: string;
-  title: string;
-  price: number;
-  currency: string;
-  benefits: string[];
-  colorTheme?: TicketTheme;
-  quantity?: number;
-};
+
 
 type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
 
@@ -79,16 +72,19 @@ type FormState = {
   title: string;
   summary: string;
   description: string;
-  startDateTime: string;
-  endDateTime: string;
+  startDateTime: string | null;
   venue: string;
   city: string;
   latitude?: number | null;
   longitude?: number | null;
   coverImage: string;
   locationType: 'physical' | 'online';
+  venueId: string | null;
+  venueType?: 'physical' | 'virtual' | null;
+  draftVenue: VenueCreateRequest | null;
   tickets: EventTicket[];
   showType: 'free' | 'paid';
+  price: number;
   handRaising: boolean;
   allowWhispers: boolean;
 };
@@ -118,29 +114,24 @@ const GALLERY_IMAGES = [
   'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=800', // Crowd Energy
 ];
 
-const formatLocalDateTime = (date: Date) => {
-  const copy = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
-  return copy.toISOString().slice(0, 16);
-};
-
 const buildInitialFormState = (): FormState => {
-  const now = new Date();
-  const start = formatLocalDateTime(now);
-  const end = formatLocalDateTime(new Date(now.getTime() + 60 * 60 * 1000));
   return {
     title: '',
     summary: '',
     description: '',
-    startDateTime: start,
-    endDateTime: end,
+    startDateTime: null,
     venue: '',
     city: '',
     latitude: null,
     longitude: null,
     coverImage: '',
     locationType: 'physical',
+    venueId: null,
+    venueType: null,
+    draftVenue: null,
     tickets: [],
     showType: 'free',
+    price: 0,
     handRaising: false,
     allowWhispers: false,
   };
@@ -177,12 +168,17 @@ const formatCompactPrice = (price: number, currency: string = 'NGN'): string => 
   return formatTicketPrice(price, currency);
 };
 
+const deriveEventPrice = (tickets: EventTicket[]): number => {
+  if (tickets.length === 0) return 0;  
+  return Math.min(...tickets.map(t => t.price));
+};
+
 const deriveTicketBenefits = (ticket: EventTicket): string[] => {
   if (ticket.benefits && ticket.benefits.length > 0) {
     return ticket.benefits;
   }
 
-  const label = ticket.title?.toLowerCase() ?? '';
+  const label = ticket.label?.toLowerCase() ?? '';
   const benefits = new Set<string>();
 
   if (label.includes('vip') || label.includes('premium')) {
@@ -218,7 +214,7 @@ const deriveTicketBenefits = (ticket: EventTicket): string[] => {
 };
 
 const deriveAvailabilityStatus = (ticket: EventTicket, index: number): AvailabilityStatus => {
-  const label = ticket.title?.toLowerCase() ?? '';
+  const label = ticket.label?.toLowerCase() ?? '';
   if (label.includes('sold out')) return 'Sold Out';
   if (ticket.price === 0 || label.includes('free') || label.includes('general') || label.includes('standard') || label.includes('regular')) {
     return 'Available';
@@ -246,9 +242,11 @@ const CreateEvent = () => {
 
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitting, setSubmitting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [eventStatus, setEventStatus] = useState<string>('');
   const [coverPreviewError, setCoverPreviewError] = useState(false);
   const [coverPreview, setCoverPreview] = useState('');
   const [activeTheme, setActiveTheme] = useState(0);
@@ -259,8 +257,6 @@ const CreateEvent = () => {
   const filePreviewUrlRef = useRef<string | null>(null);
   const coverInputId = useMemo(() => `cover-upload-${Math.random().toString(36).slice(2)}`, []);
 
-  // Animation state for preview card
-  const [isHoveringPreview, setIsHoveringPreview] = useState(false);
 
   // Mobile modal states
   const [showMobileUploadOptions, setShowMobileUploadOptions] = useState(false);
@@ -275,7 +271,7 @@ const CreateEvent = () => {
     price: string;
     currency: string;
     benefits: string;
-    colorTheme: TicketTheme;
+    color_theme: TicketTheme;
     quantity: string;
   }>({
     title: '',
@@ -283,12 +279,12 @@ const CreateEvent = () => {
     currency: 'NGN',
     quantity: '',
     benefits: '',
-    colorTheme: 'silver',
+    color_theme: 'silver',
   });
 
   // Ticket handlers
   const handleAddTicket = () => {
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
     setEditingTicketId(null);
     setMobileTab('details');
     setShowTicketForm(true);
@@ -296,11 +292,11 @@ const CreateEvent = () => {
 
   const handleEditTicket = (ticket: EventTicket) => {
     setTicketForm({
-      title: ticket.title,
+      title: ticket.label,
       price: ticket.price.toString(),
       currency: ticket.currency,
-      benefits: ticket.benefits.join('\n'),
-      colorTheme: ticket.colorTheme || 'silver',
+      benefits: ticket.benefits?.join('\n') ?? "",
+      color_theme: ticket.color_theme || 'silver',
       quantity: ticket.quantity?.toString() || '',
     });
     setEditingTicketId(ticket.id);
@@ -315,6 +311,10 @@ const CreateEvent = () => {
     }
 
     const price = parseFloat(ticketForm.price) || 0;
+    if (price <= 0) {
+      toastError('Ticket price must be greater than 0');
+      return;
+    }
     // Parse quantity - undefined means unlimited
     const quantity = ticketForm.quantity ? parseInt(ticketForm.quantity) : undefined;
     const benefits = ticketForm.benefits
@@ -323,47 +323,61 @@ const CreateEvent = () => {
       .filter(Boolean);
 
     if (editingTicketId) {
-      // Update existing ticket
       setForm(prev => ({
         ...prev,
+        showType: 'paid',
         tickets: prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, colorTheme: ticketForm.colorTheme, quantity }
+            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
             : t
         ),
+        price: deriveEventPrice(prev.tickets.map(t =>
+          t.id === editingTicketId
+            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
+            : t
+        )),
       }));
     } else {
-      // Add new ticket
       const newTicket: EventTicket = {
         id: `ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        title: ticketForm.title,
+        label: ticketForm.title,
         price,
         currency: ticketForm.currency,
         benefits,
-        colorTheme: ticketForm.colorTheme,
+        color_theme: ticketForm.color_theme,
         quantity,
+        event_id: '',
+        quantity_total: null,
+        quantity_sold: 0,
+        quantity_remaining: 0,
+        reserved_quantity: 0,
+        is_active: false
       };
-      setForm(prev => ({ ...prev, tickets: [...prev.tickets, newTicket] }));
+      setForm(prev => ({ ...prev, showType: 'paid', tickets: [...prev.tickets, newTicket], price: deriveEventPrice([...prev.tickets, newTicket]) }));
     }
 
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
 
   const handleDeleteTicket = (ticketId: string) => {
-    setForm(prev => ({
-      ...prev,
-      tickets: prev.tickets.filter(t => t.id !== ticketId),
-    }));
+    setForm(prev => {
+      const remaining = prev.tickets.filter(t => t.id !== ticketId);
+      return {
+        ...prev,
+        showType: remaining.length > 0 ? 'paid' : 'free',
+        tickets: remaining,
+        price: deriveEventPrice(remaining),
+      };
+    });
   };
 
   const handleCancelTicketForm = () => {
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
-
 
   // Helper to extract average color from image
   const getAverageColor = async (imageUrl: string): Promise<{ r: number; g: number; b: number } | null> => {
@@ -421,7 +435,6 @@ const CreateEvent = () => {
           if (!refreshed.data) {
             if (!cancelled) {
               toastError('Please sign in to create an event.');
-              navigate('/login');
             }
           } else {
             const u = await getCurrentUser()
@@ -433,7 +446,6 @@ const CreateEvent = () => {
         console.error('Failed to fetch session', error);
         if (!cancelled) {
           toastError('We could not verify your session. Please sign in again.');
-          navigate('/login');
         }
       }
     };
@@ -474,16 +486,27 @@ const CreateEvent = () => {
           return;
         }
 
-        await getTicketsForEvent(id);
-
+        const tickets = await getTicketsForEvent(id);        
+        
         setForm(prev => ({
           ...prev,
           title: event.title || '',
           description: event.description || '',
           startDateTime: safeFormat(event.scheduled_for),
-          endDateTime: safeFormat(event.ended_at),
           coverImage: event.thumbnail_url || '',
+          price: deriveEventPrice(tickets || []),
+          tickets: tickets,
+          handRaising: event.hand_raising!,
+          showType: event.show_type!,
+          venueId: event.venue?.venue_id || null,
+          venueType: event.venue?.venue_type || null,
+          draftVenue: null,
+          locationType: event.venue?.venue_type === 'virtual' ? 'online' : 'physical'
         }));
+
+        console.log("kkk", form);
+        
+        setEventStatus(event.status || 'draft');
         setCoverPreview(event.thumbnail_url || '');
       } catch (error) {
         console.error('Error fetching event for edit:', error);
@@ -574,20 +597,35 @@ const CreateEvent = () => {
   }, []);
 
   const uploadCoverImage = async (file: File): Promise<string> => {
-    const { uploadFile, getPublicUrl } = await import('@/lib/api/storage');
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = fileName;
-
-    console.log('Upload Path:', filePath);
 
     try {
-      const publicUrl = await uploadFile('event-covers', filePath, file);
+      const publicUrl = await uploadImage(file, 'livestream-banner');
       console.log('UPLOAD SUCCESS:', publicUrl);
-      return getPublicUrl('event-covers', filePath);
+      return publicUrl;
     } catch (err: any) {
       console.error('Upload failed:', err);
       throw new Error(`Upload failed: ${err.message}`);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!id) return;
+    if (!form.startDateTime) {
+      toastError('Please set a start date and time before publishing.');
+      return;
+    }
+    if (new Date(form.startDateTime) <= new Date()) {
+      toastError('Start date and time must be in the future.');
+      return;
+    }
+    setPublishing(true);
+    const result = await publishEvent(id, new Date(form.startDateTime).toISOString());
+    setPublishing(false);
+    if (result.ok) {
+      toastSuccess('Event published!');
+      setEventStatus('published');
+    } else {
+      toastError(result.error || 'Failed to publish event');
     }
   };
 
@@ -601,36 +639,25 @@ const CreateEvent = () => {
       return;
     }
 
+    const isPublished = id && eventStatus.toLowerCase() !== 'draft';
+
     if (!form.startDateTime) {
-      toastError('Please select a start date and time.');
-      return;
-    }
-
-    const startTime = new Date(form.startDateTime);
-    if (Number.isNaN(startTime.getTime())) {
-      toastError('Start time is invalid.');
-      return;
-    }
-
-    let endTimeIso: string | null = null;
-    if (form.endDateTime) {
-      const endTime = new Date(form.endDateTime);
-      if (Number.isNaN(endTime.getTime())) {
-        toastError('End time is invalid.');
+      if (isPublished) {
+        toastError('Published events must have a start date. You cannot unset it.');
         return;
       }
-      if (endTime <= startTime) {
-        toastError('End time must be after the start time.');
+    } else {
+      const startTime = new Date(form.startDateTime);
+      if (Number.isNaN(startTime.getTime())) {
+        toastError('Start time is invalid.');
         return;
       }
-      endTimeIso = endTime.toISOString();
     }
 
     setSubmitting(true);
     try {
       let coverImageUrl = form.coverImage;
 
-      // Upload image if a new file is selected
       if (coverFile) {
         try {
           coverImageUrl = await uploadCoverImage(coverFile);
@@ -641,14 +668,26 @@ const CreateEvent = () => {
         }
       }
 
+      const startTime = form.startDateTime ? new Date(form.startDateTime) : null;
+
+      let resolvedVenueId = form.venueId;
+      if (form.draftVenue && form.venueId?.startsWith('draft-')) {
+        const venueResult = await createVenue(form.draftVenue);
+        if (venueResult.id) {
+          resolvedVenueId = venueResult.id;
+        }
+      }
+
       const insertPayload = {
         title: trimmedTitle,
         description: form.description.trim() || undefined,
         thumbnail_url: coverImageUrl.trim() || undefined,
         show_type: form.showType,
-        scheduled_for: startTime.toISOString(),
+        price: form.price,
+        scheduled_for: startTime ? startTime.toISOString() : undefined,
         hand_raising: form.handRaising,
         allow_whispers: form.allowWhispers,
+        venue_id: resolvedVenueId || null,
       };
 
       console.log('Submitting event payload:', insertPayload);
@@ -683,36 +722,37 @@ const CreateEvent = () => {
       }
 
       // Insert or Update tickets
-      if (form.tickets.length > 0) {
+      if (form.tickets.length > 0 && eventId) {
         const newTickets = form.tickets.filter(t => t.id.startsWith('ticket-'));
         const existingTickets = form.tickets.filter(t => !t.id.startsWith('ticket-'));
 
-        // Insert new tickets
-        if (newTickets.length > 0 && eventId) {
-          const ticketInserts = newTickets.map(ticket => ({
-            event_id: eventId,
-            label: ticket.title,
-            price: ticket.price,
-            currency: ticket.currency,
-            quantity: ticket.quantity,
-            benefits: ticket.benefits,
-            color_theme: ticket.colorTheme,
-            is_physical: false,
-          }));
+        // Insert new tickets (one at a time - no bulk)
+        if (newTickets.length > 0) {
+          for (const ticket of newTickets) {
+            const ticketPayload = {
+              label: ticket.label,
+              price: ticket.price,
+              currency: ticket.currency,
+              quantity_total: ticket.quantity ?? null,
+              benefits: ticket.benefits,
+              color_theme: ticket.color_theme,
+              is_physical: false,
+            };
 
-          await createTickets(eventId, ticketInserts);
+            await createNewTicket(ticketPayload, eventId);
+          }
         }
 
         // Update existing tickets
         if (existingTickets.length > 0) {
           for (const ticket of existingTickets) {
             await updateTicket(ticket.id, {
-              label: ticket.title,
+              label: ticket.label,
               price: ticket.price,
               currency: ticket.currency,
-              quantity: ticket.quantity,
+              quantity_total: ticket.quantity ?? null,
               benefits: ticket.benefits,
-              color_theme: ticket.colorTheme,
+              color_theme: ticket.color_theme,
             });
           }
         }
@@ -733,7 +773,7 @@ const CreateEvent = () => {
     }
   };
 
-  const datetimeValue = (value: string) => {
+  const datetimeValue = (value: string | null) => {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
@@ -767,6 +807,8 @@ const CreateEvent = () => {
       </div>
     );
   }
+
+  const isPublished = !!id && eventStatus.toLowerCase() !== 'draft';
 
   return (
     <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">
@@ -821,67 +863,6 @@ const CreateEvent = () => {
                   </div>
                 </section>
 
-                {/* Event Settings */}
-                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                    <Sparkles className="h-4 w-4 text-amber-500" />
-                    Settings
-                  </div>
-
-                  <div className="space-y-4 lg:px-2">
-                    {/* Free / Paid Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Paid Event</p>
-                        <p className="text-xs text-gray-500">Charge for tickets</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, showType: prev.showType === 'free' ? 'paid' : 'free' }))}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.showType === 'paid' ? 'bg-amber-500' : 'bg-gray-200'}`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.showType === 'paid' ? 'translate-x-6' : 'translate-x-1'}`}
-                        />
-                      </button>
-                    </div>
-
-                    {/* Hand Raising Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Hand Raising</p>
-                        <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
-                        />
-                      </button>
-                    </div>
-
-                    {/* Allow Whispers Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
-                        <p className="text-xs text-gray-500">Private messages between attendees</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </section>
-
                 {/* Schedule */}
                 <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
                   <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
@@ -889,28 +870,25 @@ const CreateEvent = () => {
                     Schedule
                   </div>
 
-                  <div className="grid gap-6 sm:grid-cols-2 lg:px-2">
-                    <div>
-                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start</label>
-                      <input
-                        type="datetime-local"
-                        min={nowIsoLocal}
-                        value={datetimeValue(form.startDateTime)}
-                        onChange={handleChange('startDateTime')}
-                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">End (Optional)</label>
-                      <input
-                        type="datetime-local"
-                        min={datetimeValue(form.startDateTime)}
-                        value={datetimeValue(form.endDateTime)}
-                        onChange={handleChange('endDateTime')}
-                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
-                      />
-                    </div>
+                  <div className="lg:px-2">
+                    <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      min={nowIsoLocal}
+                      value={form.startDateTime ? datetimeValue(form.startDateTime) : ''}
+                      onChange={(e) => {
+                        if (isPublished && !e.target.value) {
+                          toastError('Published events must have a start date.');
+                          return;
+                        }
+                        setForm(prev => ({ ...prev, startDateTime: e.target.value || null }));
+                      }}
+                      className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                      placeholder="Leave empty to save as draft"
+                    />
+                    {!form.startDateTime && !id && (
+                      <p className="mt-2 text-xs text-gray-400">Leave empty to save as a draft</p>
+                    )}
                   </div>
                   <div className="mx-2 flex items-center gap-2 text-xs text-gray-500 bg-gray-100/50 px-4 py-2 rounded-full w-fit border border-gray-100">
                     <Globe className="h-3.5 w-3.5" />
@@ -927,59 +905,20 @@ const CreateEvent = () => {
                   </div>
 
                   <div className="lg:px-2">
-                    <div className="flex p-1.5 bg-gray-100/80 rounded-2xl mb-6 relative isolate">
-                      {/* Sliding Background */}
-                      <div
-                        className={`absolute inset-y-1.5 left-1.5 right-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out -z-10 ${form.locationType === 'online' ? 'translate-x-[calc(100%+3px)]' : 'translate-x-0'
-                          }`}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, locationType: 'physical' }))}
-                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300 ${form.locationType === 'physical' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                          }`}
-                      >
-                        <MapPin className={`h-4 w-4 ${form.locationType === 'physical' ? 'text-emerald-500' : 'text-gray-400'}`} />
-                        Physical Location
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, locationType: 'online' }))}
-                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300 ${form.locationType === 'online' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                          }`}
-                      >
-                        <img
-                          src="/images/amptive_logo.png"
-                          alt="Amptive"
-                          className={`h-5 w-5 object-contain transition-opacity filter invert ${form.locationType === 'online' ? 'opacity-100' : 'opacity-40'}`}
-                        />
-                        Amptive App
-                      </button>
-                    </div>
-
-                    {form.locationType === 'physical' ? (
-                      <LocationPicker
-                        initialVenue={form.venue}
-                        initialCity={form.city}
-                        onLocationSelect={(venue, city, lat, lng) => {
-                          setForm(prev => ({
-                            ...prev,
-                            venue,
-                            city,
-                            latitude: lat,
-                            longitude: lng
-                          }));
-                        }}
-                      />
-                    ) : (
-                      <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-blue-700 text-sm font-medium flex items-center gap-3 animate-in fade-in zoom-in-95 duration-300">
-                        <div className="p-2 bg-white rounded-full shadow-sm">
-                          <Globe className="h-5 w-5 text-blue-500" />
-                        </div>
-                        Event will be hosted virtually on the Amptive App
-                      </div>
-                    )}
+                    <VenueSelector
+                      selectedVenueId={form.venueId}
+                      deferVenueCreation
+                      onDraftVenue={(draft) => {
+                        setForm(prev => ({ ...prev, draftVenue: draft }));
+                      }}
+                      onVenueSelect={(venueId, venueType) => {
+                        setForm(prev => ({
+                          ...prev,
+                          venueId,
+                          venueType: venueType ?? null
+                        }));
+                      }}
+                    />
                   </div>
                 </section>
 
@@ -1001,7 +940,7 @@ const CreateEvent = () => {
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
-                                <h5 className="font-bold text-gray-900">{ticket.title}</h5>
+                                <h5 className="font-bold text-gray-900">{ticket.label}</h5>
                                 <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
                                   {formatTicketPrice(ticket.price, ticket.currency)}
                                 </span>
@@ -1045,6 +984,80 @@ const CreateEvent = () => {
                   </div>
                 </section>
 
+                {/* Event Settings */}
+                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    Settings
+                  </div>
+
+                  <div className="space-y-4 lg:px-2">
+                    {/* Free / Paid Indicator */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Event Type</p>
+                        <p className="text-xs text-gray-500">Auto-detected from tickets</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                        form.showType === 'paid'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}>
+                        {form.showType === 'paid' ? 'Paid' : 'Free'}
+                      </span>
+                    </div>
+
+                    {/* Event Price (auto-derived) */}
+                    {form.showType === 'paid' && form.tickets.length > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50/50 border border-amber-100">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Event Price</p>
+                          <p className="text-xs text-gray-500">Auto-derived from regular ticket</p>
+                        </div>
+                        <span className="text-lg font-bold text-gray-900">{formatTicketPrice(form.price)}</span>
+                      </div>
+                    )}
+
+                    {form.venueType === 'virtual' && (
+                      <>
+                        {/* Hand Raising Toggle */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">Hand Raising</p>
+                            <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Allow Whispers Toggle */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
+                            <p className="text-xs text-gray-500">Private messages between attendees</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
+                            />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </section>
+
               </div>
 
               <div className="pt-8 border-t border-gray-100">
@@ -1056,12 +1069,30 @@ const CreateEvent = () => {
                   {submitting ? (
                     <span className="flex items-center justify-center gap-2">
                       <Loader2 className="h-5 w-5 animate-spin" />
-                      {id ? 'Saving...' : 'Publishing...'}
+                      {id ? 'Saving...' : 'Creating...'}
                     </span>
                   ) : (
                     id ? 'Save Changes' : 'Create Event'
                   )}
                 </button>
+
+                {id && eventStatus.toLowerCase() === 'draft' && (
+                  <button
+                    type="button"
+                    onClick={handlePublish}
+                    disabled={publishing}
+                    className="w-full mt-3 rounded-full bg-emerald-500 px-8 py-4 text-lg font-medium text-white transition-transform hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {publishing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Publishing...
+                      </span>
+                    ) : (
+                      'Schedule Event'
+                    )}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => navigate(-1)}
@@ -1415,11 +1446,11 @@ const CreateEvent = () => {
                         <button
                           key={key}
                           type="button"
-                          onClick={() => setTicketForm(prev => ({ ...prev, colorTheme: key }))}
-                          className={`group relative w-12 h-12 rounded-full transition-all duration-200 ${ticketForm.colorTheme === key ? 'ring-2 ring-offset-2 ring-blue-500 scale-110' : 'hover:scale-105'}`}
+                          onClick={() => setTicketForm(prev => ({ ...prev, color_theme: key }))}
+                          className={`group relative w-12 h-12 rounded-full transition-all duration-200 ${ticketForm.color_theme === key ? 'ring-2 ring-offset-2 ring-blue-500 scale-110' : 'hover:scale-105'}`}
                         >
                           <div className={`absolute inset-0 rounded-full ${theme.gradient} shadow-sm border border-black/5`} />
-                          {ticketForm.colorTheme === key && (
+                          {ticketForm.color_theme === key && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <div className="w-2 h-2 bg-white rounded-full shadow-sm" />
                             </div>
@@ -1495,7 +1526,7 @@ const CreateEvent = () => {
                   {/* Card Preview */}
                   <div className="group relative w-full max-w-[360px] sm:max-w-[420px] min-h-[15rem] [perspective:1600px]">
                     {(() => {
-                      const theme = TICKET_THEMES[ticketForm.colorTheme || 'silver'];
+                      const theme = TICKET_THEMES[ticketForm.color_theme || 'silver'];
                       // Generate preview ticket ID
                       const previewTicketId = `PREVIEW-${Date.now().toString(36).toUpperCase()}`;
                       const qrData = JSON.stringify({
