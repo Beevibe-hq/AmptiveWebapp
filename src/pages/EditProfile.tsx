@@ -11,15 +11,14 @@ import { UserProfile } from '@/lib/api/services';
 export default function EditProfile() {
     const navigate = useNavigate();
     const {user} =  useAuth()
-    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [initialLoading, setInitialLoading] = useState(true);
+    const [initialLoading, _setInitialLoading] = useState(true);
 
     // Form State
     const [fullName, setFullName] = useState('');
     const [username, setUsername] = useState('');
     const [dob, setDob] = useState('');
-    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [avatarUrl, _setAvatarUrl] = useState<string | null>(null);
     const [avatarFile, setAvatarFile] = useState<File | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 

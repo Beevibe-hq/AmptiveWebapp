@@ -1,7 +1,7 @@
 import { api } from './client';
-import { UserProfile, normalizeUserProfile } from './profiles';
+import { normalizeUserProfile } from './profiles';
 import { $auth, $users } from './services';
-import type { LoginRequest, RegisterRequest } from './services';
+import type { LoginRequest, RegisterRequest, UserProfile } from './services';
 
 function decodeTokenExpiry(token: string): number | undefined {
   try {
@@ -90,11 +90,11 @@ export async function login(email: string, password: string, phoneNumber?: strin
     }
 
     const response = await $auth.login(loginData);
-    
-    const user = normalizeUserProfile(response.user);    
+
+    const user = normalizeUserProfile(response.user);
     if (!user) {
       throw new Error('Login response did not include a valid user profile.');
-    }    
+    }
 
     const expiresIn = decodeTokenExpiry(response.access_token);
     const tokenExpiry = expiresIn ?? 86400;
@@ -135,7 +135,7 @@ export async function register(email: string, password: string, options?: Regist
       phone_number: options?.phone_number,
       profile_picture: options?.profile_picture,
     };
-    const response = await $auth.register(registerData) as unknown as {user: UserProfile; access_token: string; refresh_token: string};
+    const response = await $auth.register(registerData) as unknown as { user: UserProfile; access_token: string; refresh_token: string };
     const user = response.user;
     const accessToken = response.access_token;
     const refreshToken = response.refresh_token;
@@ -168,17 +168,17 @@ export async function signOutSilent(): Promise<{ error: null }> {
   return { error: null };
 }
 
-export async function logout(): Promise<void> {  
+export async function logout(): Promise<void> {
   api.clearSessionTokens();
   localStorage.removeItem('amptive.auth');
 }
 
 export async function getCurrentUser(): Promise<UserProfile | null> {
-  const token = api.getToken();  
+  const token = api.getToken();
   if (!token) return null;
 
   try {
-    const response = await $users.getCurrent();    
+    const response = await $users.getCurrent();
     return normalizeUserProfile(response);
   } catch {
     api.clearSessionTokens();
@@ -191,7 +191,7 @@ export async function getSession(): Promise<{ user: UserProfile | null; token: s
   if (!token) return { user: null, token: null };
 
   try {
-    const response = await $users.getCurrent();    
+    const response = await $users.getCurrent();
     return { user: normalizeUserProfile(response), token };
   } catch (error: any) {
     const errorStr = String(error);
@@ -266,7 +266,7 @@ export async function isVerified(_email: string): Promise<{ verified: boolean }>
 
 export async function checkEmailExists(email: string): Promise<boolean> {
   try {
-    const response = await $auth.checkAvailability({ email });    
+    const response = await $auth.checkAvailability({ email });
     return response.status === true;
   } catch {
     return false;
