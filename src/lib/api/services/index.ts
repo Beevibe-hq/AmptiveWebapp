@@ -92,6 +92,7 @@ const TICKETS_PREFIX = '/tickets';
 const PURCHASES_PREFIX = '/purchases';
 const EXTRA_PREFIX = '/extras';
 const PAYMENT_PREFIX = '/payments';
+const VENUES_PREFIX = '/venues';
 
 
 // ============================================
@@ -160,8 +161,8 @@ export const $events = {
   getForCurrentUser: () =>
     api.get<{ events: unknown[]; total: number }>(`${EVENTS_PREFIX}/me/`),
 
-  publish: (eventId: string) =>
-    api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/publish`),
+  publish: (eventId: string, payload: { scheduled_date: string; reason?: string }) =>
+    api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/publish`, payload),
 
   getOrders: (eventId: string) =>
     api.get<unknown>(`${EVENTS_PREFIX}/${eventId}/orders`),
@@ -262,4 +263,25 @@ export const $storage = {
 export const $payment = {
   verify: (reference: string, isGuest: boolean) =>
     api.get<string[]>(`${PAYMENT_PREFIX}/verify?reference=${reference}`, {skipAuth: isGuest}),
+};
+
+// ============================================
+// VENUES SERVICE
+// ============================================
+
+export const $venues = {
+  list: () =>
+    api.get<{ venues: unknown[] }>(`${VENUES_PREFIX}/me/`),
+
+  getById: (venueId: string) =>
+    api.get<unknown>(`${VENUES_PREFIX}/${venueId}`),
+
+  create: (venue: unknown) =>
+    api.post<unknown>(`${VENUES_PREFIX}/`, venue),
+
+  update: (venueId: string, venue: unknown) =>
+    api.patch<unknown>(`${VENUES_PREFIX}/${venueId}`, venue),
+
+  delete: (venueId: string) =>
+    api.delete<unknown>(`${VENUES_PREFIX}/${venueId}`),
 };

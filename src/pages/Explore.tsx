@@ -126,9 +126,11 @@ export default function Explore() {
             if (searchQuery && searchQuery.length > 0) {
                 filtered = filtered.filter(e => {
                     const searchLower = searchQuery.toLowerCase();
+                    const venueStr = e.location?.venue || e.venue?.name || '';
+                    const cityStr = e.location?.city || e.venue?.city || '';
                     return e.title.toLowerCase().includes(searchLower) ||
-                        e.venue?.toLowerCase().includes(searchLower) ||
-                        e.city?.toLowerCase().includes(searchLower);
+                        venueStr.toLowerCase().includes(searchLower) ||
+                        cityStr.toLowerCase().includes(searchLower);
                 });
             }
 

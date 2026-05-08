@@ -1,4 +1,5 @@
 import { $events } from './services';
+import type { Venue } from './venues';
 
 export interface StandaloneEvent {
   event_tickets: any;
@@ -36,6 +37,8 @@ export interface StandaloneEvent {
     latitude?: number;
     longitude?: number
   };
+  venue_id?: string | null;
+  venue?: Venue | null;
 }
 
 export interface UserSlim {
@@ -71,6 +74,7 @@ export interface StandaloneEventCreateRequest {
   co_host_ids?: string[];
   hand_raising: boolean;
   allow_whispers: boolean;
+  venue_id?: string | null;
 }
 
 export interface StandaloneEventUpdateRequest {
@@ -86,6 +90,7 @@ export interface StandaloneEventUpdateRequest {
   co_host_ids?: string[];
   hand_raising?: boolean;
   allow_whispers?: boolean;
+  venue_id?: string | null;
 }
 
 export type Event = StandaloneEvent;
@@ -162,9 +167,9 @@ export async function getRelatedEvents(userId: string, excludeEventId: string, l
   return (response?.events || []) as StandaloneEvent[];
 }
 
-export async function publishEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
+export async function publishEvent(eventId: string, scheduledDate: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await $events.publish(eventId);
+    await $events.publish(eventId, { scheduled_date: scheduledDate, reason: '' });
     return { ok: true, error: undefined };
   } catch (e) {
     return { ok: false, error: (e as Error).message };

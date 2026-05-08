@@ -3,11 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getEvent, createEvent as createNewEvent, updateEvent } from '@/lib/api/events';
+import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
 import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme } from '@/lib/api/tickets';
+import { createVenue, type VenueCreateRequest } from '@/lib/api/venues';
 import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import RichTextEditor from '@/components/RichTextEditor';
-import LocationPicker from '@/components/LocationPicker';
+import VenueSelector from '@/components/VenueSelector';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api/client';
 import { uploadImage } from '@/lib/api/storage';
@@ -78,6 +79,9 @@ type FormState = {
   longitude?: number | null;
   coverImage: string;
   locationType: 'physical' | 'online';
+  venueId: string | null;
+  venueType?: 'physical' | 'virtual' | null;
+  draftVenue: VenueCreateRequest | null;
   tickets: EventTicket[];
   showType: 'free' | 'paid';
   price: number;
@@ -122,6 +126,9 @@ const buildInitialFormState = (): FormState => {
     longitude: null,
     coverImage: '',
     locationType: 'physical',
+    venueId: null,
+    venueType: null,
+    draftVenue: null,
     tickets: [],
     showType: 'free',
     price: 0,
@@ -235,6 +242,7 @@ const CreateEvent = () => {
 
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitting, setSubmitting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -303,6 +311,10 @@ const CreateEvent = () => {
     }
 
     const price = parseFloat(ticketForm.price) || 0;
+    if (price <= 0) {
+      toastError('Ticket price must be greater than 0');
+      return;
+    }
     // Parse quantity - undefined means unlimited
     const quantity = ticketForm.quantity ? parseInt(ticketForm.quantity) : undefined;
     const benefits = ticketForm.benefits
@@ -313,6 +325,7 @@ const CreateEvent = () => {
     if (editingTicketId) {
       setForm(prev => ({
         ...prev,
+        showType: 'paid',
         tickets: prev.tickets.map(t =>
           t.id === editingTicketId
             ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
@@ -340,7 +353,7 @@ const CreateEvent = () => {
         reserved_quantity: 0,
         is_active: false
       };
-      setForm(prev => ({ ...prev, tickets: [...prev.tickets, newTicket], price: deriveEventPrice([...prev.tickets, newTicket]) }));
+      setForm(prev => ({ ...prev, showType: 'paid', tickets: [...prev.tickets, newTicket], price: deriveEventPrice([...prev.tickets, newTicket]) }));
     }
 
     setShowTicketForm(false);
@@ -353,6 +366,7 @@ const CreateEvent = () => {
       const remaining = prev.tickets.filter(t => t.id !== ticketId);
       return {
         ...prev,
+        showType: remaining.length > 0 ? 'paid' : 'free',
         tickets: remaining,
         price: deriveEventPrice(remaining),
       };
@@ -364,7 +378,6 @@ const CreateEvent = () => {
     setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
     setEditingTicketId(null);
   };
-
 
   // Helper to extract average color from image
   const getAverageColor = async (imageUrl: string): Promise<{ r: number; g: number; b: number } | null> => {
@@ -484,8 +497,11 @@ const CreateEvent = () => {
           price: deriveEventPrice(tickets || []),
           tickets: tickets,
           handRaising: event.hand_raising!,
-          showType: event.show_type!
-
+          showType: event.show_type!,
+          venueId: event.venue?.venue_id || null,
+          venueType: event.venue?.venue_type || null,
+          draftVenue: null,
+          locationType: event.venue?.venue_type === 'virtual' ? 'online' : 'physical'
         }));
 
         console.log("kkk", form);
@@ -592,6 +608,27 @@ const CreateEvent = () => {
     }
   };
 
+  const handlePublish = async () => {
+    if (!id) return;
+    if (!form.startDateTime) {
+      toastError('Please set a start date and time before publishing.');
+      return;
+    }
+    if (new Date(form.startDateTime) <= new Date()) {
+      toastError('Start date and time must be in the future.');
+      return;
+    }
+    setPublishing(true);
+    const result = await publishEvent(id, new Date(form.startDateTime).toISOString());
+    setPublishing(false);
+    if (result.ok) {
+      toastSuccess('Event published!');
+      setEventStatus('published');
+    } else {
+      toastError(result.error || 'Failed to publish event');
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!userId) return;
@@ -602,7 +639,7 @@ const CreateEvent = () => {
       return;
     }
 
-    const isPublished = id && eventStatus !== 'draft';
+    const isPublished = id && eventStatus.toLowerCase() !== 'draft';
 
     if (!form.startDateTime) {
       if (isPublished) {
@@ -633,6 +670,14 @@ const CreateEvent = () => {
 
       const startTime = form.startDateTime ? new Date(form.startDateTime) : null;
 
+      let resolvedVenueId = form.venueId;
+      if (form.draftVenue && form.venueId?.startsWith('draft-')) {
+        const venueResult = await createVenue(form.draftVenue);
+        if (venueResult.id) {
+          resolvedVenueId = venueResult.id;
+        }
+      }
+
       const insertPayload = {
         title: trimmedTitle,
         description: form.description.trim() || undefined,
@@ -642,6 +687,7 @@ const CreateEvent = () => {
         scheduled_for: startTime ? startTime.toISOString() : undefined,
         hand_raising: form.handRaising,
         allow_whispers: form.allowWhispers,
+        venue_id: resolvedVenueId || null,
       };
 
       console.log('Submitting event payload:', insertPayload);
@@ -762,7 +808,7 @@ const CreateEvent = () => {
     );
   }
 
-  const isPublished = !!id && eventStatus !== 'draft';
+  const isPublished = !!id && eventStatus.toLowerCase() !== 'draft';
 
   return (
     <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">
@@ -817,78 +863,6 @@ const CreateEvent = () => {
                   </div>
                 </section>
 
-                {/* Event Settings */}
-                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                    <Sparkles className="h-4 w-4 text-amber-500" />
-                    Settings
-                  </div>
-
-                  <div className="space-y-4 lg:px-2">
-                    {/* Free / Paid Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Paid Event</p>
-                        <p className="text-xs text-gray-500">Charge for tickets</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, showType: prev.showType === 'free' ? 'paid' : 'free' }))}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.showType === 'paid' ? 'bg-amber-500' : 'bg-gray-200'}`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.showType === 'paid' ? 'translate-x-6' : 'translate-x-1'}`}
-                        />
-                      </button>
-                    </div>
-
-                    {/* Event Price (auto-derived) */}
-                    {form.showType === 'paid' && form.tickets.length > 0 && (
-                      <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50/50 border border-amber-100">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">Event Price</p>
-                          <p className="text-xs text-gray-500">Auto-derived from regular ticket</p>
-                        </div>
-                        <span className="text-lg font-bold text-gray-900">{formatTicketPrice(form.price)}</span>
-                      </div>
-                    )}
-
-                    {/* Hand Raising Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Hand Raising</p>
-                        <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
-                        />
-                      </button>
-                    </div>
-
-                    {/* Allow Whispers Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
-                        <p className="text-xs text-gray-500">Private messages between attendees</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </section>
-
                 {/* Schedule */}
                 <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
                   <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
@@ -931,59 +905,20 @@ const CreateEvent = () => {
                   </div>
 
                   <div className="lg:px-2">
-                    <div className="flex p-1.5 bg-gray-100/80 rounded-2xl mb-6 relative isolate">
-                      {/* Sliding Background */}
-                      <div
-                        className={`absolute inset-y-1.5 left-1.5 right-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out -z-10 ${form.locationType === 'online' ? 'translate-x-[calc(100%+3px)]' : 'translate-x-0'
-                          }`}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, locationType: 'physical' }))}
-                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300 ${form.locationType === 'physical' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                          }`}
-                      >
-                        <MapPin className={`h-4 w-4 ${form.locationType === 'physical' ? 'text-emerald-500' : 'text-gray-400'}`} />
-                        Physical Location
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setForm(prev => ({ ...prev, locationType: 'online' }))}
-                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-colors duration-300 ${form.locationType === 'online' ? 'text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                          }`}
-                      >
-                        <img
-                          src="/images/amptive_logo.png"
-                          alt="Amptive"
-                          className={`h-5 w-5 object-contain transition-opacity filter invert ${form.locationType === 'online' ? 'opacity-100' : 'opacity-40'}`}
-                        />
-                        Amptive App
-                      </button>
-                    </div>
-
-                    {form.locationType === 'physical' ? (
-                      <LocationPicker
-                        initialVenue={form.venue}
-                        initialCity={form.city}
-                        onLocationSelect={(venue, city, lat, lng) => {
-                          setForm(prev => ({
-                            ...prev,
-                            venue,
-                            city,
-                            latitude: lat,
-                            longitude: lng
-                          }));
-                        }}
-                      />
-                    ) : (
-                      <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-blue-700 text-sm font-medium flex items-center gap-3 animate-in fade-in zoom-in-95 duration-300">
-                        <div className="p-2 bg-white rounded-full shadow-sm">
-                          <Globe className="h-5 w-5 text-blue-500" />
-                        </div>
-                        Event will be hosted virtually on the Amptive App
-                      </div>
-                    )}
+                    <VenueSelector
+                      selectedVenueId={form.venueId}
+                      deferVenueCreation
+                      onDraftVenue={(draft) => {
+                        setForm(prev => ({ ...prev, draftVenue: draft }));
+                      }}
+                      onVenueSelect={(venueId, venueType) => {
+                        setForm(prev => ({
+                          ...prev,
+                          venueId,
+                          venueType: venueType ?? null
+                        }));
+                      }}
+                    />
                   </div>
                 </section>
 
@@ -1049,6 +984,80 @@ const CreateEvent = () => {
                   </div>
                 </section>
 
+                {/* Event Settings */}
+                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    Settings
+                  </div>
+
+                  <div className="space-y-4 lg:px-2">
+                    {/* Free / Paid Indicator */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Event Type</p>
+                        <p className="text-xs text-gray-500">Auto-detected from tickets</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                        form.showType === 'paid'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}>
+                        {form.showType === 'paid' ? 'Paid' : 'Free'}
+                      </span>
+                    </div>
+
+                    {/* Event Price (auto-derived) */}
+                    {form.showType === 'paid' && form.tickets.length > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50/50 border border-amber-100">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Event Price</p>
+                          <p className="text-xs text-gray-500">Auto-derived from regular ticket</p>
+                        </div>
+                        <span className="text-lg font-bold text-gray-900">{formatTicketPrice(form.price)}</span>
+                      </div>
+                    )}
+
+                    {form.venueType === 'virtual' && (
+                      <>
+                        {/* Hand Raising Toggle */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">Hand Raising</p>
+                            <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Allow Whispers Toggle */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
+                            <p className="text-xs text-gray-500">Private messages between attendees</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
+                            />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </section>
+
               </div>
 
               <div className="pt-8 border-t border-gray-100">
@@ -1060,12 +1069,30 @@ const CreateEvent = () => {
                   {submitting ? (
                     <span className="flex items-center justify-center gap-2">
                       <Loader2 className="h-5 w-5 animate-spin" />
-                      {id ? 'Saving...' : 'Publishing...'}
+                      {id ? 'Saving...' : 'Creating...'}
                     </span>
                   ) : (
                     id ? 'Save Changes' : 'Create Event'
                   )}
                 </button>
+
+                {id && eventStatus.toLowerCase() === 'draft' && (
+                  <button
+                    type="button"
+                    onClick={handlePublish}
+                    disabled={publishing}
+                    className="w-full mt-3 rounded-full bg-emerald-500 px-8 py-4 text-lg font-medium text-white transition-transform hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {publishing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Publishing...
+                      </span>
+                    ) : (
+                      'Schedule Event'
+                    )}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => navigate(-1)}
