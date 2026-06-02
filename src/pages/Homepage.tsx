@@ -470,7 +470,7 @@ const SLIDES: SlideData[] = [
     ctaLink: "/events",
     videoSrc: '/videos/creatingevent.mp4',
     videoClassName: "object-[15%_center]",
-    bgColor: "radial-gradient(circle at 20% 30%, rgba(215, 235, 30, 0.38) 0%, transparent 65%), radial-gradient(circle at 80% 70%, rgba(220, 38, 38, 0.15) 0%, transparent 50%), radial-gradient(circle at 75% 20%, rgba(124, 58, 237, 0.05) 0%, transparent 50%), linear-gradient(135deg, #050508 0%, #0A0A10 50%, #010102 100%)",
+    bgColor: "radial-gradient(circle at 20% 30%, rgba(245, 215, 30, 0.20) 0%, transparent 65%), radial-gradient(circle at 80% 70%, rgba(245, 215, 30, 0.08) 0%, transparent 50%), linear-gradient(135deg, #0a0a0e 0%, #050508 50%, #020204 100%)",
     shadowColor: 'rgba(215, 235, 30, 0.45)',
     isSecondSlide: true
   },
