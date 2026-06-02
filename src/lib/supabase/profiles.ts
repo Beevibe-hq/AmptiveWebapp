@@ -10,6 +10,22 @@ export type ProfileRow = {
   email?: string | null;
   created_at?: string;
   updated_at?: string;
+  support_enabled?: boolean;
+  support_message?: string | null;
+  support_button_text?: string | null;
+  support_amounts?: number[] | null;
+  flutterwave_subaccount_id?: string | null;
+  profile_type?: 'creator' | 'business' | 'organizer' | null;
+  support_avatar_url?: string | null;
+  support_banner_url?: string | null;
+  support_tagline?: string | null;
+  support_card_variant?: number | null;
+  support_socials?: {
+    x?: string;
+    instagram?: string;
+    youtube?: string;
+    website?: string;
+  } | null;
 };
 
 export async function getProfileById(userId: string): Promise<ProfileRow | null> {
@@ -39,14 +55,49 @@ export async function updateProfileAvatar(userId: string, avatarUrl: string): Pr
 export async function upsertProfile(row: ProfileRow): Promise<{ ok: boolean; error?: string }> {
   const supabase = createClient();
   const now = new Date().toISOString();
-  const toSave: any = { ...row, updated_at: now };
+  
+  // Clean the object: remove created_at but KEEP email if it exists
+  const { created_at, ...cleanRow } = row as any;
+  const toSave = { ...cleanRow, updated_at: now };
+
   if (!toSave.user_id) return { ok: false, error: 'user_id is required' };
-  const { error } = await supabase.from('profiles').upsert(toSave, { onConflict: 'user_id' });
-  if (error) {
-    console.error('[profiles] upsertProfile error:', error.message);
-    return { ok: false, error: error.message };
+  
+  try {
+    const { error } = await supabase.from('profiles').upsert(toSave, { onConflict: 'user_id' });
+    if (error) {
+      console.error('[profiles] upsertProfile database error:', error.message);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    console.error('[profiles] upsertProfile catch error:', e);
+    return { ok: false, error: e.message || 'Unknown error' };
   }
-  return { ok: true };
+}
+
+export async function updateProfile(userId: string, updates: Partial<ProfileRow>): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createClient();
+  const now = new Date().toISOString();
+  
+  // Clean updates: remove created_at and user_id, but KEEP email
+  const { created_at, user_id, ...cleanUpdates } = updates as any;
+  const toSave = { ...cleanUpdates, updated_at: now };
+
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update(toSave)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('[profiles] updateProfile database error:', error.message);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    console.error('[profiles] updateProfile catch error:', e);
+    return { ok: false, error: e.message || 'Unknown error' };
+  }
 }
 
 export function isProfileComplete(p?: ProfileRow | null): boolean {

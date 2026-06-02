@@ -1,4 +1,8 @@
-const TextLogo = () => {
+interface TextLogoProps {
+  variant?: 'black' | 'white';
+}
+
+const TextLogo = ({ variant = 'black' }: TextLogoProps) => {
   return (
     <div className="h-6 w-auto">
       <img 
@@ -6,7 +10,9 @@ const TextLogo = () => {
         alt="Amptive" 
         className="h-full w-auto"
         style={{
-          filter: 'invert(0%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(0%) contrast(100%)',
+          filter: variant === 'white' 
+            ? 'brightness(0) invert(1)' 
+            : 'invert(0%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(0%) contrast(100%)',
           color: 'currentColor'
         }}
         onError={(e) => {

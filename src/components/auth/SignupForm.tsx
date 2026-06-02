@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { signUpWithEmail, signInWithGoogle } from '@/lib/supabase/auth';
 import { stashSignup } from '@/lib/api/otp';
 import { toast } from 'sonner';
@@ -45,6 +45,8 @@ const socialIconStyle: React.CSSProperties = {
   justifyContent: 'center'
 };
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 interface SignupFormProps {
   onSuccess?: () => void;
   initialEmail?: string;
@@ -52,6 +54,10 @@ interface SignupFormProps {
 
 export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo =
+    new URLSearchParams(location.search).get('redirect') ||
+    (typeof window !== 'undefined' ? window.sessionStorage.getItem(AUTH_REDIRECT_KEY) : null);
   const [email, setEmail] = useState(initialEmail ?? '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -135,6 +141,7 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
       console.log('Signup successful (no Supabase error). Proceeding to success handler.');
       // Securely stash credentials server-side and pass one-time token to verify page
       let tokenParam = '';
+      const redirectParam = redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : '';
       try {
         const stash = await stashSignup(normalizedEmail, password);
         if (stash.ok && stash.token) {
@@ -149,7 +156,7 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
       // Navigate to OTP verification page with email (and token if available) as query param.
       // The Verify page will handle sending the OTP once it mounts.
       try {
-        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}${tokenParam}`);
+        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}${tokenParam}${redirectParam}`);
       } catch {}
       return;
     } catch (err: any) {
@@ -173,6 +180,7 @@ export default function SignupForm({ onSuccess, initialEmail }: SignupFormProps)
               if (loading) return;
               setLoading(true);
               try {
+                if (redirectTo && typeof window !== 'undefined') window.sessionStorage.setItem(AUTH_REDIRECT_KEY, redirectTo);
                 await signInWithGoogle();
               } catch (e) {
                 console.error('Google sign-up failed', e);

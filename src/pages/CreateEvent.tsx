@@ -68,6 +68,9 @@ type EventTicket = {
   benefits: string[];
   colorTheme?: TicketTheme;
   quantity?: number;
+  has_early_bird?: boolean;
+  early_bird_units?: number;
+  early_bird_discount_percentage?: number;
 };
 
 type AvailabilityStatus = 'Available' | 'Almost Sold Out' | 'Limited Spots' | 'Sold Out';
@@ -288,7 +291,9 @@ const CreateEvent = () => {
 
   // Ticket handlers
   const handleAddTicket = () => {
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ 
+      title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: ''
+    });
     setEditingTicketId(null);
     setMobileTab('details');
     setShowTicketForm(true);
@@ -328,7 +333,18 @@ const CreateEvent = () => {
         ...prev,
         tickets: prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, colorTheme: ticketForm.colorTheme, quantity }
+            ? { 
+                ...t, 
+                title: ticketForm.title, 
+                price, 
+                currency: ticketForm.currency, 
+                benefits, 
+                colorTheme: ticketForm.colorTheme, 
+                quantity,
+                early_bird_units: (t.early_bird_units !== undefined && quantity !== undefined && t.early_bird_units > quantity) 
+                  ? quantity 
+                  : t.early_bird_units
+              }
             : t
         ),
       }));
@@ -342,12 +358,15 @@ const CreateEvent = () => {
         benefits,
         colorTheme: ticketForm.colorTheme,
         quantity,
+        has_early_bird: false,
       };
       setForm(prev => ({ ...prev, tickets: [...prev.tickets, newTicket] }));
     }
 
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: '' });
+    setTicketForm({ 
+      title: '', price: '', currency: 'NGN', benefits: '', colorTheme: 'silver', quantity: ''
+    });
     setEditingTicketId(null);
   };
 
@@ -420,7 +439,7 @@ const CreateEvent = () => {
           if (refreshError || !refreshed.session) {
             if (!cancelled) {
               toastError('Please sign in to create an event.');
-              navigate('/login');
+              navigate('/login?redirect=/events/create');
             }
           } else {
             setUserId(refreshed.session.user.id);
@@ -431,7 +450,7 @@ const CreateEvent = () => {
         console.error('Failed to fetch session', error);
         if (!cancelled) {
           toastError('We could not verify your session. Please sign in again.');
-          navigate('/login');
+          navigate('/login?redirect=/events/create');
         }
       }
     };
@@ -800,6 +819,9 @@ const CreateEvent = () => {
             benefits: ticket.benefits,
             color_theme: ticket.colorTheme,
             is_physical: false,
+            has_early_bird: ticket.has_early_bird,
+            early_bird_units: ticket.early_bird_units,
+            early_bird_discount_percentage: ticket.early_bird_discount_percentage,
           }));
 
           const { error: insertError } = await supabase
@@ -825,6 +847,9 @@ const CreateEvent = () => {
                 quantity: ticket.quantity,
                 benefits: ticket.benefits,
                 color_theme: ticket.colorTheme,
+                has_early_bird: ticket.has_early_bird,
+                early_bird_units: ticket.early_bird_units,
+                early_bird_discount_percentage: ticket.early_bird_discount_percentage,
               })
               .eq('id', ticket.id);
 
@@ -896,7 +921,7 @@ const CreateEvent = () => {
         }}
       />
 
-      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 py-4 lg:py-6 pt-6 lg:pt-8">
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 py-4 lg:py-6 pt-24 lg:pt-32">
         <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-12 items-start">
 
           {/* Main Form Area */}
@@ -1053,7 +1078,7 @@ const CreateEvent = () => {
                         {form.tickets.map((ticket) => (
                           <div
                             key={ticket.id}
-                            className="group flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 hover:shadow-md transition-all duration-300"
+                            className="group flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 transition-all duration-300"
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
@@ -1100,6 +1125,125 @@ const CreateEvent = () => {
                     </button>
                   </div>
                 </section>
+
+                {/* Early Bird Settings */}
+                {form.tickets.length > 0 && (
+                  <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
+                    <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                      <Sparkles className="h-4 w-4 text-blue-600" />
+                      Early Bird Settings
+                    </div>
+
+                    <p className="text-sm text-gray-500 lg:mx-2 leading-relaxed">
+                      Offer discounted tickets to your first buyers to drive early bookings, build momentum, and secure initial sales for your event.
+                    </p>
+
+                    <div className="lg:px-2 space-y-4">
+                      {form.tickets.map((ticket) => (
+                        <div
+                          key={ticket.id}
+                          className="group flex flex-col p-5 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 transition-all duration-300 gap-4"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h5 className="font-bold text-gray-900">{ticket.title}</h5>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Base Price: {formatTicketPrice(ticket.price, ticket.currency)}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForm(prev => ({
+                                  ...prev,
+                                  tickets: prev.tickets.map(t =>
+                                    t.id === ticket.id
+                                      ? { ...t, has_early_bird: !t.has_early_bird }
+                                      : t
+                                  )
+                                }));
+                              }}
+                              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${ticket.has_early_bird ? 'bg-blue-600' : 'bg-gray-200'}`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${ticket.has_early_bird ? 'translate-x-5' : 'translate-x-0'}`}
+                              />
+                            </button>
+                          </div>
+
+                          {ticket.has_early_bird && (
+                            <div className="grid gap-6 sm:grid-cols-2 pt-4 border-t border-gray-50 animate-in fade-in slide-in-from-top-2 duration-300">
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                  Units to be sold
+                                </label>
+                                <input
+                                  type="number"
+                                  value={ticket.early_bird_units || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    let parsedVal = val ? parseInt(val) : undefined;
+                                    if (parsedVal !== undefined && ticket.quantity !== undefined && parsedVal > ticket.quantity) {
+                                      parsedVal = ticket.quantity;
+                                    }
+                                    setForm(prev => ({
+                                      ...prev,
+                                      tickets: prev.tickets.map(t =>
+                                        t.id === ticket.id
+                                          ? { ...t, early_bird_units: parsedVal }
+                                          : t
+                                      )
+                                    }));
+                                  }}
+                                  placeholder="e.g. 10"
+                                  min="1"
+                                  max={ticket.quantity}
+                                  step="1"
+                                  className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                                />
+                                {ticket.quantity !== undefined && (
+                                  <p className="mt-1.5 text-xs text-gray-500">
+                                    Max limit: {ticket.quantity.toLocaleString()} units
+                                  </p>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                  Percentage Drop (%)
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={ticket.early_bird_discount_percentage || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setForm(prev => ({
+                                        ...prev,
+                                        tickets: prev.tickets.map(t =>
+                                          t.id === ticket.id
+                                            ? { ...t, early_bird_discount_percentage: val ? parseFloat(val) : undefined }
+                                            : t
+                                        )
+                                      }));
+                                    }}
+                                    placeholder="e.g. 30"
+                                    min="0"
+                                    max="100"
+                                    step="0.1"
+                                    className="block w-full rounded-2xl px-3.5 py-3 pr-10 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                                  />
+                                  <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-gray-500 font-medium">
+                                    %
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
 
               </div>
 
@@ -1461,7 +1605,7 @@ const CreateEvent = () => {
                     </div>
                   </div>
 
-                  {/* Color Theme Picker */}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       Ticket Theme
@@ -1594,13 +1738,20 @@ const CreateEvent = () => {
 
                             </div>
 
-                            <div className="relative z-10 mt-6 flex items-baseline justify-between gap-2">
-                              <span className={`text-3xl font-bold ${theme.text} truncate`}>
-                                {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
-                              </span>
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
-                                Per guest
-                              </span>
+                            <div className="relative z-10 mt-6">
+                              {((editingTicketId && form.tickets.find(t => t.id === editingTicketId)?.has_early_bird) || false) && (
+                                <div className="inline-flex items-center gap-1 mb-1 px-2 py-0.5 rounded-full bg-blue-100/80 text-blue-800 text-[9px] font-bold uppercase tracking-wider animate-in fade-in zoom-in-95 duration-200">
+                                  Early Bird
+                                </div>
+                              )}
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className={`text-3xl font-bold ${theme.text} truncate`}>
+                                  {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
+                                </span>
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
+                                  Per guest
+                                </span>
+                              </div>
                             </div>
                           </div>
 

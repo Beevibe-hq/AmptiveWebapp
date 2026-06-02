@@ -3,10 +3,18 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import LoginForm from '@/components/auth/LoginForm';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function LoginPage() {
   const [testResult, setTestResult] = useState<string>('');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  const redirectParam = searchParams.get('redirect');
+
+  if (redirectParam && typeof window !== 'undefined') {
+    window.sessionStorage.setItem(AUTH_REDIRECT_KEY, redirectParam);
+  }
 
   const testConnection = async () => {
     try {
@@ -21,11 +29,7 @@ export default function LoginPage() {
     }
   };
 
-  const handleLoginSuccess = () => {
-    // Redirect to the provided path or home on successful login
-    const redirectTo = searchParams.get('redirect') || '/';
-    navigate(redirectTo);
-  };
+  const handleLoginSuccess = () => {};
 
   // Add animation styles to head
   if (typeof document !== 'undefined') {

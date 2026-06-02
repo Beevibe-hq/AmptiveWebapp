@@ -139,7 +139,7 @@ const mapEventRows = (
         locationLabel: buildLocationLabel(row.venue, row.city),
         coverImage: row.cover_image ?? null,
         detailsUrl: row.details_url ?? `/events/${row.id}`,
-        manageUrl: row.manage_url ?? `/events/manage/${row.id}`,
+        manageUrl: row.manage_url ?? `/dashboard/events/${row.id}/edit`,
         tickets: ticketMap[row.id] ?? [],
         startIso,
         endIso,
@@ -962,29 +962,61 @@ const ProfilePage = () => {
       <div className="relative z-10 w-full pl-3 pr-4 pt-20 pb-8">
         {/* Profile Header */}
         <div className="px-4 py-8 sm:px-8 sm:py-10 text-center">
-          <div className="mx-auto h-64 w-64 md:h-80 md:w-80 rounded-full overflow-hidden shadow-xl bg-white" style={avatarShadowStyle}>
-            {loading ? (
-              <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
-            ) : uploadedAvatar && !imgError ? (
-              <img
-                src={uploadedAvatar}
-                alt={user?.email || 'User'}
-                className="w-full h-full object-cover"
-                onLoad={() => setLoading(false)}
-                onError={() => {
-                  setImgError(true);
-                  setLoading(false);
-                }}
-              />
-            ) : (
-              <div
-                className="w-full h-full flex items-center justify-center text-9xl"
-                style={{ backgroundColor: emojiBg }}
+          <div className="relative mx-auto h-64 w-64 md:h-80 md:w-80">
+            <div className="h-full w-full rounded-full overflow-hidden shadow-xl bg-white" style={avatarShadowStyle}>
+              {loading ? (
+                <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
+              ) : uploadedAvatar && !imgError ? (
+                <img
+                  src={uploadedAvatar}
+                  alt={user?.email || 'User'}
+                  className="w-full h-full object-cover"
+                  onLoad={() => setLoading(false)}
+                  onError={() => {
+                    setImgError(true);
+                    setLoading(false);
+                  }}
+                />
+              ) : (
+                <div
+                  className="w-full h-full flex items-center justify-center text-9xl"
+                  style={{ backgroundColor: emojiBg }}
+                >
+                  {emoji}
+                </div>
+              )}
+            </div>
+
+            {/* Edit Profile Button at Avatar Edge */}
+            {user?.id && profile?.user_id && user.id === profile.user_id && (
+              <button
+                type="button"
+                onClick={() => navigate('/profile/edit')}
+                className="absolute top-4 right-4 md:top-6 md:right-6 bg-white text-gray-700 p-2 md:p-3 rounded-full shadow-lg border border-gray-100 hover:bg-gray-50 transition-all duration-200 group flex items-center gap-2"
+                title="Edit Profile"
               >
-                {emoji}
-              </div>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="1.5"
+                    stroke="currentColor"
+                    className="w-4 h-4 transition-transform group-hover:rotate-12"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
+                    />
+                  </svg>
+                  <span className="hidden group-hover:block transition-all text-xs font-bold whitespace-nowrap">Edit Profile</span>
+                </div>
+              </button>
             )}
           </div>
+
           <h1 className="w-full font-bold text-black text-center whitespace-nowrap overflow-visible mt-3 md:mt-1 text-[40px] md:text-[92px]" style={{ fontWeight: 700, color: '#000000' }}>
             {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
           </h1>
@@ -994,32 +1026,35 @@ const ProfilePage = () => {
               <>
                 <button
                   type="button"
-                  onClick={() => navigate('/profile/edit')}
-                  className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold border border-gray-300 hover:bg-gray-100 transition-all duration-200"
+                  onClick={() => navigate('/events/create')}
+                  className="bg-black text-white px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold hover:bg-gray-900 transition-all duration-200 shadow-sm hover:scale-105 active:scale-95"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth="1.5"
-                    stroke="currentColor"
-                    className="w-4 h-4"
-                    aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-                    />
-                  </svg>
-                  Edit Profile
+                  Create Event
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate('/events/create')}
-                  className="bg-black text-white px-4 md:px-6 py-2.5 md:py-3 rounded-full text-sm font-semibold hover:bg-gray-900 transition-all duration-200"
+                  onClick={() => {
+                    if (profile?.support_enabled) {
+                      navigate(`/support/${profile.username || profile.user_id}`);
+                    } else {
+                      navigate('/profile/support-setup');
+                    }
+                  }}
+                  title={profile?.support_enabled ? "View My Support Page" : "Setup Support Me"}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 md:py-3 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition-all duration-200 shadow-sm hover:scale-110 active:scale-95 group text-sm font-semibold"
                 >
-                  Create Event
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                    className="w-5 h-5 transition-transform group-hover:rotate-12"
+                    aria-hidden="true"
+                  >
+                    <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
+                    <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                  </svg>
+                  <span>{profile?.support_enabled ? 'My Support Page' : 'Accept Tips'}</span>
                 </button>
               </>
             )}

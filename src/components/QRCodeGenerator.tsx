@@ -1,3 +1,5 @@
+import { QRCodeSVG } from 'qrcode.react';
+
 interface QRCodeGeneratorProps {
   value: string;
   size?: number;
@@ -5,16 +7,11 @@ interface QRCodeGeneratorProps {
 }
 
 const QRCodeGenerator = ({ value, size = 200, className = '' }: QRCodeGeneratorProps) => {
-  // Using QR Code Generator API
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}`;
-  
   return (
-    <img 
-      src={qrCodeUrl}
-      alt="QR Code"
+    <QRCodeSVG 
+      value={value}
+      size={size}
       className={className}
-      width={size}
-      height={size}
     />
   );
 };

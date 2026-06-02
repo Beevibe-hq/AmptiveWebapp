@@ -18,6 +18,11 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
+        bebas: ['"Bebas Neue"', 'sans-serif'],
+        spartan: ['"League Spartan"', 'sans-serif'],
+        oswald: ['Oswald', 'sans-serif'],
+        vibe: ['Circular', 'Montserrat', '"Plus Jakarta Sans"', 'sans-serif'],
+        spotify: ['Circular', 'Montserrat', '"Plus Jakarta Sans"', 'sans-serif'],
       },
       colors: {
         primary: {

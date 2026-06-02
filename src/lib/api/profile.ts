@@ -23,12 +23,12 @@ export async function completeProfile(
 }
 
 export async function checkUsername(username: string): Promise<{ available: boolean; invalid?: boolean; message?: string }> {
-  const res = await fetch(`${BACKEND_URL}/auth/check-username`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username }),
-  });
   try {
+    const res = await fetch(`${BACKEND_URL}/auth/check-username`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
     const data = await res.json();
     if (!res.ok) return { available: false, message: data?.message || 'Failed to check username' };
     return data;

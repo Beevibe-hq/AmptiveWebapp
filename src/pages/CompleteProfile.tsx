@@ -6,12 +6,18 @@ import { consumeSignup } from '@/lib/api/otp';
 import { signInWithEmail } from '@/lib/supabase/auth';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function CompleteProfilePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
   const email = params.get('email') || '';
   const token = params.get('token') || '';
+  const redirectTo =
+    params.get('redirect') ||
+    (typeof window !== 'undefined' ? window.sessionStorage.getItem(AUTH_REDIRECT_KEY) : null) ||
+    '/';
 
   const [step, setStep] = useState(0); // 0=username, 1=full name, 2=avatar, 3=dob
   const totalSteps = 4;
@@ -336,7 +342,8 @@ export default function CompleteProfilePage() {
           const { error } = await signInWithEmail(consumed.email, consumed.password);
           if (!error) {
             toastSuccess('Profile completed! Welcome to Amptive.');
-            setTimeout(() => navigate('/'), 500);
+            if (typeof window !== 'undefined') window.sessionStorage.removeItem(AUTH_REDIRECT_KEY);
+            setTimeout(() => navigate(redirectTo), 500);
             setSecuring(false);
             return;
           }
@@ -344,7 +351,7 @@ export default function CompleteProfilePage() {
         setSecuring(false);
       }
       toastSuccess('Profile completed. Please sign in.');
-      setTimeout(() => navigate(`/login?email=${encodeURIComponent(email)}`), 500);
+      setTimeout(() => navigate(`/login?email=${encodeURIComponent(email)}&redirect=${encodeURIComponent(redirectTo)}`), 500);
     } catch (e) {
       toastError('Something went wrong. Please try again.');
     } finally {

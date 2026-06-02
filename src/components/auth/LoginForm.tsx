@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { signInWithEmail, signOut, signOutSilent, getCurrentUser, signInWithGoogle } from '@/lib/supabase/auth';
 import { getProfileById, isProfileComplete } from '@/lib/supabase/profiles';
 
@@ -43,12 +43,19 @@ const socialIconStyle: React.CSSProperties = {
   justifyContent: 'center'
 };
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 interface LoginFormProps {
   onSuccess?: () => void;
 }
 
 export default function LoginForm({ onSuccess }: LoginFormProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo =
+    new URLSearchParams(location.search).get('redirect') ||
+    (typeof window !== 'undefined' ? window.sessionStorage.getItem(AUTH_REDIRECT_KEY) : null) ||
+    '/';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -124,7 +131,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       if (!otpVerified && !confirmedAt) {
         await signOut();
         setError('Please verify your email with the OTP before logging in.');
-        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}`);
+        navigate(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}&redirect=${encodeURIComponent(redirectTo)}`);
         return;
       }
 
@@ -136,11 +143,12 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       onSuccess?.();
       if (needsCompletion) {
         // Redirect first so UI changes immediately
-        navigate(`/complete-profile?email=${encodeURIComponent(normalizedEmail)}`, { replace: true });
+        navigate(`/complete-profile?email=${encodeURIComponent(normalizedEmail)}&redirect=${encodeURIComponent(redirectTo)}`, { replace: true });
         // Then sign out silently on the next tick to avoid interrupting navigation
         setTimeout(() => { void signOutSilent(); }, 0);
       } else {
-        navigate('/', { replace: true });
+        if (typeof window !== 'undefined') window.sessionStorage.removeItem(AUTH_REDIRECT_KEY);
+        navigate(redirectTo, { replace: true });
       }
       console.log('Login successful:', data);
     } catch (err: any) {
@@ -170,6 +178,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
               if (loading) return;
               setLoading(true);
               try {
+                if (typeof window !== 'undefined') window.sessionStorage.setItem(AUTH_REDIRECT_KEY, redirectTo);
                 await signInWithGoogle();
               } catch (e) {
                 console.error('Google sign-in failed', e);

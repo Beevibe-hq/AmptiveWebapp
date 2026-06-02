@@ -351,7 +351,7 @@ const EventDetail = () => {
     if (isOrganizer) {
       return {
         button: (
-          <Link to={`/events/${event.id}/manage`} className={`${baseClasses} bg-black text-white block`}>
+          <Link to={`/dashboard/events/${event.id}/edit`} className={`${baseClasses} bg-black text-white block`}>
             Manage Event
           </Link>
         ),

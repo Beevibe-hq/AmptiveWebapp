@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getProfileById, isProfileComplete, upsertProfile } from '@/lib/supabase/profiles';
 import { createClient } from '@/lib/supabase/client';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function OAuthCallback() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -11,6 +13,9 @@ export default function OAuthCallback() {
   useEffect(() => {
     const handleOAuthCallback = async () => {
       try {
+        const redirectTo =
+          (typeof window !== 'undefined' ? window.sessionStorage.getItem(AUTH_REDIRECT_KEY) : null) ||
+          '/';
         setStatus('Verifying your session...');
         const supabase = createClient();
         
@@ -56,14 +61,15 @@ export default function OAuthCallback() {
         
         if (needsCompletion) {
           setStatus('Redirecting to complete your profile...');
-          navigate(`/complete-profile?email=${encodeURIComponent(user.email || '')}`, { 
+          navigate(`/complete-profile?email=${encodeURIComponent(user.email || '')}&redirect=${encodeURIComponent(redirectTo)}`, { 
             replace: true 
           });
         } else {
           setStatus('Login successful! Redirecting...');
           // Small delay to show success message
           setTimeout(() => {
-            navigate('/', { replace: true });
+            if (typeof window !== 'undefined') window.sessionStorage.removeItem(AUTH_REDIRECT_KEY);
+            navigate(redirectTo, { replace: true });
           }, 1000);
         }
       } catch (err) {

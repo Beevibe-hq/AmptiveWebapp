@@ -3,12 +3,18 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { verifyOtp, resendOtp } from '@/lib/api/otp';
 import { toastSuccess, toastInfo, toastError } from '@/lib/ui/toast';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function VerifyOtpPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
   const email = params.get('email') || '';
   const token = params.get('token') || '';
+  const redirectTo =
+    params.get('redirect') ||
+    (typeof window !== 'undefined' ? window.sessionStorage.getItem(AUTH_REDIRECT_KEY) : '') ||
+    '';
 
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,6 +67,7 @@ export default function VerifyOtpPage() {
       const qp = new URLSearchParams();
       qp.set('email', email);
       if (token) qp.set('token', token);
+      if (redirectTo) qp.set('redirect', redirectTo);
       setTimeout(() => navigate(`/complete-profile?${qp.toString()}`), 400);
     } else {
       toastError(res.message || 'Verification failed. Please try again.');

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Search, ArrowLeft } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Logo from './Logo';
 import TextLogo from './TextLogo';
 import MobileMenu from './MobileMenu';
@@ -30,29 +30,36 @@ type NavLink = MenuItem | {
   path?: never;
 };
 
-const Navbar = () => {
+const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { dominantColor } = useTheme();
+  const [sessionUser, setSessionUser] = useState<any>(null);
 
+  // Handle user and profile fetching side-effects in response to session changes
+  // completely outside of the onAuthStateChange synchronous callback to prevent deadlocks.
   useEffect(() => {
     const checkUser = async () => {
       try {
-        const currentUser = await getCurrentUser();
-        if (!currentUser) {
+        const u = sessionUser;
+        if (!u) {
           setUser(null);
+          setProfile(null);
           return;
         }
-        const profile = await getProfileById(currentUser.id);
+        const profile = await getProfileById(u.id);
         if (!isProfileComplete(profile)) {
           await signOutSilent();
           setUser(null);
+          setProfile(null);
         } else {
-          setUser(currentUser);
+          setUser(u);
+          setProfile(profile);
         }
       } catch (error) {
         console.error('Error fetching user/profile:', error);
@@ -62,22 +69,24 @@ const Navbar = () => {
     };
 
     checkUser();
+  }, [sessionUser]);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const u = session?.user || null;
-      if (!u) { setUser(null); return; }
+  useEffect(() => {
+    // Initial fetch of session on mount
+    const initSession = async () => {
       try {
-        const profile = await getProfileById(u.id);
-        if (!isProfileComplete(profile)) {
-          await signOutSilent();
-          setUser(null);
-        } else {
-          setUser(u);
-        }
-      } catch (e) {
-        console.error('Auth state profile check failed:', e);
-        setUser(null);
+        const { data: { session } } = await supabase.auth.getSession();
+        setSessionUser(session?.user || null);
+      } catch (error) {
+        console.error('Error getting initial session:', error);
+        setLoading(false);
       }
+    };
+    initSession();
+
+    // Listen for auth state changes synchronously to avoid async deadlocks
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessionUser(session?.user || null);
     });
 
     return () => {
@@ -86,7 +95,9 @@ const Navbar = () => {
   }, []);
   const navigate = useNavigate();
   const location = useLocation();
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const isProfilePage = location.pathname === '/profile' || location.pathname === '/profile/';
+  const isBlogPage = location.pathname === '/blog' || location.pathname === '/blog/';
 
   useEffect(() => {
     const handleScroll = () => {
@@ -96,23 +107,27 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    if (!activeDropdown) return;
+
+    const closeDropdown = () => setActiveDropdown(null);
+    window.addEventListener('click', closeDropdown);
+    return () => window.removeEventListener('click', closeDropdown);
+  }, [activeDropdown]);
+
   // Removed auto-redirect on route change; incomplete sessions are signed out silently instead.
 
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-
   // Navigation links for authenticated users
+  const shouldShowAcceptTips = String(profile?.support_enabled).toLowerCase() !== 'true';
+
   const authLinks: NavLink[] = [
-    { name: 'My Dashboard', path: '/dashboard' },
-    { name: 'Create Event', path: '/events' },
+    ...(shouldShowAcceptTips ? [{ name: 'Accept Tip$', path: '/profile/support-setup' } as MenuItem] : []),
+    { name: 'Create Event', path: '/events/create' },
     { name: 'Explore', path: '/explore' },
-    { name: 'My Tickets', path: '/my-tickets' },
     {
       name: 'More',
       hasDropdown: true,
       dropdownItems: [
-        { name: 'My Dashboard', path: '/dashboard' },
-        { name: 'View Profile', path: '/profile' },
-        { name: 'Settings', path: '/settings' },
         { name: 'Community Task', path: '/community' },
         { name: 'Help Center', path: '/help' }
       ]
@@ -121,8 +136,9 @@ const Navbar = () => {
 
   // Navigation links for unauthenticated users (original)
   const guestLinks: NavLink[] = [
+    { name: 'Accept Tip$', path: '/profile/support-setup' },
     { name: 'Explore', path: '/explore' },
-    { name: 'Create Event', path: '/events' },
+    { name: 'Create Event', path: '/login?redirect=/events/create' },
     { name: 'Store', path: '/store' },
     {
       name: 'More',
@@ -145,6 +161,14 @@ const Navbar = () => {
     }
   };
 
+  const handleSignOut = async () => {
+    await signOutSilent();
+    setUser(null);
+    setProfile(null);
+    setActiveDropdown(null);
+    navigate('/');
+  };
+
   const isActive = (path: string): boolean => {
     return location.pathname === path;
   };
@@ -154,6 +178,7 @@ const Navbar = () => {
   const isAuthPage = location.pathname === '/login' || location.pathname === '/login/' || location.pathname === '/signup' || location.pathname === '/signup/';
   const isCompleteProfilePage = location.pathname === '/complete-profile' || location.pathname === '/complete-profile/';
   const isOtpPage = location.pathname === '/verify-otp' || location.pathname === '/verify-otp/';
+  const isSupportPage = location.pathname.startsWith('/support/');
 
   return (
     <nav
@@ -163,12 +188,12 @@ const Navbar = () => {
           ? 'bg-white lg:bg-transparent lg:backdrop-blur-0 lg:shadow-none lg:border-none'
           : isAIChatPage
             ? 'bg-transparent backdrop-blur-0 shadow-none border-none'
-            : isScrolled
-              ? 'backdrop-blur-md shadow-sm border-b border-gray-100'
+            : isScrolled || isBlogPage
+              ? 'bg-white backdrop-blur-md shadow-sm border-b border-gray-100'
               : (isProfilePage ? 'bg-transparent' : 'bg-transparent')
         } transition-colors duration-300`}
       style={{
-        backgroundColor: !isCompleteProfilePage && !isChatModePage && !isAIChatPage && !isProfilePage && isScrolled
+        backgroundColor: !isCompleteProfilePage && !isChatModePage && !isAIChatPage && !isProfilePage && (isScrolled || isBlogPage)
           ? 'rgba(255, 255, 255, 0.95)'
           : undefined
       }}
@@ -188,12 +213,12 @@ const Navbar = () => {
               className={`flex items-center space-x-1.5 ${isScrolled ? 'h-10' : 'h-12'} sm:ml-4`}
             >
               <Link to="/" className="flex items-center space-x-1.5">
-                <Logo />
-                <TextLogo />
+                <Logo variant={isSupportPage && !isScrolled ? 'white' : 'black'} />
+                <TextLogo variant={isSupportPage && !isScrolled ? 'white' : 'black'} />
               </Link>
 
               {/* Search Icon - Only shown on mobile when search box is hidden */}
-              {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+              {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
                 <div className="sm:hidden">
                   <button
                     className="p-1.5 text-black hover:text-gray-800"
@@ -207,7 +232,7 @@ const Navbar = () => {
             </motion.div>
 
             {/* Search Box - shown on medium screens and up with expand-on-focus animation */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -245,19 +270,17 @@ const Navbar = () => {
             )}
 
             {/* Desktop Navigation - shown only on large (lg) and up */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
               <div className="hidden lg:flex items-center space-x-8">
                 {links.map((link) => (
                   <div
                     key={link.name}
                     className="relative"
-                    onMouseEnter={() => 'hasDropdown' in link && setActiveDropdown(link.name)}
-                    onMouseLeave={() => 'hasDropdown' in link && setActiveDropdown(null)}
                   >
                     {'path' in link && link.path ? (
                       <Link
                         to={link.path}
-                        className={`text-[15px] font-bold flex items-center ${isActive(link.path)
+                        className={`text-[15px] font-semibold flex items-center ${isActive(link.path)
                           ? 'text-black'
                           : 'text-black/50 hover:text-black/90 transition-colors'
                           }`}
@@ -267,7 +290,11 @@ const Navbar = () => {
                     ) : (
                       <button
                         type="button"
-                        className={`text-[15px] font-bold ${activeDropdown === link.name
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setActiveDropdown(activeDropdown === link.name ? null : link.name);
+                        }}
+                        className={`text-[15px] font-semibold ${activeDropdown === link.name
                           ? 'text-black'
                           : 'text-black/50 hover:text-black/90 transition-colors'
                           }`}
@@ -276,28 +303,35 @@ const Navbar = () => {
                       </button>
                     )}
 
-                    {/* Dropdown Menu */}
-                    {'hasDropdown' in link && activeDropdown === link.name && (
-                      <div
-                        className="absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50"
-                        onMouseEnter={() => setActiveDropdown(link.name)}
-                        onMouseLeave={() => setActiveDropdown(null)}
-                      >
-                        {link.dropdownItems.map((item) => (
-                          <Link
-                            key={item.name}
-                            to={item.path}
-                            className={`block px-4 py-2 text-sm font-bold ${isActive(item.path)
-                              ? 'text-black bg-gray-50'
-                              : 'text-gray-700/80 hover:text-gray-900 hover:bg-gray-100 transition-colors'
-                              }`}
-                            onClick={() => setActiveDropdown(null)}
-                          >
-                            {item.name}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
+                    <AnimatePresence>
+                      {'hasDropdown' in link && activeDropdown === link.name && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.96 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.96 }}
+                          transition={{ type: 'spring', stiffness: 360, damping: 26, mass: 0.7 }}
+                          className="absolute left-0 top-full pt-3 w-[190px] z-50 origin-top-left"
+                          style={{ originX: 0, originY: 0 }}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="rounded-[18px] border border-black/10 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.08)]">
+                            {link.dropdownItems.map((item) => (
+                              <Link
+                                key={item.name}
+                                to={item.path}
+                                className={`flex items-center rounded-[12px] px-3 py-2.5 text-[14px] font-semibold transition-colors ${isActive(item.path)
+                                  ? 'bg-black/[0.04] text-gray-950'
+                                  : 'text-gray-700 hover:bg-black/[0.03] hover:text-gray-950'
+                                  }`}
+                                onClick={() => setActiveDropdown(null)}
+                              >
+                                <span className="flex-1">{item.name}</span>
+                              </Link>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 ))}
               </div>
@@ -306,6 +340,26 @@ const Navbar = () => {
 
           {/* Right Section: Auth Buttons */}
           <div className="flex items-center space-x-4">
+            {/* Back to Profile Button - Only shown on support page */}
+            {isSupportPage && (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+              >
+                <Link
+                  to="/profile"
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold transition-all duration-300 ${
+                    isScrolled 
+                      ? 'bg-black text-white hover:bg-gray-800' 
+                      : 'bg-white/20 text-white backdrop-blur-md border border-white/30 hover:bg-white/40'
+                  }`}
+                >
+                  <ArrowLeft size={16} />
+                  <span>Back to Profile</span>
+                </Link>
+              </motion.div>
+            )}
+
             {/* New Chat Button - Only shown on chat pages */}
             {isAIChatPage && (
               <motion.div
@@ -348,7 +402,7 @@ const Navbar = () => {
             )}
 
             {/* Generate with AI Button - Medium - shown only on lg (1024px) and up */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -386,7 +440,7 @@ const Navbar = () => {
             )}
 
             {/* Generate with AI Button - Desktop - shown only on xl (1240px) and up */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isSupportPage && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -423,11 +477,104 @@ const Navbar = () => {
               </motion.div>
             )}
 
-            {/* User Avatar or Sign In button - hidden on chat pages */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+            {/* User Avatar or Sign In button - hidden on chat pages and support page */}
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
               <div className="hidden xl:flex items-center">
                 {user ? (
-                  <UserAvatar user={user} />
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setActiveDropdown(activeDropdown === 'avatar' ? null : 'avatar');
+                      }}
+                      className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gray-100 text-black/80 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+                      aria-label="Account menu"
+                    >
+                      {profile?.avatar_url ? (
+                        <img
+                          src={profile.avatar_url}
+                          alt={profile?.full_name || user.email || 'Profile'}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center bg-black text-sm font-semibold uppercase text-white">
+                          {(profile?.full_name || user.email || 'A').charAt(0)}
+                        </span>
+                      )}
+                    </button>
+
+                    <AnimatePresence>
+                      {activeDropdown === 'avatar' && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.96 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.96 }}
+                          transition={{ type: 'spring', stiffness: 360, damping: 26, mass: 0.7 }}
+                          className="absolute right-0 top-full pt-3 w-[286px] z-50 origin-top-right"
+                          style={{ originX: 1, originY: 0 }}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="rounded-[18px] border border-black/10 bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.08)]">
+                            <Link
+                              to="/profile"
+                              className="flex items-center gap-3 rounded-[14px] px-3 py-3 transition-colors hover:bg-black/[0.03]"
+                              onClick={() => setActiveDropdown(null)}
+                            >
+                              <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100">
+                                {profile?.avatar_url ? (
+                                  <img
+                                    src={profile.avatar_url}
+                                    alt={profile?.full_name || user.email || 'Profile'}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-black text-xs font-bold uppercase text-white">
+                                    {(profile?.full_name || user.email || 'A').charAt(0)}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[16px] font-semibold leading-tight text-gray-950">
+                                  {profile?.full_name || profile?.username || user.email?.split('@')[0] || 'Your profile'}
+                                </div>
+                                <div className="mt-1 truncate text-[13px] font-medium leading-tight text-gray-500">
+                                  {user.email}
+                                </div>
+                              </div>
+                            </Link>
+                            <div className="my-2 h-px bg-black/10" />
+                            {[
+                              { name: 'My Dashboard', path: '/dashboard' },
+                              { name: 'View Profile', path: '/profile' },
+                              { name: 'My Tickets', path: '/my-tickets' },
+                              { name: 'Settings', path: '/settings' }
+                            ].map((item) => (
+                              <Link
+                                key={item.name}
+                                to={item.path}
+                                className={`flex items-center rounded-[12px] px-3 py-2.5 text-[14px] font-semibold transition-colors ${isActive(item.path)
+                                  ? 'bg-black/[0.04] text-gray-950'
+                                  : 'text-gray-700 hover:bg-black/[0.03] hover:text-gray-950'
+                                  }`}
+                                onClick={() => setActiveDropdown(null)}
+                              >
+                                <span className="flex-1">{item.name}</span>
+                              </Link>
+                            ))}
+                            <div className="my-2 h-px bg-black/10" />
+                            <button
+                              type="button"
+                              onClick={handleSignOut}
+                              className="flex w-full items-center rounded-[12px] px-3 py-2.5 text-left text-[14px] font-semibold text-gray-700 transition-colors hover:bg-black/[0.03] hover:text-gray-950"
+                            >
+                              <span className="flex-1">Sign Out</span>
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 ) : (
                   <Link
                     to="/login"
@@ -439,7 +586,7 @@ const Navbar = () => {
               </div>
             )}
             {/* Generate with AI Button - Mobile/Tablet */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -471,7 +618,7 @@ const Navbar = () => {
             )}
 
             {/* Mobile menu button - hidden on chat pages */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && (
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !hideMenu && (
               <div className="flex items-center lg:hidden ml-2">
                 <button
                   onClick={() => setIsMobileMenuOpen(true)}

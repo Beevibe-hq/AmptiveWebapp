@@ -115,6 +115,7 @@ interface HeroSlideProps {
   ctaText: string;
   ctaLink: string;
   videoSrc: string;
+  videoSources?: string[];
   shadowColor?: string;
   bgColor?: string;
   backgroundImage?: string;
@@ -122,6 +123,10 @@ interface HeroSlideProps {
   className?: string;
   isFirstSlide?: boolean;
   isSecondSlide?: boolean;
+  videoClassName?: string;
+  onSwipeLeft?: () => void;
+  onSwipeRight?: () => void;
+  isActive?: boolean;
 }
 
 const HeroSlide: React.FC<HeroSlideProps> = ({
@@ -130,6 +135,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
   ctaText,
   ctaLink,
   videoSrc,
+  videoSources = [],
   shadowColor = 'rgba(0, 0, 0, 0.5)',
   bgColor,
   backgroundImage,
@@ -137,14 +143,52 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
   className = '',
   isFirstSlide = false,
   isSecondSlide = false,
+  videoClassName = '',
   onSwipeLeft,
-  onSwipeRight
+  onSwipeRight,
+  isActive = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
 
   const minSwipeDistance = 50; // Minimum distance to consider it a swipe
+
+  const hasMultiple = videoSources && videoSources.length > 0;
+  const activeSrc = hasMultiple ? videoSources[currentVideoIndex] : videoSrc;
+
+  const defaultPosition = videoClassName.includes('object-[15%_center]') ? '15% center' : 'center';
+  const [objectPos, setObjectPos] = useState<string>(defaultPosition);
+
+  // Keep objectPos in sync when defaultPosition/activeSrc changes
+  useEffect(() => {
+    setObjectPos(defaultPosition);
+  }, [activeSrc, defaultPosition]);
+
+  // Reset video index and handle playback based on active status
+  useEffect(() => {
+    if (isActive) {
+      setCurrentVideoIndex(0);
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(err => {
+          console.log("Video play interrupted/prevented:", err);
+        });
+      }
+    } else if (videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, [isActive]);
+
+  // Handle playing next video sequence when current changes
+  useEffect(() => {
+    if (isActive && videoRef.current) {
+      videoRef.current.play().catch(err => {
+        console.log("Video play interrupted/prevented on src change:", err);
+      });
+    }
+  }, [activeSrc, isActive]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     setTouchEnd(0); // Reset touch end position
@@ -166,6 +210,39 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
       onSwipeRight();
     } else if (isRightSwipe && onSwipeLeft) {
       onSwipeLeft();
+    }
+  };
+
+  const handleVideoEnded = () => {
+    if (hasMultiple) {
+      setCurrentVideoIndex((prev) => (prev + 1) % videoSources.length);
+    }
+  };
+
+  // Listen to video time updates to dynamically shift positioning
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    const time = video.currentTime;
+    const src = video.currentSrc || activeSrc;
+
+    // Check if we are on the third slide videos
+    if (src.includes('accepttips_encode4.mp4')) {
+      // In accepttips_encode4, mouse clicks are typically in the center-right from ~4s to ~19s
+      if (time >= 4 && time <= 19) {
+        setObjectPos('center');
+      } else {
+        setObjectPos('15% center');
+      }
+    } else if (src.includes('tipping1.mp4')) {
+      // In tipping1, the tipping sheet and payment confirmation is on center-right from ~3.5s to ~20s
+      if (time >= 3.5 && time <= 20) {
+        setObjectPos('center');
+      } else {
+        setObjectPos('15% center');
+      }
+    } else {
+      // For all other videos, respect defaultPosition
+      setObjectPos(defaultPosition);
     }
   };
 
@@ -205,7 +282,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               <div
                 className="absolute inset-0 w-full h-full"
                 style={{
-                  backgroundColor: bgColor,
+                  background: bgColor,
                   opacity: backgroundImage ? 0.6 : 1 // Slightly transparent if there's a background image
                 }}
               />
@@ -239,13 +316,20 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               >
                 <video
                   ref={videoRef}
+                  key={activeSrc}
                   autoPlay
-                  loop
+                  loop={!hasMultiple}
                   muted
                   playsInline
-                  className="w-full h-full object-cover"
+                  onEnded={handleVideoEnded}
+                  onTimeUpdate={handleTimeUpdate}
+                  className={`w-full h-full object-cover ${videoClassName.replace('object-[15%_center]', '')}`}
+                  style={{
+                    objectPosition: objectPos,
+                    transition: 'object-position 0.8s ease-in-out'
+                  }}
                 >
-                  <source src={videoSrc} type="video/mp4" />
+                  <source src={activeSrc} type="video/mp4" />
                   Your browser does not support the video tag.
                 </video>
               </div>
@@ -352,7 +436,23 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
 };
 
 // Move slides data outside the component to avoid recreation on each render
-const SLIDES = [
+interface SlideData {
+  title: string;
+  mobileTitle?: string;
+  description: string;
+  ctaText: string;
+  ctaLink: string;
+  videoSrc: string;
+  videoSources?: string[];
+  shadowColor?: string;
+  isFirstSlide?: boolean;
+  isSecondSlide?: boolean;
+  videoClassName?: string;
+  backgroundImage?: string;
+  bgColor?: string;
+}
+
+const SLIDES: SlideData[] = [
   {
     title: "Start a Live Audio Show or Event",
     mobileTitle: "Go Live with Amptive",
@@ -368,9 +468,10 @@ const SLIDES = [
     description: "Create events, sell tickets, track sales and more in real time",
     ctaText: "Create event",
     ctaLink: "/events",
-    videoSrc: new URL('../assets/The_camera_focus_202507041156.mp4', import.meta.url).href,
-    backgroundImage: '/images/OC%2012.webp',
-    shadowColor: 'rgba(0, 0, 0, 0.6)',
+    videoSrc: '/videos/creatingevent.mp4',
+    videoClassName: "object-[15%_center]",
+    bgColor: "radial-gradient(circle at 20% 30%, rgba(215, 235, 30, 0.38) 0%, transparent 65%), radial-gradient(circle at 80% 70%, rgba(220, 38, 38, 0.15) 0%, transparent 50%), radial-gradient(circle at 75% 20%, rgba(124, 58, 237, 0.05) 0%, transparent 50%), linear-gradient(135deg, #050508 0%, #0A0A10 50%, #010102 100%)",
+    shadowColor: 'rgba(215, 235, 30, 0.45)',
     isSecondSlide: true
   },
   {
@@ -378,7 +479,9 @@ const SLIDES = [
     description: "Earn money from your live shows through tickets, donations, and more.",
     ctaText: "Learn more",
     ctaLink: "/monetization",
-    videoSrc: new URL('../assets/645_720x60_shots_so.mp4', import.meta.url).href,
+    videoSrc: '/videos/accepttips_encode4.mp4',
+    videoSources: ['/videos/accepttips_encode4.mp4', '/videos/tipping1.mp4'],
+    videoClassName: "object-[15%_center]",
     shadowColor: 'rgba(0, 0, 0, 0.5)'
   }
 ];
@@ -1047,11 +1150,11 @@ const Homepage: React.FC = () => {
       return;
     }
 
-    // Update progress every 50ms for smoother animation (10s total = 100%)
+    // Update progress every 50ms for smoother animation (30s total = 100%)
     progressInterval.current = setInterval(() => {
       setProgressBars(prev => {
         const newProgress = [...prev];
-        const currentProgress = newProgress[currentSlide] + (100 / 200); // 1% every 50ms = 100% in 10s
+        const currentProgress = newProgress[currentSlide] + (100 / 600); // 0.167% every 50ms = 100% in 30s
 
         if (currentProgress >= 100) {
           // Move to next slide when current progress reaches 100%
@@ -1148,12 +1251,16 @@ const Homepage: React.FC = () => {
                 ctaText={slide.ctaText}
                 ctaLink={slide.ctaLink}
                 videoSrc={slide.videoSrc}
+                videoSources={slide.videoSources}
                 shadowColor={slide.shadowColor}
                 backgroundImage={slide.backgroundImage}
+                bgColor={slide.bgColor}
                 isFirstSlide={slide.isFirstSlide}
                 isSecondSlide={slide.isSecondSlide}
                 onSwipeLeft={prevSlide}
                 onSwipeRight={nextSlide}
+                videoClassName={slide.videoClassName}
+                isActive={index === currentSlide}
               />
             </div>
           ))}
@@ -1165,7 +1272,7 @@ const Homepage: React.FC = () => {
             className="h-full bg-white transition-all duration-1000 ease-linear"
             style={{
               width: isPaused ? '0%' : '100%',
-              transitionDuration: isPaused ? '0s' : '10s',
+              transitionDuration: isPaused ? '0s' : '30s',
               transitionTimingFunction: 'linear'
             }}
           />
@@ -2194,12 +2301,12 @@ const Homepage: React.FC = () => {
       <div className="w-[95vw] mx-auto my-12 bg-orange-50 border border-orange-100 rounded-2xl pt-6 pb-12 px-8">
         <div className="flex justify-between items-center">
           <h2 className="text-xl md:text-[24px] font-bold text-gray-900">Blog</h2>
-          <a href="/blog" className="flex items-center text-gray-900 hover:text-gray-700 font-medium">
+          <Link to="/blog" className="flex items-center text-gray-900 hover:text-gray-700 font-medium">
             View all posts
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1 text-gray-900" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
-          </a>
+          </Link>
         </div>
         <div className="border-b border-gray-200 mt-4 mb-6"></div>
 
@@ -2208,22 +2315,22 @@ const Homepage: React.FC = () => {
           <div className="space-y-8 pt-2">
             {/* First Blog Post */}
             <div className="group w-full max-w-[700px] flex flex-col gap-6">
-              <a href="/blog/how-to-host-successful-virtual-events" className="block w-full overflow-hidden lg:max-w-[800px] lg:mx-auto" style={{ aspectRatio: '16/9' }}>
+              <Link to="/blog/1" className="block w-full overflow-hidden lg:max-w-[800px] lg:mx-auto" style={{ aspectRatio: '16/9' }}>
                 <img
                   src="/images/Overview (1).png"
                   alt="Event overview"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
-              </a>
+              </Link>
               <div className="w-full">
                 <span className="text-[15px] font-medium text-green-600 uppercase">EVENTS</span>
-                <a href="/blog/how-to-host-successful-virtual-events" className="block mt-2">
+                <Link to="/blog/1" className="block mt-2">
                   <h3 className="text-[24px] lg:text-[40px] leading-[30px] lg:leading-[44px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">How to Host Successful Virtual Events</h3>
                   <p className="hidden lg:block text-gray-600 text-[18px] font-medium mt-3 leading-relaxed">
                     Learn the essential strategies and tools needed to create engaging and successful virtual events.
                   </p>
-                </a>
+                </Link>
               </div>
             </div>
           </div>
@@ -2235,19 +2342,19 @@ const Homepage: React.FC = () => {
           <div className="lg:ml-auto space-y-8">
             {/* Second Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <a href="/blog/event-marketing-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+              <Link to="/blog/2" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img
                   src="/images/Overview.png"
                   alt="Marketing insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
-              </a>
+              </Link>
               <div className="flex-1 py-2">
                 <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
-                <a href="/blog/event-marketing-strategies" className="block mt-1">
+                <Link to="/blog/2" className="block mt-1">
                   <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Top 5 Event Marketing Strategies for 2024</h3>
-                </a>
+                </Link>
               </div>
             </div>
 
@@ -2255,40 +2362,39 @@ const Homepage: React.FC = () => {
 
             {/* Third Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <a href="/blog/audio-quality-tips" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+              <Link to="/blog/3" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img
                   src="/images/Overview (2).png"
                   alt="Amptive platform features"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
-              </a>
+              </Link>
               <div className="flex-1 py-2">
                 <span className="text-[15px] font-medium text-blue-600 uppercase">AMPTIVE</span>
-                <a href="/blog/audio-quality-tips" className="block mt-1">
+                <Link to="/blog/3" className="block mt-1">
                   <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Essential Tips for Perfect Audio Quality</h3>
-                </a>
+                </Link>
               </div>
             </div>
 
             <div className="border-t border-gray-200 my-6"></div>
 
             {/* Fourth Blog Post */}
-            {/* Fourth Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <a href="/blog/future-of-live-audio" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+              <Link to="/blog/4" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img
                   src="/images/Overview.png"
                   alt="Audio insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
-              </a>
+              </Link>
               <div className="flex-1 py-2">
                 <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
-                <a href="/blog/future-of-live-audio" className="block mt-1">
+                <Link to="/blog/4" className="block mt-1">
                   <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">The Future of Live Audio Experiences</h3>
-                </a>
+                </Link>
               </div>
             </div>
 
@@ -2296,19 +2402,19 @@ const Homepage: React.FC = () => {
 
             {/* Fifth Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <a href="/blog/engaging-audience" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+              <Link to="/blog/5" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img
                   src="/images/Overview.png"
                   alt="Audience engagement insights"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
-              </a>
+              </Link>
               <div className="flex-1 py-2">
                 <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
-                <a href="/blog/engaging-audience" className="block mt-1">
+                <Link to="/blog/5" className="block mt-1">
                   <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">How to Keep Your Audience Engaged</h3>
-                </a>
+                </Link>
               </div>
             </div>
 
@@ -2316,19 +2422,19 @@ const Homepage: React.FC = () => {
 
             {/* Sixth Blog Post */}
             <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <a href="/blog/monetization-strategies" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+              <Link to="/blog/6" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
                 <img
                   src="/images/Overview (2).png"
                   alt="Amptive monetization"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
-              </a>
+              </Link>
               <div className="flex-1 py-2">
                 <span className="text-[15px] font-medium text-blue-600 uppercase">AMPTIVE</span>
-                <a href="/blog/monetization-strategies" className="block mt-1">
+                <Link to="/blog/6" className="block mt-1">
                   <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Monetization Strategies for Creators</h3>
-                </a>
+                </Link>
               </div>
             </div>
           </div>
