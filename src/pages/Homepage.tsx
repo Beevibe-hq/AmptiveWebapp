@@ -127,6 +127,8 @@ interface HeroSlideProps {
   onSwipeLeft?: () => void;
   onSwipeRight?: () => void;
   isActive?: boolean;
+  eyebrow?: string;
+  eyebrowColor?: string;
 }
 
 const HeroSlide: React.FC<HeroSlideProps> = ({
@@ -136,7 +138,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
   ctaLink,
   videoSrc,
   videoSources = [],
-  shadowColor = 'rgba(0, 0, 0, 0.5)',
+  shadowColor,
   bgColor,
   backgroundImage,
   textColor = '',
@@ -146,7 +148,9 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
   videoClassName = '',
   onSwipeLeft,
   onSwipeRight,
-  isActive = false
+  isActive = false,
+  eyebrow,
+  eyebrowColor
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
@@ -279,13 +283,21 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               />
             )}
             {bgColor && (
-              <div
-                className="absolute inset-0 w-full h-full"
-                style={{
-                  background: bgColor,
-                  opacity: backgroundImage ? 0.6 : 1 // Slightly transparent if there's a background image
-                }}
-              />
+              <>
+                <div
+                  className="absolute inset-0 w-full h-full"
+                  style={{
+                    backgroundImage: bgColor,
+                    opacity: backgroundImage ? 0.6 : 1 // Slightly transparent if there's a background image
+                  }}
+                />
+                <div
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  style={{
+                    background: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E\")"
+                  }}
+                />
+              </>
             )}
             {!backgroundImage && !bgColor && shadowColor && (
               <div
@@ -306,39 +318,41 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
             <div className="w-full max-w-[620px] h-[40vh] md:h-[50vh] lg:h-[70vh] min-w-0 animate-slide-up transition-all duration-500" style={{
               width: 'min(100%, max(350px, calc(100vw - 100px)))' // Adjusted for better tablet display
             }}>
-              <div
-                className="relative w-full h-full rounded-2xl overflow-hidden bg-gray-100"
+              <video
+                ref={videoRef}
+                key={activeSrc}
+                autoPlay
+                loop={!hasMultiple}
+                muted
+                playsInline
+                onEnded={handleVideoEnded}
+                onTimeUpdate={handleTimeUpdate}
+                className={`w-full h-full object-cover rounded-2xl overflow-hidden ${videoClassName.replace('object-[15%_center]', '')}`}
                 style={{
-                  boxShadow: isSecondSlide
-                    ? `0 0 60px ${shadowColor}`  // Larger shadow for second slide
-                    : `0 0 40px ${shadowColor}`  // Default shadow for other slides
+                  objectPosition: objectPos,
+                  transition: 'object-position 0.8s ease-in-out',
+                  boxShadow: shadowColor 
+                    ? `0 10px 40px -5px ${shadowColor}` 
+                    : '0 8px 30px rgba(0, 0, 0, 0.15)'
                 }}
               >
-                <video
-                  ref={videoRef}
-                  key={activeSrc}
-                  autoPlay
-                  loop={!hasMultiple}
-                  muted
-                  playsInline
-                  onEnded={handleVideoEnded}
-                  onTimeUpdate={handleTimeUpdate}
-                  className={`w-full h-full object-cover ${videoClassName.replace('object-[15%_center]', '')}`}
-                  style={{
-                    objectPosition: objectPos,
-                    transition: 'object-position 0.8s ease-in-out'
-                  }}
-                >
-                  <source src={activeSrc} type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
-              </div>
+                <source src={activeSrc} type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
             </div>
           </div>
 
           {/* Content Column - Fixed max width with min-width */}
-          <div className="w-full lg:min-w-[350px] max-w-[550px] lg:max-w-[550px] text-center lg:text-left">
-            <h1 className="text-2xl md:text-[36px] font-extrabold mb-4 md:mb-6 leading-tight text-white">
+          <div className="w-full lg:min-w-[350px] max-w-[550px] lg:max-w-[650px] text-center lg:text-left">
+            {eyebrow && (
+              <div 
+                className="text-sm md:text-base font-semibold mb-2 md:mb-3 animate-fade-in"
+                style={{ color: eyebrowColor || '#F59E0B' }}
+              >
+                {eyebrow}
+              </div>
+            )}
+            <h1 className={`text-2xl ${title.length > 35 ? 'md:text-[26px] lg:text-[30px]' : 'md:text-[36px]'} font-extrabold mb-4 md:mb-6 leading-tight text-white`}>
               {isFirstSlide ? (
                 <>
                   <span className="md:hidden">Go Live with Amptive</span>
@@ -354,7 +368,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               {isFirstSlide ? (
                 <>
                   <span className="md:hidden" dangerouslySetInnerHTML={{
-                    __html: 'Create events, sell tickets, track sales and <br> more in real time.'
+                    __html: 'Create, sell, and manage your <br> physical event tickets with ease'
                   }} />
                   <span className="hidden md:inline" dangerouslySetInnerHTML={{
                     __html: description.replace('host your own,', 'host your own,<br/>')
@@ -363,7 +377,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               ) : isSecondSlide ? (
                 <>
                   <span className="md:hidden" dangerouslySetInnerHTML={{
-                    __html: 'Create events, sell tickets, track sales and <br> more in real time.'
+                    __html: 'Create, sell, and manage your <br> physical event tickets with ease'
                   }} />
                   <span className="hidden md:inline">
                     {description}
@@ -465,24 +479,25 @@ const SLIDES: SlideData[] = [
   },
   {
     title: "Launch Ticketed Events",
-    description: "Create events, sell tickets, track sales and more in real time",
+    description: "Create, sell, and manage your physical event tickets with ease",
     ctaText: "Create event",
     ctaLink: "/events",
-    videoSrc: '/videos/creatingevent.mp4',
+    videoSrc: '/videos/cre1.mp4',
     videoClassName: "object-[15%_center]",
-    bgColor: "radial-gradient(circle at 20% 30%, rgba(245, 215, 30, 0.20) 0%, transparent 65%), radial-gradient(circle at 80% 70%, rgba(245, 215, 30, 0.08) 0%, transparent 50%), linear-gradient(135deg, #0a0a0e 0%, #050508 50%, #020204 100%)",
-    shadowColor: 'rgba(215, 235, 30, 0.45)',
+    bgColor: "radial-gradient(circle at 0% 10%, #489943 0%, transparent 50%), radial-gradient(circle at 100% 10%, #DBC13B 0%, transparent 50%), radial-gradient(circle at 0% 100%, #408F3B 0%, transparent 50%), radial-gradient(circle at 100% 100%, #CFA529 0%, transparent 50%), linear-gradient(135deg, #E6D275 0%, #8FB884 100%)",
     isSecondSlide: true
   },
   {
-    title: "Monetize Your Content",
-    description: "Earn money from your live shows through tickets, donations, and more.",
-    ctaText: "Learn more",
-    ctaLink: "/monetization",
+    title: "Create Your Amptive Support Card & Start Earning Tips",
+    description: "As a business, creator, or event organizer, Amptive's support feature provides your audience with an easy way to support your work anytime and anywhere",
+    ctaText: "Accept Tip$",
+    ctaLink: "/profile/support-setup",
     videoSrc: '/videos/accepttips_encode4.mp4',
     videoSources: ['/videos/accepttips_encode4.mp4', '/videos/tipping1.mp4'],
     videoClassName: "object-[15%_center]",
-    shadowColor: 'rgba(0, 0, 0, 0.5)'
+    bgColor: "radial-gradient(circle at 0% 10%, #F57858 0%, transparent 50%), radial-gradient(circle at 100% 10%, #6F2C8C 0%, transparent 50%), radial-gradient(circle at 0% 100%, #E6A619 0%, transparent 50%), radial-gradient(circle at 100% 100%, #4A0D05 0%, transparent 50%), linear-gradient(135deg, #C44A33 0%, #6D1E13 100%)",
+    eyebrow: "One link. Endless support.",
+    eyebrowColor: "#F59E0B"
   }
 ];
 
@@ -1261,6 +1276,8 @@ const Homepage: React.FC = () => {
                 onSwipeRight={nextSlide}
                 videoClassName={slide.videoClassName}
                 isActive={index === currentSlide}
+                eyebrow={slide.eyebrow}
+                eyebrowColor={slide.eyebrowColor}
               />
             </div>
           ))}
