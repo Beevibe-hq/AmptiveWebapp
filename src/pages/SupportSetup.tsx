@@ -458,7 +458,7 @@ export default function SupportSetup() {
     return (
         <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB]">
 
-            <div className="container relative z-10 mx-auto px-4 py-8 pt-6 md:pt-24 min-h-screen flex items-center justify-center">
+            <div className="container relative z-10 mx-auto px-4 py-8 pt-16 md:pt-24 min-h-screen flex items-center justify-center">
                 <AnimatePresence mode="wait">
                     {step === 'welcome' ? (
                         <motion.div
