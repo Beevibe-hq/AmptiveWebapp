@@ -172,6 +172,11 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   // Navigation links for unauthenticated users with icons
   const guestLinks: LinkItem[] = [
     {
+      name: 'Accept Tip$',
+      path: '/profile/support-setup',
+      icon: <Heart className="w-5 h-5 mr-3" />
+    },
+    {
       name: 'Explore',
       path: '/explore',
       icon: <Compass className="w-5 h-5 mr-3" />

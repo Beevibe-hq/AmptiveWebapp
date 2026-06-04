@@ -117,6 +117,7 @@ const MOCK_CARDS = [
 function HeroCardAnimation() {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [index, setIndex] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -125,34 +126,80 @@ function HeroCardAnimation() {
     }, []);
 
     useEffect(() => {
-        if (isMobile) return;
+        if (isDragging) return;
         const interval = setInterval(() => {
             setIndex((prev) => (prev + 1) % MOCK_CARDS.length);
         }, 3500);
         return () => clearInterval(interval);
-    }, [isMobile]);
+    }, [isDragging]);
 
-    // Mobile: infinite horizontal marquee
+    // Mobile: stacked carousel
     if (isMobile) {
-        const marqueeCards = [...MOCK_CARDS, ...MOCK_CARDS];
         return (
-            <div className="relative w-full h-full flex items-center overflow-hidden p-0">
-                <motion.div
-                    animate={{ x: ["0%", "-50%"] }}
-                    transition={{ 
-                        duration: 35, 
-                        ease: "linear", 
-                        repeat: Infinity 
-                    }}
-                    className="flex flex-row gap-4 items-center"
-                    style={{ width: "max-content" }}
-                >
-                    {marqueeCards.map((card, idx) => (
-                        <div 
-                            key={`${card.username}-${idx}`} 
-                            className="w-[260px] shrink-0 pointer-events-none flex items-center justify-center"
+            <div className="relative w-full h-[360px] flex items-center justify-center overflow-hidden p-0">
+                {MOCK_CARDS.map((card, idx) => {
+                    const offset = (idx - index + MOCK_CARDS.length) % MOCK_CARDS.length;
+                    
+                    let x = 0;
+                    let y = -40;
+                    let scale = 0.6;
+                    let zIndex = 0;
+                    let opacity = 0;
+                    let rotateZ = 0;
+
+                    if (offset === 0) {
+                        x = 0;
+                        y = 0;
+                        scale = 0.85;
+                        zIndex = 30;
+                        opacity = 1;
+                        rotateZ = 0;
+                    } else if (offset === 1) {
+                        x = 80;
+                        y = -20;
+                        scale = 0.7;
+                        zIndex = 20;
+                        opacity = 0.6;
+                        rotateZ = 6;
+                    } else if (offset === MOCK_CARDS.length - 1) {
+                        x = -80;
+                        y = -20;
+                        scale = 0.7;
+                        zIndex = 20;
+                        opacity = 0.6;
+                        rotateZ = -6;
+                    }
+
+                    return (
+                        <motion.div
+                            key={`${card.username}-${idx}`}
+                            className="absolute cursor-grab active:cursor-grabbing"
+                            style={{ zIndex }}
+                            drag={offset === 0 ? "x" : false}
+                            dragConstraints={{ left: 0, right: 0 }}
+                            dragElastic={0.8}
+                            onDragStart={() => setIsDragging(true)}
+                            onDragEnd={(e, { offset: dragOffset }) => {
+                                setIsDragging(false);
+                                if (dragOffset.x < -50) {
+                                    setIndex((prev) => (prev + 1) % MOCK_CARDS.length);
+                                } else if (dragOffset.x > 50) {
+                                    setIndex((prev) => (prev - 1 + MOCK_CARDS.length) % MOCK_CARDS.length);
+                                }
+                            }}
+                            animate={{
+                                x,
+                                y,
+                                scale,
+                                opacity,
+                                rotateZ,
+                            }}
+                            transition={{
+                                duration: 0.6,
+                                ease: [0.32, 0.72, 0, 1]
+                            }}
                         >
-                            <div className="min-w-[300px] w-[300px] scale-[0.85] origin-center">
+                            <div className="w-[300px] origin-center rounded-[2rem] shadow-xl pointer-events-none">
                                 <SupportCard
                                     name={card.name}
                                     username={card.username}
@@ -164,9 +211,9 @@ function HeroCardAnimation() {
                                     is3DAnim={false}
                                 />
                             </div>
-                        </div>
-                    ))}
-                </motion.div>
+                        </motion.div>
+                    );
+                })}
             </div>
         );
     }
@@ -411,7 +458,7 @@ export default function SupportSetup() {
     return (
         <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB]">
 
-            <div className="container relative z-10 mx-auto px-4 py-8 pt-24 min-h-screen flex items-center justify-center">
+            <div className="container relative z-10 mx-auto px-4 py-8 pt-6 md:pt-24 min-h-screen flex items-center justify-center">
                 <AnimatePresence mode="wait">
                     {step === 'welcome' ? (
                         <motion.div
@@ -432,7 +479,7 @@ export default function SupportSetup() {
                                     {/* Hide glow container on mobile */}
                                     <div className="hidden md:block absolute -inset-4 bg-blue-500/5 rounded-[2.5rem] blur-2xl group-hover:bg-blue-500/10 transition-all duration-700" />
                                     {/* Remove border, shadow, and overflow on mobile, and break out to screen edges */}
-                                    <div className="relative h-[420px] md:h-auto w-screen left-1/2 -translate-x-1/2 md:static md:w-auto md:translate-x-0 md:aspect-square md:overflow-hidden md:rounded-[2rem] md:border md:border-gray-200 shadow-none md:max-w-none">
+                                    <div className="relative h-[360px] md:h-auto w-screen left-1/2 -translate-x-1/2 md:static md:w-auto md:translate-x-0 md:aspect-square md:overflow-hidden md:rounded-[2rem] md:border md:border-gray-200 shadow-none md:max-w-none">
                                         <HeroCardAnimation />
                                     </div>
                                 </div>
@@ -446,8 +493,13 @@ export default function SupportSetup() {
                                 className="w-full md:w-[55%] text-center md:text-left space-y-6 md:space-y-8 flex flex-col items-center md:items-start"
                             >
                                 <div className="space-y-4">
-                                    <h2 className="text-[36px] md:text-[54px] font-extrabold leading-[1.1] tracking-tight text-[#1e293b] text-center md:text-left">
-                                        Accept Tip$ <br /> <span className="text-black">for Events, Work <br /> & Business.</span>
+                                    <h2 className="text-[30px] md:text-[54px] font-extrabold leading-[1.1] tracking-tight text-black text-center md:text-left">
+                                        <span className="md:hidden">
+                                            Accept Tip$ for Events <br /> Work &amp; Business.
+                                        </span>
+                                        <span className="hidden md:inline">
+                                            Accept Tip$ <br /> for Events, Work <br /> &amp; Business.
+                                        </span>
                                     </h2>
                                     <p className="text-xl md:text-2xl text-gray-600 font-medium leading-relaxed max-w-xl text-center md:text-left">
                                         Set up your support profile in seconds.
