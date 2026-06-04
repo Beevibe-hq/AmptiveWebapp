@@ -287,14 +287,14 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 <div
                   className="absolute inset-0 w-full h-full"
                   style={{
-                    backgroundImage: bgColor,
+                    background: bgColor,
                     opacity: backgroundImage ? 0.6 : 1 // Slightly transparent if there's a background image
                   }}
                 />
                 <div
-                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  className="absolute inset-0 w-full h-full pointer-events-none mix-blend-overlay"
                   style={{
-                    background: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E\")"
+                    background: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E\")"
                   }}
                 />
               </>
@@ -346,7 +346,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
           <div className="w-full lg:min-w-[350px] max-w-[550px] lg:max-w-[650px] text-center lg:text-left">
             {eyebrow && (
               <div 
-                className="text-sm md:text-base font-semibold mb-2 md:mb-3 animate-fade-in"
+                className="hidden md:block text-sm md:text-base font-semibold mb-2 md:mb-3 animate-fade-in"
                 style={{ color: eyebrowColor || '#F59E0B' }}
               >
                 {eyebrow}
@@ -360,15 +360,23 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                     __html: title.replace('Audio Show or', 'Audio Show<br/>or')
                   }} />
                 </>
+              ) : isSecondSlide ? (
+                <>
+                  <span className="md:hidden">Launch Ticketed Events</span>
+                  <span className="hidden md:inline">{title}</span>
+                </>
               ) : (
-                title
+                <>
+                  <span className="md:hidden">One Link. Endless Support</span>
+                  <span className="hidden md:inline">{title}</span>
+                </>
               )}
             </h1>
-            <p className="text-[14px] md:text-[16px] font-medium text-white/90 mb-6 md:mb-8">
+            <p className="text-[14px] md:text-[16px] font-semibold text-white mb-6 md:mb-8">
               {isFirstSlide ? (
                 <>
                   <span className="md:hidden" dangerouslySetInnerHTML={{
-                    __html: 'Create, sell, and manage your <br> physical event tickets with ease'
+                    __html: 'Discover live audio shows & events, <br> host your own, and support creators.'
                   }} />
                   <span className="hidden md:inline" dangerouslySetInnerHTML={{
                     __html: description.replace('host your own,', 'host your own,<br/>')
@@ -377,14 +385,17 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               ) : isSecondSlide ? (
                 <>
                   <span className="md:hidden" dangerouslySetInnerHTML={{
-                    __html: 'Create, sell, and manage your <br> physical event tickets with ease'
+                    __html: 'Reach more attendees, track sales, <br> and deliver a smooth ticketing experience.'
                   }} />
                   <span className="hidden md:inline">
                     {description}
                   </span>
                 </>
               ) : (
-                description
+                <>
+                  <span className="md:hidden">Create your Amptive Support Card and start receiving gifts and tips.</span>
+                  <span className="hidden md:inline">{description}</span>
+                </>
               )}
             </p>
 
@@ -478,13 +489,13 @@ const SLIDES: SlideData[] = [
     isFirstSlide: true
   },
   {
-    title: "Launch Ticketed Events",
-    description: "Create, sell, and manage your physical event tickets with ease",
-    ctaText: "Create event",
+    title: "Launch, sell, and manage your Physical Event Tickets with Ease.",
+    description: "Reach more attendees, track sales, and deliver a smooth ticketing experience from start to finish.",
+    ctaText: "Launch event",
     ctaLink: "/events",
-    videoSrc: '/videos/cre1.mp4',
+    videoSrc: '/videos/1v1ce11.mp4',
     videoClassName: "object-[15%_center]",
-    bgColor: "radial-gradient(circle at 0% 10%, #489943 0%, transparent 50%), radial-gradient(circle at 100% 10%, #DBC13B 0%, transparent 50%), radial-gradient(circle at 0% 100%, #408F3B 0%, transparent 50%), radial-gradient(circle at 100% 100%, #CFA529 0%, transparent 50%), linear-gradient(135deg, #E6D275 0%, #8FB884 100%)",
+    bgColor: "#4E5D26",
     isSecondSlide: true
   },
   {
@@ -495,9 +506,9 @@ const SLIDES: SlideData[] = [
     videoSrc: '/videos/accepttips_encode4.mp4',
     videoSources: ['/videos/accepttips_encode4.mp4', '/videos/tipping1.mp4'],
     videoClassName: "object-[15%_center]",
-    bgColor: "radial-gradient(circle at 0% 10%, #F57858 0%, transparent 50%), radial-gradient(circle at 100% 10%, #6F2C8C 0%, transparent 50%), radial-gradient(circle at 0% 100%, #E6A619 0%, transparent 50%), radial-gradient(circle at 100% 100%, #4A0D05 0%, transparent 50%), linear-gradient(135deg, #C44A33 0%, #6D1E13 100%)",
+    bgColor: "#6A4A76",
     eyebrow: "One link. Endless support.",
-    eyebrowColor: "#F59E0B"
+    eyebrowColor: "#FDE047"
   }
 ];
 
@@ -518,6 +529,22 @@ const Homepage: React.FC = () => {
 
   // Initialize navigation
   const navigate = useNavigate();
+
+  // User state for dynamic routing
+  const [user, setUser] = useState<any>(null);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user || null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [supabase]);
 
   // State for filter dropdowns
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -1264,7 +1291,7 @@ const Homepage: React.FC = () => {
                 title={slide.title}
                 description={slide.description}
                 ctaText={slide.ctaText}
-                ctaLink={slide.ctaLink}
+                ctaLink={slide.isSecondSlide ? (user ? '/events/create' : '/login?redirect=/events/create') : slide.ctaLink}
                 videoSrc={slide.videoSrc}
                 videoSources={slide.videoSources}
                 shadowColor={slide.shadowColor}
