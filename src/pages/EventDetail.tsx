@@ -319,6 +319,17 @@ const EventDetail = () => {
       ? "w-full rounded-xl py-3 text-center font-bold shadow-lg active:scale-[0.98]"
       : "w-full rounded-2xl py-4 text-center font-bold transition-transform hover:scale-[1.02] active:scale-[0.98]";
 
+    if (isOrganizer) {
+      return {
+        button: (
+          <Link to={`/dashboard/events/${event.id}/edit`} className={`${baseClasses} bg-black text-white block`}>
+            Manage Event
+          </Link>
+        ),
+        footerText: "Manage your event dashboard"
+      };
+    }
+
     if (isEventEnded) {
       return {
         button: (

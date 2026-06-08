@@ -180,7 +180,6 @@ export default function EditProfile() {
 
     return (
         <div className="min-h-screen bg-white">
-            <Navbar />
 
             {/* Blur Background */}
             <div
@@ -222,19 +221,23 @@ export default function EditProfile() {
                                 <section className="pt-8 border-t border-gray-100">
                                     <form onSubmit={handleSubmit} className="space-y-8">
                                         {/* Full Name */}
-                                        <div className="space-y-1.5">
-                                            <label htmlFor="fullname" className="block text-sm font-bold text-gray-700">
-                                                Full Name
-                                            </label>
+                                            <div className="flex justify-between items-center">
+                                                <label htmlFor="fullname" className="block text-sm font-bold text-gray-700">
+                                                    Full Name
+                                                </label>
+                                                <span className={`text-[10px] font-bold ${fullName.length >= 50 ? 'text-red-500' : 'text-gray-400'}`}>
+                                                    {fullName.length}/50
+                                                </span>
+                                            </div>
                                             <input
                                                 id="fullname"
                                                 type="text"
                                                 value={fullName}
+                                                maxLength={50}
                                                 onChange={(e) => setFullName(e.target.value)}
                                                 placeholder="e.g. John Doe"
                                                 className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                                             />
-                                        </div>
 
                                         {/* Username */}
                                         <div className="space-y-1.5">

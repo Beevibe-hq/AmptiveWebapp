@@ -11,11 +11,13 @@ import {
   LogOut,
   ShoppingBag,
   LogIn,
-  LayoutDashboard
+  LayoutDashboard,
+  Heart
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { getProfileById } from '@/lib/supabase/profiles';
 import UserAvatar from './UserAvatar';
 
 type BaseLink = {
@@ -42,18 +44,22 @@ interface MobileMenuProps {
 
 const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isSupportPage = location.pathname.startsWith('/support/');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const { user, loading, logout: contextLogout } = useAuth();
 
   // Navigation links for authenticated users with icons
+  const shouldShowAcceptTips = String(profile?.support_enabled).toLowerCase() !== 'true';
+
   const authLinks: LinkItem[] = [
-    {
-      name: 'My Dashboard',
-      path: '/dashboard',
-      icon: <LayoutDashboard className="w-5 h-5 mr-3" />
-    },
-    // First group (top 2 items)
+    ...(shouldShowAcceptTips ? [{
+      name: 'Accept Tip$',
+      path: '/profile/support-setup',
+      icon: <Heart className="w-5 h-5 mr-3" />
+    } as MenuLink] : []),
+    // First group (top items)
     {
       name: 'Explore',
       path: '/explore',
@@ -61,7 +67,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
     },
     {
       name: 'Create Event',
-      path: '/events',
+      path: '/login?redirect=/events/create',
       icon: <PlusSquare className="w-5 h-5 mr-3" />
     },
 
@@ -69,11 +75,11 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
     { name: 'divider-small', path: '#' },
 
     // Second group (next 3 items)
-    // {
-    //   name: 'My Dashboard',
-    //   path: '/dashboard',
-    //   icon: <LayoutDashboard className="w-5 h-5 mr-3" />
-    // },
+    {
+      name: 'My Dashboard',
+      path: '/dashboard',
+      icon: <LayoutDashboard className="w-5 h-5 mr-3" />
+    },
     {
       name: 'My Tickets',
       path: '/my-tickets',
@@ -118,6 +124,11 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   // Navigation links for unauthenticated users with icons
   const guestLinks: LinkItem[] = [
     {
+      name: 'Accept Tip$',
+      path: '/profile/support-setup',
+      icon: <Heart className="w-5 h-5 mr-3" />
+    },
+    {
       name: 'Explore',
       path: '/explore',
       icon: <Compass className="w-5 h-5 mr-3" />
@@ -149,7 +160,10 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
     }
   ];
 
-  const links = user ? authLinks : guestLinks;
+  const baseLinks = user ? authLinks : guestLinks;
+  const links = isSupportPage 
+    ? baseLinks.filter(l => !['My Dashboard', 'Explore', 'Create Event', 'My Tickets', 'Store', 'Community Task', 'More'].includes(l.name))
+    : baseLinks;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,30 +214,33 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
           >
             {/* Header with Search */}
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <form onSubmit={handleSearch} className="relative flex-1 mr-2">
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent"
-                  placeholder="Search for events, tasks, and more..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="lucide lucide-search absolute left-3 top-2.5 w-4 h-4 text-gray-400"
-                >
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.3-4.3" />
-                </svg>
-              </form>
+              {!isSupportPage && (
+                <form onSubmit={handleSearch} className="relative flex-1 mr-2">
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent"
+                    placeholder="Search for events, tasks, and more..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="lucide lucide-search absolute left-3 top-2.5 w-4 h-4 text-gray-400"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                </form>
+              )}
+              {isSupportPage && <div className="flex-1" />}
               <button
                 onClick={onClose}
                 className="p-2 text-gray-500 hover:text-gray-700"

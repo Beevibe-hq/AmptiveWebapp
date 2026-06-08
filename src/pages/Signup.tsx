@@ -1,6 +1,8 @@
 import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import SignupForm from '@/components/auth/SignupForm';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -8,6 +10,10 @@ export default function SignupPage() {
   const params = new URLSearchParams(location.search);
   const initialEmail = params.get('email') || undefined;
   const redirectTo = searchParams.get('redirect');
+
+  if (redirectTo && typeof window !== 'undefined') {
+    window.sessionStorage.setItem(AUTH_REDIRECT_KEY, redirectTo);
+  }
 
   const handleSignupSuccess = () => {
     // Redirect to the provided path or home on successful signup
