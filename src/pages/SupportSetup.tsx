@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'; // Refined Support Me Journey
 import { useNavigate } from 'react-router-dom';
-import { createClient } from '@/lib/supabase/client';
-import { User } from '@supabase/supabase-js';
-import { getProfileById, upsertProfile, ProfileRow } from '@/lib/supabase/profiles';
+import { getCurrentUser } from '@/lib/api/auth';
+import { getSupportProfile, updateSupportProfile, SupportProfile } from '@/lib/api/support';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { ArrowLeft, Check, Heart, Loader2, Save, Sparkles, Wallet, Gift, ArrowRight, Users, Store, Building2, Brush, Calendar, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -300,7 +299,7 @@ type Step = 'welcome' | 'selection' | 'settings' | 'preview';
 
 export default function SupportSetup() {
     const navigate = useNavigate();
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<SupportProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
@@ -334,25 +333,23 @@ export default function SupportSetup() {
         setStep('settings');
     };
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-    const [existingProfile, setExistingProfile] = useState<ProfileRow | null>(null);
-
-    const supabase = createClient();
+    const [existingProfile, setExistingProfile] = useState<SupportProfile | null>(null);
 
     // Auth Check & Data Fetch
     useEffect(() => {
         const checkAuth = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
+            const currentUser = await getCurrentUser();
+            if (!currentUser) {
                 setUser(null);
                 setInitialLoading(false);
                 setLoading(false);
                 return;
             }
-            setUser(user);
+            setUser(currentUser as unknown as SupportProfile);
 
             // Load Profile
             try {
-                const profile = await getProfileById(user.id);
+                const profile = await getSupportProfile(currentUser.id);
                 if (profile) {
                     setSupportEnabled(profile.support_enabled ?? false);
                     setSupportMessage(profile.support_message || profile.support_tagline || '');
@@ -395,9 +392,9 @@ export default function SupportSetup() {
         setSaving(true);
 
         try {
-            const updates: ProfileRow = {
+            const updates: Partial<SupportProfile> = {
                 ...existingProfile,
-                user_id: user.id,
+                user_id: user.user_id || user.id,
                 email: user.email || existingProfile?.email || '', // Ensure email is never null
                 support_enabled: supportEnabled,
                 support_message: supportMessage,
@@ -411,7 +408,7 @@ export default function SupportSetup() {
                 updated_at: new Date().toISOString(),
             };
 
-            const { ok, error } = await upsertProfile(updates);
+            const { ok, error } = await updateSupportProfile(updates);
             if (!ok) throw new Error(error || 'Failed to update support settings');
 
             toastSuccess('Support settings updated successfully!');

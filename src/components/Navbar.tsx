@@ -38,6 +38,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   const checkedProfileRef = useRef(false);
   const { user: authUser, loading, refreshUser } = useAuth();
   const [sessionUser, setSessionUser] = useState<any>(null);
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
   // Handle user and profile fetching side-effects in response to session changes
   // completely outside of the onAuthStateChange synchronous callback to prevent deadlocks.

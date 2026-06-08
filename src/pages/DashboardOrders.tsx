@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye } from 'lucide-react';
 import { getPurchasesByEvent } from '@/lib/api/purchases';
+import { getEventsByUser } from '@/lib/api/events';
 import { getCurrentUser } from '@/lib/api/auth';
 
 const DUMMY_ORDERS = [
@@ -73,16 +74,12 @@ export default function DashboardOrders() {
 
         const fetchStats = async () => {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!session) return;
-
-                const { count } = await supabase
-                    .from('events')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('user_id', session.user.id)
-                    .gte('start_time', new Date().toISOString());
-
-                setUpcomingCount(count || 0);
+                const events = await getEventsByUser();
+                const now = new Date().toISOString();
+                const upcoming = events.filter(e =>
+                    e.scheduled_for && e.scheduled_for >= now
+                );
+                setUpcomingCount(upcoming.length);
             } catch (error) {
                 console.error('Error fetching stats:', error);
             }

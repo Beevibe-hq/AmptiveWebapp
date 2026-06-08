@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { blogPosts } from '@/lib/blog-data';
 import { useAuth } from '@/contexts/AuthContext';
-import { getPostLikeStatus, togglePostLike } from '@/lib/supabase/blog-likes';
+import { getPostLikeStatus, togglePostLike } from '@/lib/api/blog-likes';
 
 const LikeButton = ({ isLiked, onToggle, isLiking }: { isLiked: boolean; onToggle: () => void; isLiking: boolean }) => {
   return (

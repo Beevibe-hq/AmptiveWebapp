@@ -17,7 +17,6 @@ import {
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getProfileById } from '@/lib/supabase/profiles';
 import UserAvatar from './UserAvatar';
 
 type BaseLink = {
@@ -51,7 +50,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
   const { user, loading, logout: contextLogout } = useAuth();
 
   // Navigation links for authenticated users with icons
-  const shouldShowAcceptTips = String(profile?.support_enabled).toLowerCase() !== 'true';
+  const shouldShowAcceptTips = String(user?.support_enabled).toLowerCase() !== 'true';
 
   const authLinks: LinkItem[] = [
     ...(shouldShowAcceptTips ? [{

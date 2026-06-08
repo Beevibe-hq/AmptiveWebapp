@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { DollarSign, Settings as SettingsIcon, FileText, ArrowUpRight, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { createClient } from '@/lib/supabase/client';
-
-const supabase = createClient();
+import { getSession } from '@/lib/api/auth';
+import { getEventOwnerPurchases, getBuyerProfiles } from '@/lib/api/finance';
 
 export default function DashboardFinance() {
     const [activeTab, setActiveTab] = useState<'payout' | 'settings' | 'receipt'>('payout');
@@ -132,18 +131,11 @@ export default function DashboardFinance() {
     const fetchFinanceData = async () => {
         try {
             setLoading(true);
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return;
+            const session = await getSession();
+            if (!session?.user) return;
 
             // 1. Fetch ticket purchases for events owned by this user
-            const { data: purchasesData, error: purchaseError } = await supabase
-                .from('ticket_purchases')
-                .select('*, event_tickets(id, label, price, color_theme), events!inner(title, user_id)')
-                .eq('events.user_id', session.user.id)
-                .order('created_at', { ascending: false });
-
-            if (purchaseError) throw purchaseError;
-
+            const purchasesData = await getEventOwnerPurchases();
             setPurchases(purchasesData || []);
 
             // 2. Fetch buyer profiles for avatars
@@ -152,12 +144,8 @@ export default function DashboardFinance() {
                 .filter(id => !!id))];
 
             if (buyerIds.length > 0) {
-                const { data: profiles, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('user_id, avatar_url, full_name, email')
-                    .in('user_id', buyerIds);
-
-                if (!profileError && profiles) {
+                const profiles = await getBuyerProfiles(buyerIds);
+                if (profiles) {
                     const pMap: Record<string, any> = {};
                     profiles.forEach(p => {
                         pMap[p.user_id] = p;

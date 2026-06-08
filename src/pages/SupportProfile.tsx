@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { createClient } from '@/lib/supabase/client';
-import { getProfileById, ProfileRow } from '@/lib/supabase/profiles';
 import { QrCode, Share2, MoreHorizontal, Youtube, Twitch, Heart, Check, Loader2, ArrowLeft, Star, Briefcase, Eye, Settings, CreditCard, Users, Coffee, Crown, Zap, Gift } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SupportCard from '@/components/SupportCard';
 import Navbar from '@/components/Navbar';
 import SupportEditModal from '@/components/SupportEditModal';
-import { getCurrentUser } from '@/lib/supabase/auth';
+import { getCurrentUser } from '@/lib/api/auth';
+import { getSupportProfile, getSupportProfileByUsername, getSupportPayments, SupportProfile as SupportProfileType } from '@/lib/api/support';
 import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
@@ -16,7 +15,7 @@ import { playSwoosh, playSuccessChime } from '@/utils/audio';
 export default function SupportProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [profile, setProfile] = useState<SupportProfileType | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -31,7 +30,7 @@ export default function SupportProfile() {
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success'>('idle');
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [shadowColor, setShadowColor] = useState<string | null>(null);
-  const supabase = createClient();
+
 
   useEffect(() => {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -176,15 +175,8 @@ export default function SupportProfile() {
   useEffect(() => {
     const fetchActivity = async () => {
       if (!profile?.user_id) return;
-      
-      const { data, error } = await supabase
-        .from('support_payments')
-        .select('*')
-        .eq('receiver_id', profile.user_id)
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false })
-        .limit(20);
 
+      const { data, error } = await getSupportPayments(profile.user_id);
       if (!error && data) {
         setPayments(data);
         setSupporterCount(data.length);
@@ -202,18 +194,13 @@ export default function SupportProfile() {
         const user = await getCurrentUser();
         setCurrentUserId(user?.id || null);
 
-        let profileData: ProfileRow | null = null;
+        let profileData: SupportProfileType | null = null;
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
         if (isUuid) {
-          profileData = await getProfileById(id);
+          profileData = await getSupportProfile(id);
         } else {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('username', id)
-            .single();
-          if (!error) profileData = data;
+          profileData = await getSupportProfileByUsername(id);
         }
         setProfile(profileData);
       } catch (error) {

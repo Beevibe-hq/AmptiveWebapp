@@ -2,15 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Camera, Loader2, Upload, Trash2, Wand2, Minus, Plus, RotateCw, Share2, Twitter, Youtube } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Cropper from 'react-easy-crop';
-import { createClient } from '@/lib/supabase/client';
-import { ProfileRow, upsertProfile, updateProfile } from '@/lib/supabase/profiles';
 import { toast } from 'sonner';
+import { uploadImage } from '@/lib/api/storage';
+import { updateSupportProfile, SupportProfile } from '@/lib/api/support';
 
 interface SupportEditModalProps {
   isOpen: boolean;
   onClose: () => void;
-  profile: ProfileRow;
-  onSave: (updatedProfile: ProfileRow) => void;
+  profile: SupportProfile;
+  onSave: (updatedProfile: SupportProfile) => void;
 }
 
 export default function SupportEditModal({ isOpen, onClose, profile, onSave }: SupportEditModalProps) {
@@ -44,7 +44,6 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
-  const supabase = createClient();
 
   useEffect(() => {
     if (isOpen) {
@@ -123,68 +122,6 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Manual XHR Upload to track progress
-  const uploadWithProgress = async (bucket: string, path: string, blob: Blob): Promise<string> => {
-    console.log('Retrieving session for upload...');
-    let session;
-    try {
-      const { data } = await supabase.auth.getSession();
-      session = data.session;
-    } catch (err) {
-      console.error('Session retrieval error:', err);
-      throw new Error('Failed to verify authentication session.');
-    }
-    
-    const token = session?.access_token;
-    if (!token) {
-      console.error('No token found in session:', session);
-      throw new Error('No active session found. Please try logging in again.');
-    }
-
-    console.log('Session retrieved, starting XHR...');
-
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/${bucket}/${path}`;
-      
-      xhr.open('POST', url);
-      xhr.setRequestHeader('apikey', import.meta.env.VITE_SUPABASE_ANON_KEY);
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          console.log(`Upload progress: ${percent}%`);
-          setUploadProgress(percent);
-        }
-      };
-
-      xhr.onload = () => {
-        console.log(`XHR finished with status: ${xhr.status}`);
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path);
-          resolve(publicUrl);
-        } else {
-          try {
-            const errorData = JSON.parse(xhr.responseText);
-            console.error('Upload failed response:', errorData);
-            reject(new Error(errorData.message || 'Upload failed'));
-          } catch {
-            console.error('Upload failed response (non-JSON):', xhr.responseText);
-            reject(new Error(xhr.responseText || 'Upload failed'));
-          }
-        }
-      };
-
-      xhr.onerror = (err) => {
-        console.error('XHR network error:', err);
-        reject(new Error('Network error during upload'));
-      };
-      
-      xhr.send(blob);
-    });
-  };
-
   const handleImageUpload = async (dataUrl: string, type: 'avatar' | 'banner') => {
     setLoading(true);
     setIsUploading(true);
@@ -194,14 +131,13 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
         throw new Error('User ID is missing from profile. Cannot upload image.');
       }
 
-      console.log(`Processing ${type} blob conversion...`);
       const blob = dataURLtoBlob(dataUrl);
-      
       const fileExt = 'jpg';
       const fileName = `${profile.user_id}/${type}-${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const file = new File([blob], fileName, { type: `image/${fileExt}` });
 
-      const publicUrl = await uploadWithProgress('avatars', filePath, blob);
+      const purpose = type === 'avatar' ? 'profile-picture' : 'community-image';
+      const publicUrl = await uploadImage(file, purpose);
 
       setFormData(prev => ({
         ...prev,
@@ -213,7 +149,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
       }));
       toast.success(`${type} updated`);
     } catch (error: any) {
-      console.error(`Supabase ${type} upload error details:`, error);
+      console.error(`Upload error details:`, error);
       toast.error(`Error uploading ${type}: ` + error.message);
     } finally {
       setLoading(false);
@@ -267,9 +203,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
         support_socials: formData.support_socials,
       };
 
-      const result = await updateProfile(profile.user_id, updates);
-      
-      const { ok, error } = result;
+      const { ok, error } = await updateSupportProfile(updates);
       if (!ok) {
         console.error('updateProfile error:', error);
         throw new Error(error);

@@ -8,6 +8,7 @@ import Events from './pages/Events';
 import CreateEvent from './pages/CreateEvent';
 import CheckoutPage from './pages/CheckoutPage';
 import EventDetail from './pages/EventDetail';
+import Help from './pages/Help';
 import Invest from './pages/Invest';
 import Shop from './pages/Shop';
 import Community from './pages/Community';

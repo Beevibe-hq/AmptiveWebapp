@@ -6,6 +6,7 @@ import { Calendar } from 'lucide-react';
 import QRCodeGenerator from '../components/QRCodeGenerator';
 import { listEvents } from '@/lib/api/events';
 import { listCommunities, Community } from '@/lib/api/communities';
+import { useAuth } from '@/contexts/AuthContext';
 
 
 // Type definition for Trending Card
@@ -516,21 +517,8 @@ const Homepage: React.FC = () => {
   // Initialize navigation
   const navigate = useNavigate();
 
-  // User state for dynamic routing
-  const [user, setUser] = useState<any>(null);
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user || null);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, [supabase]);
+  // User state from AuthContext
+  const { user } = useAuth();
 
   // State for filter dropdowns
   const [isFilterOpen, setIsFilterOpen] = useState(false);
