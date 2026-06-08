@@ -110,6 +110,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
         return `${month} '${year}`;
     };
 
+    const [monthlyData, setMonthlyData] = useState<Record<string, { total: string; points: { cx: number; cy: number; label: string; amount: string; val: number }[] }>>({});
     const [activeMonth, setActiveMonth] = useState(getCurrentMonthLabel());
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [eventsLoading, setEventsLoading] = useState(true);
@@ -123,6 +124,10 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const carouselRef = useRef<HTMLDivElement>(null);
     const CAROUSEL_DURATION = 5000;
 
+    const [totalSales, setTotalSales] = useState(0);
+    const [orderCount, setOrderCount] = useState(0);
+    const [attendeeCount, setAttendeeCount] = useState(0);
+
     const upcomingEvents = realEvents.filter(event =>
         new Date(event.scheduled_for ?? event.created_at!) >= new Date()
     ).slice(0, 3);
@@ -135,9 +140,15 @@ function DashboardHome({ displayName }: { displayName: string }) {
         {
             title: "Total Sales",
             subtitle: "Revenue",
-            value: 245,
+            value: totalSales >= 1000000000
+                ? (totalSales / 1000000000).toFixed(1).replace(/\.0$/, '')
+                : totalSales >= 1000000
+                    ? (totalSales / 1000000).toFixed(1).replace(/\.0$/, '')
+                    : totalSales >= 1000
+                        ? (totalSales / 1000).toFixed(1).replace(/\.0$/, '')
+                        : totalSales,
             prefix: "₦",
-            suffix: "k",
+            suffix: totalSales >= 1000000000 ? "b" : totalSales >= 1000000 ? "m" : totalSales >= 1000 ? "k" : "",
             change: "+12%",
             icon: Wallet,
             bgColor: "bg-blue-50",
@@ -146,7 +157,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
         {
             title: "Orders",
             subtitle: "Purchases",
-            value: 156,
+            value: orderCount,
             change: "+8%",
             icon: ShoppingCart,
             bgColor: "bg-purple-50",
@@ -164,7 +175,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
         {
             title: "Attendees",
             subtitle: "Total Attendees",
-            value: 285,
+            value: attendeeCount,
             change: "+18%",
             icon: Users,
             bgColor: "bg-green-50",
@@ -235,11 +246,102 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
             const data = await getEventsByUser();
             setRealEvents(data || []);
+
+            // Fetch Ticket Purchases for Stats
+            const { data: purchases, error: purchaseError } = await supabase
+                .from('ticket_purchases')
+                .select('*, event_tickets(price)')
+                .order('created_at', { ascending: false });
+
+            if (purchaseError) {
+                console.error('Error fetching dashboard purchases:', purchaseError);
+            } else if (purchases && purchases.length > 0) {
+                const validPurchases = purchases.filter(p => {
+                    const s = p.ticket_status?.toLowerCase();
+                    return s === 'valid' || s === 'used' || s === 'completed' || s === 'paid' || s === 'success' || s === 'attended';
+                });
+
+                if (validPurchases.length > 0) {
+                    const total = validPurchases.reduce((acc, p) => acc + (Number(p.total_amount) || Number(p.event_tickets?.price) || 0), 0);
+                    const uniqueAttendees = new Set(validPurchases.map(p => p.buyer_email)).size;
+
+                    setTotalSales(total);
+                    setOrderCount(validPurchases.length);
+                    setAttendeeCount(uniqueAttendees);
+
+                    // Aggregation for Chart
+                    const aggregated: Record<string, { rawTotal: number; weeks: number[] }> = {};
+                    
+                    // Pre-populate last 4 months to keep UI rich (Dec, Jan, Feb, Mar)
+                    const monthIter = new Date();
+                    for(let i=0; i<4; i++) {
+                        const mLabel = monthIter.toLocaleString('default', { month: 'short' }) + " '" + monthIter.getFullYear().toString().slice(-2);
+                        aggregated[mLabel] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
+                        monthIter.setMonth(monthIter.getMonth() - 1);
+                    }
+                    
+                    validPurchases.forEach(p => {
+                        const date = new Date(p.created_at);
+                        const monthLabel = date.toLocaleString('default', { month: 'short' }) + " '" + date.getFullYear().toString().slice(-2);
+                        const day = date.getDate();
+                        const weekIdx = day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3;
+                        const amount = Number(p.total_amount) || Number(p.event_tickets?.price) || 0;
+
+                        if (!aggregated[monthLabel]) {
+                            aggregated[monthLabel] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
+                        }
+                        aggregated[monthLabel].rawTotal += amount;
+                        aggregated[monthLabel].weeks[weekIdx] += amount;
+                    });
+
+                    const finalMonthlyData: typeof monthlyData = {};
+                    Object.entries(aggregated).forEach(([month, data]) => {
+                        finalMonthlyData[month] = {
+                            total: formatCondensed(data.rawTotal),
+                            points: data.weeks.map((val, i) => ({
+                                cx: i * 133.33,
+                                cy: 0,
+                                label: `Wk ${i + 1}`,
+                                amount: formatCondensed(val),
+                                val: val / 1000
+                            }))
+                        };
+                    });
+
+                    setMonthlyData(finalMonthlyData);
+                    
+                    // Set active month to current month if exists, otherwise most recent
+                    const currentMonth = getCurrentMonthLabel();
+                    if (finalMonthlyData[currentMonth]) {
+                        setActiveMonth(currentMonth);
+                    } else {
+                        const sortedMonths = Object.keys(finalMonthlyData).sort((a, b) => {
+                            const dateA = new Date(a.replace(/'/, ' 20'));
+                            const dateB = new Date(b.replace(/'/, ' 20'));
+                            return dateB.getTime() - dateA.getTime();
+                        });
+                        if (sortedMonths.length > 0) setActiveMonth(sortedMonths[0]);
+                    }
+
+                } else {
+                    setTotalSales(0);
+                    setOrderCount(0);
+                    setAttendeeCount(0);
+                    setMonthlyData({});
+                }
+            }
         } catch (error) {
             console.error('Error fetching dashboard events:', error);
         } finally {
             setEventsLoading(false);
         }
+    };
+
+    const formatCondensed = (amount: number) => {
+        if (amount >= 1000000000) return `₦${(amount / 1000000000).toFixed(1).replace(/\.0$/, '')}b`;
+        if (amount >= 1000000) return `₦${(amount / 1000000).toFixed(1).replace(/\.0$/, '')}m`;
+        if (amount >= 1000) return `₦${(amount / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+        return `₦${amount.toLocaleString()}`;
     };
 
     useEffect(() => {
@@ -248,47 +350,15 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
 
 
-    const monthlyData: Record<string, { total: string; points: { cx: number; cy: number; label: string; amount: string }[] }> = {
-        "Mar '26": {
-            total: "₦425k",
-            points: [
-                { cx: 0, cy: 190, label: 'Wk 1', amount: '₦245k' },
-                { cx: 133.33, cy: 140, label: 'Wk 2', amount: '₦180k' },
-            ]
-        },
-        "Feb '26": {
-            total: "₦180k",
-            points: [
-                { cx: 0, cy: 195, label: 'Wk 1', amount: '₦50k' },
-                { cx: 133.33, cy: 160, label: 'Wk 2', amount: '₦90k' },
-                { cx: 266.66, cy: 110, label: 'Wk 3', amount: '₦15k' },
-                { cx: 400, cy: 75, label: 'Wk 4', amount: '₦25k' },
-            ]
-        },
-        "Jan '26": {
-            total: "₦120k",
-            points: [
-                { cx: 0, cy: 190, label: 'Wk 1', amount: '₦10k' },
-                { cx: 133.33, cy: 170, label: 'Wk 2', amount: '₦40k' },
-                { cx: 266.66, cy: 150, label: 'Wk 3', amount: '₦55k' },
-                { cx: 400, cy: 120, label: 'Wk 4', amount: '₦15k' },
-            ]
-        },
-        "Dec '25": {
-            total: "₦290k",
-            points: [
-                { cx: 0, cy: 170, label: 'Wk 1', amount: '₦15k' },
-                { cx: 133.33, cy: 110, label: 'Wk 2', amount: '₦140k' },
-                { cx: 266.66, cy: 60, label: 'Wk 3', amount: '₦100k' },
-                { cx: 400, cy: 15, label: 'Wk 4', amount: '₦35k' },
-            ]
-        }
-    };
+    const activeData = monthlyData[activeMonth] || { total: '₦0', points: [
+        { cx: 0, cy: 200, label: 'Wk 1', amount: '₦0', val: 0 },
+        { cx: 133.33, cy: 200, label: 'Wk 2', amount: '₦0', val: 0 },
+        { cx: 266.66, cy: 200, label: 'Wk 3', amount: '₦0', val: 0 },
+        { cx: 400, cy: 200, label: 'Wk 4', amount: '₦0', val: 0 },
+    ]};
 
-    const activeData = monthlyData[activeMonth] || monthlyData["Mar '26"];
-
-    const maxK = Math.max(...activeData.points.map(p => parseInt(p.amount.replace(/\D/g, '')) || 0));
-    const minK = Math.min(...activeData.points.map(p => parseInt(p.amount.replace(/\D/g, '')) || 0));
+    const maxK = Math.max(...activeData.points.map(p => p.val || 0));
+    const minK = Math.min(...activeData.points.map(p => p.val || 0));
 
     // Dynamic Floor and Ceiling
     const axisMin = minK;
@@ -298,8 +368,20 @@ function DashboardHome({ displayName }: { displayName: string }) {
     }
     const range = axisMax - axisMin;
 
-    const dynamicPoints = activeData.points.map(p => {
-        const val = parseInt(p.amount.replace(/\D/g, '')) || 0;
+    const now = new Date();
+    const currentMonthLabel = now.toLocaleString('default', { month: 'short' }) + " '" + now.getFullYear().toString().slice(-2);
+    const isCurrentMonth = activeMonth === currentMonthLabel;
+    const currentDay = now.getDate();
+    const currentWeekIndex = currentDay <= 7 ? 0 : currentDay <= 14 ? 1 : currentDay <= 21 ? 2 : 3;
+
+    let pointsToRender = activeData.points;
+    if (isCurrentMonth) {
+        // Only show up to the current week for the current month
+        pointsToRender = activeData.points.slice(0, currentWeekIndex + 1);
+    }
+
+    const dynamicPoints = pointsToRender.map(p => {
+        const val = p.val || 0;
         return {
             ...p,
             cy: 200 - ((val - axisMin) / range) * 200
@@ -633,7 +715,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                     {/* X-Axis Labels - Inside SVG */}
                                     {['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4'].map((label, index) => {
                                         const x = index * 133.33;
-                                        const isActive = index === activeData.points.length - 1;
+                                        const isActive = isCurrentMonth ? index === currentWeekIndex : index === activeData.points.length - 1;
+                                        
                                         return (
                                             <text
                                                 key={label}
@@ -909,7 +992,6 @@ export default function Dashboard() {
         { name: 'Orders', path: '/dashboard/orders', icon: null as any, customIcon: 'orders' },
         { name: 'Finance', path: '/dashboard/finance', icon: null as any, customIcon: 'finance' },
         { name: 'Help Center', path: '/help', icon: null as any, customIcon: 'help' },
-        { name: 'Settings', path: '/dashboard/settings', icon: null as any, customIcon: 'settings' },
     ];
 
     const displayName = profile?.username || profile?.name || profile?.email?.split('@')[0] || 'Organizer';

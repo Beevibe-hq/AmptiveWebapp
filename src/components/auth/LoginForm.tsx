@@ -44,6 +44,8 @@ const socialIconStyle: React.CSSProperties = {
   justifyContent: 'center'
 };
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 interface LoginFormProps {
   onSuccess?: () => void;
 }

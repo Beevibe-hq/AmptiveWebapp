@@ -8,6 +8,8 @@ import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { checkUsernameAvailability } from '@/lib/api/profiles';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function CompleteProfilePage() {
   const location = useLocation();
   const navigate = useNavigate();

@@ -43,12 +43,18 @@ const socialIconStyle: React.CSSProperties = {
   justifyContent: 'center'
 };
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 interface SignupFormProps {
   initialEmail?: string;
 }
 
 export default function SignupForm({ initialEmail }: SignupFormProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo =
+    new URLSearchParams(location.search).get('redirect') ||
+    (typeof window !== 'undefined' ? window.sessionStorage.getItem(AUTH_REDIRECT_KEY) : null);
   const [email, setEmail] = useState(initialEmail ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

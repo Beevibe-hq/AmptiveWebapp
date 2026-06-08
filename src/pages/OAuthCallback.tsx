@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { isProfileComplete, upsertProfile } from '@/lib/api/profiles';
 import { getCurrentUser, handleOAuthCallback as processOAuthCallback } from '@/lib/api/auth';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function OAuthCallback() {
   const navigate = useNavigate();
   const location = useLocation();

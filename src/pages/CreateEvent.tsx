@@ -821,7 +821,7 @@ const CreateEvent = () => {
         }}
       />
 
-      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 py-4 lg:py-6 pt-6 lg:pt-8">
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 py-4 lg:py-6 pt-24 lg:pt-32">
         <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-12 items-start">
 
           {/* Main Form Area */}
@@ -936,7 +936,7 @@ const CreateEvent = () => {
                         {form.tickets.map((ticket) => (
                           <div
                             key={ticket.id}
-                            className="group flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 hover:shadow-md transition-all duration-300"
+                            className="group flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 transition-all duration-300"
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
@@ -1436,7 +1436,7 @@ const CreateEvent = () => {
                     </div>
                   </div>
 
-                  {/* Color Theme Picker */}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       Ticket Theme
@@ -1569,13 +1569,20 @@ const CreateEvent = () => {
 
                             </div>
 
-                            <div className="relative z-10 mt-6 flex items-baseline justify-between gap-2">
-                              <span className={`text-3xl font-bold ${theme.text} truncate`}>
-                                {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
-                              </span>
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
-                                Per guest
-                              </span>
+                            <div className="relative z-10 mt-6">
+                              {((editingTicketId && form.tickets.find(t => t.id === editingTicketId)?.has_early_bird) || false) && (
+                                <div className="inline-flex items-center gap-1 mb-1 px-2 py-0.5 rounded-full bg-blue-100/80 text-blue-800 text-[9px] font-bold uppercase tracking-wider animate-in fade-in zoom-in-95 duration-200">
+                                  Early Bird
+                                </div>
+                              )}
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className={`text-3xl font-bold ${theme.text} truncate`}>
+                                  {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
+                                </span>
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
+                                  Per guest
+                                </span>
+                              </div>
                             </div>
                           </div>
 

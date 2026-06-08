@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import { handleOAuthCallback } from '@/lib/api/auth';
 import LoginForm from '@/components/auth/LoginForm';
 
+const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
