@@ -9,10 +9,11 @@ const fileToBase64 = (file: File): Promise<string> => {
     reader.onerror = error => reject(error);
   });
 };
-import { Plus, Loader2, X } from 'lucide-react';
+import {  Plus, X , Loader2 } from "lucide-react";
 import { toast, Toaster } from 'sonner';
 import { TypingPlaceholder } from '../components/TypingPlaceholder';
 import { useNavigate } from 'react-router-dom';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 interface FileAttachment {
   type: 'image' | 'file';

@@ -1,22 +1,49 @@
+import { motion, AnimatePresence } from "framer-motion";
 import React, { useEffect, useState } from 'react';
-import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye, X, XCircle, Clock, CheckCircle2, Ban, UserCheck, CircleSlash, Check } from 'lucide-react';
 import { getPurchasesByEvent } from '@/lib/api/purchases';
 import { getEventsByUser } from '@/lib/api/events';
 import { getCurrentUser } from '@/lib/api/auth';
 
+const BillIcon = ({ className, fill }: { className?: string, fill?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
+        <path d="M244.24,60a8,8,0,0,0-7.75-.4c-42.93,21-73.59,11.16-106,.78C96.4,49.53,61.2,38.28,12.49,62.06A8,8,0,0,0,8,69.24V189.17a8,8,0,0,0,11.51,7.19c42.93-21,73.59-11.16,106.05-.78,19.24,6.15,38.84,12.42,61,12.42,17.09,0,35.73-3.72,56.91-14.06a8,8,0,0,0,4.49-7.18V66.83A8,8,0,0,0,244.24,60ZM48,152a8,8,0,0,1-16,0V88a8,8,0,0,1,16,0Zm80,8a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm96,8a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"></path>
+    </svg>
+);
+
+const CancelledIcon = ({ className, fill }: { className?: string, fill?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
+        <path d="M216,40H40A16,16,0,0,0,24,56V208a8,8,0,0,0,11.58,7.15L64,200.94l28.42,14.21a8,8,0,0,0,7.16,0L128,200.94l28.42,14.21a8,8,0,0,0,7.16,0L192,200.94l28.42,14.21A8,8,0,0,0,232,208V56A16,16,0,0,0,216,40Zm-58.34,98.34a8,8,0,0,1-11.32,11.32L128,131.31l-18.34,18.35a8,8,0,0,1-11.32-11.32L116.69,120,98.34,101.66a8,8,0,0,1,11.32-11.32L128,108.69l18.34-18.35a8,8,0,0,1,11.32,11.32L139.31,120Z"></path>
+    </svg>
+);
+
+const AttendedIcon = ({ className, fill }: { className?: string, fill?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
+        <path d="M232,128A104,104,0,0,0,54.46,54.46,104,104,0,0,0,128,232h.09A104,104,0,0,0,232,128ZM49.18,88.92l51.21,9.35L46.65,161.53A88.39,88.39,0,0,1,49.18,88.92Zm160.17,5.54a88.41,88.41,0,0,1-2.53,72.62l-51.21-9.35Zm-8.08-15.2L167.55,119,139.63,40.78a87.38,87.38,0,0,1,50.6,25A88.74,88.74,0,0,1,201.27,79.26ZM122.43,40.19l17.51,49L58.3,74.32a89.28,89.28,0,0,1,7.47-8.55A87.37,87.37,0,0,1,122.43,40.19ZM54.73,176.74,88.45,137l27.92,78.18a88,88,0,0,1-61.64-38.48Zm78.84,39.06-17.51-49L139.14,171h0l58.52,10.69a87.5,87.5,0,0,1-64.13,34.12Z"></path>
+    </svg>
+);
+
+const RefundedIcon = ({ className }: { className?: string, fill?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+        <path d="M3 3v5h5"></path>
+    </svg>
+);
+
 const DUMMY_ORDERS = [
-    { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', created_at: '2025-02-28T14:30:00Z', total_amount: 25000, status: 'completed', profiles: { display_name: 'Adaeze Okafor', email: 'adaeze@mail.com' } },
-    { id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901', created_at: '2025-02-27T10:15:00Z', total_amount: 15000, status: 'completed', profiles: { display_name: 'Chukwuma Eze', email: 'chukwuma@mail.com' } },
-    { id: 'c3d4e5f6-a7b8-9012-cdef-123456789012', created_at: '2025-02-26T18:45:00Z', total_amount: 50000, status: 'completed', profiles: { display_name: 'Fatima Bello', email: 'fatima.b@mail.com' } },
-    { id: 'd4e5f6a7-b8c9-0123-defa-234567890123', created_at: '2025-02-25T09:00:00Z', total_amount: 7500, status: 'completed', profiles: { display_name: 'Joseph Achilonu', email: 'joseph@mail.com' } },
-    { id: 'e5f6a7b8-c9d0-1234-efab-345678901234', created_at: '2025-02-24T16:20:00Z', total_amount: 32000, status: 'cancelled', profiles: { display_name: 'Grace Nwosu', email: 'grace.n@mail.com' } },
-    { id: 'f6a7b8c9-d0e1-2345-fabc-456789012345', created_at: '2025-02-23T12:00:00Z', total_amount: 18500, status: 'completed', profiles: { display_name: 'Emeka Obi', email: 'emeka.obi@mail.com' } },
-    { id: 'a7b8c9d0-e1f2-3456-abcd-567890123456', created_at: '2025-02-22T08:30:00Z', total_amount: 42000, status: 'processing', profiles: { display_name: 'Blessing Adekunle', email: 'blessing@mail.com' } },
-    { id: 'b8c9d0e1-f2a3-4567-bcde-678901234567', created_at: '2025-02-21T20:10:00Z', total_amount: 10000, status: 'completed', profiles: { display_name: 'Tunde Bakare', email: 'tunde.b@mail.com' } },
-    { id: 'c9d0e1f2-a3b4-5678-cdef-789012345678', created_at: '2025-02-20T15:45:00Z', total_amount: 65000, status: 'refunded', profiles: { display_name: 'Amina Yusuf', email: 'amina.y@mail.com' } },
-    { id: 'd0e1f2a3-b4c5-6789-defa-890123456789', created_at: '2025-02-19T11:30:00Z', total_amount: 22000, status: 'completed', profiles: { display_name: 'Oluwaseun Martins', email: 'seun@mail.com' } },
-    { id: 'e1f2a3b4-c5d6-7890-efab-901234567890', created_at: '2025-02-18T07:00:00Z', total_amount: 35000, status: 'completed', profiles: { display_name: 'Chidinma Agu', email: 'chidinma@mail.com' } },
-    { id: 'f2a3b4c5-d6e7-8901-fabc-012345678901', created_at: '2025-02-17T19:25:00Z', total_amount: 8000, status: 'completed', profiles: { display_name: 'Ibrahim Musa', email: 'ibrahim.m@mail.com' } },
+    { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', created_at: '2025-02-28T14:30:00Z', total_amount: 25000, status: 'completed', event_title: 'Lagos Tech Summit 2025', profiles: { display_name: 'Adaeze Okafor', email: 'adaeze@mail.com' }, tickets: [{ id: 't1', total_amount: 25000, ticket_status: 'valid', created_at: '2025-02-28T14:30:00Z', event_tickets: { label: 'General Admission', price: 25000, color_theme: 'silver' } }] },
+    { id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901', created_at: '2025-02-27T10:15:00Z', total_amount: 15000, status: 'completed', event_title: 'Afrobeats Night Live', profiles: { display_name: 'Chukwuma Eze', email: 'chukwuma@mail.com' }, tickets: [{ id: 't2', total_amount: 15000, ticket_status: 'valid', created_at: '2025-02-27T10:15:00Z', event_tickets: { label: 'Regular', price: 15000, color_theme: 'bronze' } }] },
+    { id: 'c3d4e5f6-a7b8-9012-cdef-123456789012', created_at: '2025-02-26T18:45:00Z', total_amount: 50000, status: 'completed', event_title: 'Creative Design Workshop', profiles: { display_name: 'Fatima Bello', email: 'fatima.b@mail.com' }, tickets: [{ id: 't3a', total_amount: 25000, ticket_status: 'valid', created_at: '2025-02-26T18:45:00Z', event_tickets: { label: 'VIP', price: 25000, color_theme: 'gold' } }, { id: 't3b', total_amount: 25000, ticket_status: 'valid', created_at: '2025-02-26T18:45:00Z', event_tickets: { label: 'VIP', price: 25000, color_theme: 'gold' } }] },
+    { id: 'd4e5f6a7-b8c9-0123-defa-234567890123', created_at: '2025-02-25T09:00:00Z', total_amount: 7500, status: 'completed', event_title: 'Morning Yoga & Wellness', profiles: { display_name: 'Joseph Achilonu', email: 'joseph@mail.com' }, tickets: [{ id: 't4', total_amount: 7500, ticket_status: 'valid', created_at: '2025-02-25T09:00:00Z', event_tickets: { label: 'Early Bird', price: 7500, color_theme: 'silver' } }] },
+    { id: 'e5f6a7b8-c9d0-1234-efab-345678901234', created_at: '2025-02-24T16:20:00Z', total_amount: 32000, status: 'cancelled', event_title: 'Startup Pitch Night', profiles: { display_name: 'Grace Nwosu', email: 'grace.n@mail.com' }, tickets: [{ id: 't5', total_amount: 32000, ticket_status: 'cancelled', created_at: '2025-02-24T16:20:00Z', event_tickets: { label: 'Platinum', price: 32000, color_theme: 'platinum' } }] },
+    { id: 'f6a7b8c9-d0e1-2345-fabc-456789012345', created_at: '2025-02-23T12:00:00Z', total_amount: 18500, status: 'completed', event_title: 'Food & Culture Festival', profiles: { display_name: 'Emeka Obi', email: 'emeka.obi@mail.com' }, tickets: [{ id: 't6', total_amount: 18500, ticket_status: 'valid', created_at: '2025-02-23T12:00:00Z', event_tickets: { label: 'Regular', price: 18500, color_theme: 'bronze' } }] },
+    { id: 'a7b8c9d0-e1f2-3456-abcd-567890123456', created_at: '2025-02-22T08:30:00Z', total_amount: 42000, status: 'processing', event_title: 'AI & Machine Learning Conf', profiles: { display_name: 'Blessing Adekunle', email: 'blessing@mail.com' }, tickets: [{ id: 't7a', total_amount: 21000, ticket_status: 'valid', created_at: '2025-02-22T08:30:00Z', event_tickets: { label: 'Gold Pass', price: 21000, color_theme: 'gold' } }, { id: 't7b', total_amount: 21000, ticket_status: 'valid', created_at: '2025-02-22T08:30:00Z', event_tickets: { label: 'Gold Pass', price: 21000, color_theme: 'gold' } }] },
+    { id: 'b8c9d0e1-f2a3-4567-bcde-678901234567', created_at: '2025-02-21T20:10:00Z', total_amount: 10000, status: 'completed', event_title: 'Stand-Up Comedy Night', profiles: { display_name: 'Tunde Bakare', email: 'tunde.b@mail.com' }, tickets: [{ id: 't8', total_amount: 10000, ticket_status: 'valid', created_at: '2025-02-21T20:10:00Z', event_tickets: { label: 'General Admission', price: 10000, color_theme: 'silver' } }] },
+    { id: 'c9d0e1f2-a3b4-5678-cdef-789012345678', created_at: '2025-02-20T15:45:00Z', total_amount: 65000, status: 'refunded', event_title: 'Exclusive Gala Dinner', profiles: { display_name: 'Amina Yusuf', email: 'amina.y@mail.com' }, tickets: [{ id: 't9', total_amount: 65000, ticket_status: 'refunded', created_at: '2025-02-20T15:45:00Z', event_tickets: { label: 'Obsidian VIP', price: 65000, color_theme: 'obsidian' } }] },
+    { id: 'd0e1f2a3-b4c5-6789-defa-890123456789', created_at: '2025-02-19T11:30:00Z', total_amount: 22000, status: 'completed', event_title: 'Photography Masterclass', profiles: { display_name: 'Oluwaseun Martins', email: 'seun@mail.com' }, tickets: [{ id: 't10', total_amount: 22000, ticket_status: 'valid', created_at: '2025-02-19T11:30:00Z', event_tickets: { label: 'Workshop Pass', price: 22000, color_theme: 'silver' } }] },
+    { id: 'e1f2a3b4-c5d6-7890-efab-901234567890', created_at: '2025-02-18T07:00:00Z', total_amount: 35000, status: 'completed', event_title: 'Business Networking Brunch', profiles: { display_name: 'Chidinma Agu', email: 'chidinma@mail.com' }, tickets: [{ id: 't11', total_amount: 35000, ticket_status: 'valid', created_at: '2025-02-18T07:00:00Z', event_tickets: { label: 'Premium', price: 35000, color_theme: 'gold' } }] },
+    { id: 'f2a3b4c5-d6e7-8901-fabc-012345678901', created_at: '2025-02-17T19:25:00Z', total_amount: 8000, status: 'completed', event_title: 'Open Mic Poetry Night', profiles: { display_name: 'Ibrahim Musa', email: 'ibrahim.m@mail.com' }, tickets: [{ id: 't12', total_amount: 8000, ticket_status: 'valid', created_at: '2025-02-17T19:25:00Z', event_tickets: { label: 'General Admission', price: 8000, color_theme: 'silver' } }] },
 ];
 
 export default function DashboardOrders() {
@@ -26,13 +53,54 @@ export default function DashboardOrders() {
     const [upcomingCount, setUpcomingCount] = useState(0);
     const [searchParams, setSearchParams] = useSearchParams();
     const activeFilter = searchParams.get('filter') || 'All';
-
     const setActiveFilter = (newFilter: string) => {
         setSearchParams({ filter: newFilter });
         setCurrentPage(1);
     };
 
     const ordersPerPage = 10;
+
+    const handleAcceptChanges = async () => {
+        if (!selectedOrder || !selectedAction || isUpdating) return;
+        setIsUpdating(true);
+        try {
+            const statusMap: Record<string, string> = {
+                'Paid': 'valid',
+                'Attended': 'used',
+                'Cancelled': 'cancelled',
+                'Refunded': 'refunded'
+            };
+            const dbStatus = statusMap[selectedAction] || selectedAction.toLowerCase();
+            const updatedOrders = orders.map(order => {
+                if (order.id === selectedOrder.id) {
+                    return {
+                        ...order,
+                        status: selectedAction,
+                        ticket_status: dbStatus,
+                        tickets: (order.tickets || []).map((t: any) => ({ ...t, ticket_status: dbStatus }))
+                    };
+                }
+                return order;
+            });
+            setOrders(updatedOrders);
+            setIsModalOpen(false);
+            setSelectedOrder(null);
+            setSelectedAction(null);
+            setIsActionDropdownOpen(false);
+        } catch (error) {
+            console.error('Error updating status:', error);
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const ACTIONS = [
+        { label: 'Paid', icon: BillIcon, color: 'text-emerald-500' },
+        { label: 'Cancelled', icon: CancelledIcon, color: 'text-red-500' },
+        { label: 'Attended', icon: AttendedIcon, color: 'text-blue-500' },
+        { label: 'Refunded', icon: RefundedIcon, color: 'text-amber-500' }
+    ];
+
     const [selectedOrder, setSelectedOrder] = useState<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isActionDropdownOpen, setIsActionDropdownOpen] = useState(false);
@@ -251,6 +319,8 @@ export default function DashboardOrders() {
                     <input
                         type="text"
                         placeholder="Search orders..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-11 pr-4 py-3 border border-black/10 focus:outline-none focus:border-black transition-colors"
                     />
                 </div>
@@ -343,9 +413,9 @@ export default function DashboardOrders() {
                                                 <p className="text-xs text-black/40 font-medium">
                                                     {order.profiles?.display_name || order.buyer_name || 'Guest'}
                                                 </p>
-                                                {order.tickets.length > 1 && (
+                                                {(order.tickets?.length || 0) > 1 && (
                                                     <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-tight">
-                                                        {order.tickets.length} Tickets
+                                                        {(order.tickets?.length || 0)} Tickets
                                                     </span>
                                                 )}
                                             </div>
@@ -450,9 +520,9 @@ export default function DashboardOrders() {
                                                     <p className="text-sm font-medium text-black">
                                                         {order.profiles?.display_name || order.buyer_name || 'Guest'}
                                                     </p>
-                                                    {order.tickets.length > 1 && (
+                                                    {(order.tickets?.length || 0) > 1 && (
                                                         <span className="text-[11px] text-blue-600 font-bold uppercase tracking-tight">
-                                                            {order.tickets.length} Tickets
+                                                            {(order.tickets?.length || 0)} Tickets
                                                         </span>
                                                     )}
                                                 </div>
@@ -538,6 +608,540 @@ export default function DashboardOrders() {
                 </div>
                 <div className="hidden md:block">Amptive Order Feed</div>
             </div>
+            {/* Order Details Modal (Side Drawer) */}
+            <AnimatePresence mode="wait">
+                {isModalOpen && selectedOrder && (
+                    <div className="fixed inset-0 z-[110] flex justify-end overflow-hidden">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                                onClick={() => setIsModalOpen(false)}
+                            />
+                            <motion.div
+                                initial={{ x: '100%' }}
+                                animate={{ 
+                                    x: isTicketDetailsOpen ? (window.innerWidth < 768 ? '-15%' : -320) : 0,
+                                    scale: isTicketDetailsOpen ? 0.95 : 1,
+                                    filter: isTicketDetailsOpen ? 'brightness(0.8) blur(0.5px)' : 'brightness(1) blur(0px)'
+                                }}
+                                exit={{ x: '100%' }}
+                                transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+                                className="relative h-full w-full md:w-[420px] md:h-[95vh] bg-white flex flex-col overflow-y-auto no-scrollbar md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-10px_0_25px_rgba(0,0,0,0.15)] z-[11]"
+                            >
+                                {/* Modal Header */}
+                                <div className="px-6 py-4 border-b border-black/5 flex items-center justify-between bg-white sticky top-0 z-10">
+                                    <div>
+                                        <p className="text-sm font-normal text-black tracking-tighter">
+                                            Order ID <span className="font-semibold">#{selectedOrder.id?.slice(0, 12)?.toUpperCase()}</span>
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsModalOpen(false)}
+                                        className="p-1 hover:bg-black/5 rounded-full transition-colors group"
+                                    >
+                                        <X className="w-5 h-5 text-black/40 group-hover:text-black transition-colors" />
+                                    </button>
+                                </div>
+
+                                {/* Modal Content */}
+                                <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-4 pb-8">
+                                    <div className="space-y-12">
+                                        {/* Change Action Dropdown */}
+                                        <section>
+                                            <h3 className="text-[13px] font-semibold text-black tracking-tight mb-3">Change Action</h3>
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() => setIsActionDropdownOpen(!isActionDropdownOpen)}
+                                                    className="w-full px-4 py-3 text-sm bg-gray-50/50 border border-black/5 rounded-xl flex items-center justify-between hover:bg-gray-100/50 transition-all duration-200"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {selectedAction ? (
+                                                            <>
+                                                                {(() => {
+                                                                    const action = ACTIONS.find(a => a.label === selectedAction);
+                                                                    return action ? <action.icon className={`w-4 h-4 ${action.color}`} fill="currentColor" /> : null;
+                                                                })()}
+                                                                <span className="text-black font-medium text-[13px]">{selectedAction}</span>
+                                                            </>
+                                                        ) : (
+                                                            <span className="text-black/60">Select an action</span>
+                                                        )}
+                                                    </div>
+                                                    <ChevronDown className={`w-4 h-4 text-black/40 transition-transform duration-300 ${isActionDropdownOpen ? 'rotate-180' : ''}`} />
+                                                </button>
+
+                                                <AnimatePresence>
+                                                    {isActionDropdownOpen && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, height: 0, y: -4 }}
+                                                            animate={{ opacity: 1, height: 'auto', y: 4 }}
+                                                            exit={{ opacity: 0, height: 0, y: -4 }}
+                                                            transition={{ duration: 0.25, ease: "easeInOut" }}
+                                                            className="absolute top-full left-0 right-0 z-50 bg-white border border-black/5 rounded-xl shadow-xl overflow-hidden p-1.5"
+                                                        >
+                                                            {ACTIONS.map((action) => (
+                                                                    <button
+                                                                        key={action.label}
+                                                                        onClick={() => {
+                                                                            setSelectedAction(action.label);
+                                                                            setIsActionDropdownOpen(false);
+                                                                        }}
+                                                                        className={`w-full text-left px-4 py-3 text-[13px] font-medium rounded-lg transition-colors flex items-center justify-between group/item ${selectedAction === action.label ? 'bg-black/5 text-black' : 'text-black/70 hover:bg-black/5 hover:text-black'}`}
+                                                                    >
+                                                                        <div className="flex items-center gap-3">
+                                                                            <action.icon className={`w-4 h-4 ${action.color}`} fill="currentColor" />
+                                                                            {action.label}
+                                                                        </div>
+                                                                        {selectedAction === action.label && (
+                                                                            <Check className="w-4 h-4 text-blue-600" />
+                                                                        )}
+                                                                    </button>
+                                                            ))}
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+                                        </section>
+
+                                        {/* Order Metadata */}
+                                        <div className="flex flex-col gap-6 !mt-8">
+                                            <div>
+                                                <p className="text-[10px] font-bold text-black/30 uppercase mb-1">Event</p>
+                                                <p className="text-sm font-semibold text-black leading-tight">{selectedOrder.event_title}</p>
+                                            </div>
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-black/30 uppercase mb-1">Customer</p>
+                                                    <p className="text-sm font-semibold text-black">{selectedOrder.profiles?.display_name || selectedOrder.buyer_email}</p>
+                                                    {selectedOrder.profiles?.username && (
+                                                        <p className="text-[12px] text-black mt-0.5">@{selectedOrder.profiles.username}</p>
+                                                    )}
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[10px] font-bold text-black/30 uppercase mb-1">Date</p>
+                                                    <p className="text-[12px] font-medium text-black">{new Date(selectedOrder.created_at).toLocaleDateString('en-GB')}</p>
+                                                    <div className="mt-1 flex justify-end">
+                                                        {getStatusPill(selectedAction || selectedOrder.status)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <section className="!mt-6">
+                                            <div className="overflow-hidden border border-black/5 rounded-xl">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr className="border-b border-black/5 bg-gray-50/50">
+                                                            <th className="px-4 py-4 text-[10px] font-bold text-black/30 uppercase tracking-wider">Ticket</th>
+                                                            <th className="px-4 py-4 text-[10px] font-bold text-black/30 uppercase tracking-wider text-right">Amount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-black/5">
+                                                        {(() => {
+                                                            const getTicketColor = (theme?: string) => {
+                                                                switch (theme?.toLowerCase()) {
+                                                                    case 'bronze': return 'text-orange-600';
+                                                                    case 'silver': return 'text-slate-400';
+                                                                    case 'gold': return 'text-amber-500';
+                                                                    case 'platinum': return 'text-indigo-400';
+                                                                    case 'obsidian': return 'text-black';
+                                                                    default: return 'text-black/70';
+                                                                }
+                                                            };
+
+                                                            return (selectedOrder.tickets || []).map((ticket: any) => {
+                                                                const label = ticket.event_tickets?.label || 'General Admission';
+                                                                const theme = ticket.event_tickets?.color_theme || 'silver';
+                                                                const price = Number(ticket.total_amount) || Number(ticket.event_tickets?.price) || 0;
+                                                                
+                                                                // Map DB status to Scanned/Unscanned for individual tickets
+                                                                const dbStatus = ticket.ticket_status?.toLowerCase();
+                                                                let individualStatus = 'Unscanned';
+                                                                if (dbStatus === 'used') individualStatus = 'Scanned';
+                                                                else if (dbStatus === 'cancelled') individualStatus = 'Cancelled';
+                                                                else if (dbStatus === 'refunded') individualStatus = 'Refunded';
+
+                                                                const renderStatusIndicator = () => {
+                                                                    if (individualStatus === 'Scanned') {
+                                                                        return (
+                                                                            <div title="Scanned" className="text-blue-500">
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256">
+                                                                                    <path d="M221.35,104.11a8,8,0,0,0-6.57,9.21A88.85,88.85,0,0,1,216,128a87.62,87.62,0,0,1-22.24,58.41,79.66,79.66,0,0,0-36.06-28.75,48,48,0,1,0-59.4,0,79.66,79.66,0,0,0-36.06,28.75A88,88,0,0,1,128,40a88.76,88.76,0,0,1,14.68,1.22,8,8,0,0,0,2.64-15.78,103.92,103.92,0,1,0,85.24,85.24A8,8,0,0,0,221.35,104.11ZM96,120a32,32,0,1,1,32,32A32,32,0,0,1,96,120ZM74.08,197.5a64,64,0,0,1,107.84,0,87.83,87.83,0,0,1-107.84,0ZM237.66,45.66l-32,32a8,8,0,0,1-11.32,0l-16-16a8,8,0,0,1,11.32-11.32L200,60.69l26.34-26.35a8,8,0,0,1,11.32,11.32Z" />
+                                                                                </svg>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    if (individualStatus === 'Unscanned') {
+                                                                        return (
+                                                                            <div title="Unscanned" className="text-black/20">
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256">
+                                                                                    <path d="M96.26,37A8,8,0,0,1,102,27.29a104.11,104.11,0,0,1,52,0,8,8,0,0,1-2,15.75,8.15,8.15,0,0,1-2-.26,88,88,0,0,0-44,0A8,8,0,0,1,96.26,37ZM33.35,110a8,8,0,0,0,9.85-5.57,87.88,87.88,0,0,1,22-38.09A8,8,0,0,0,53.8,55.14a103.92,103.92,0,0,0-26,45A8,8,0,0,0,33.35,110ZM150,213.22a88,88,0,0,1-44,0,8,8,0,0,0-4,15.49,104.11,104.11,0,0,0,52,0,8,8,0,0,0-4-15.49Zm62.8-108.77a8,8,0,0,0,15.42-4.28,104,104,0,0,0-26-45,8,8,0,1,0-11.41,11.21A88.14,88.14,0,0,1,212.79,104.45Zm15.44,51.39a103.68,103.68,0,0,1-30.68,49.47A8,8,0,0,1,185.07,203a64,64,0,0,0-114.14,0,8,8,0,0,1-12.48,2.32,103.74,103.74,0,0,1-30.68-49.49,8,8,0,0,1,15.42-4.27,87.58,87.58,0,0,0,19,34.88,79.57,79.57,0,0,1,36.1-28.77,48,48,0,1,1,59.38,0,79.57,79.57,0,0,1,36.1,28.77,87.58,87.58,0,0,0,19-34.88,8,8,0,1,1,15.42,4.28ZM128,152a32,32,0,1,0-32-32A32,32,0,0,0,128,152Z" />
+                                                                                </svg>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    return getStatusPill(individualStatus);
+                                                                };
+
+                                                                return (
+                                                                    <tr key={ticket.id} className="hover:bg-gray-50/50 transition-colors group">
+                                                                        <td className="px-4 py-5">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`lucide lucide-ticket w-3.5 h-3.5 ${getTicketColor(theme)} shrink-0 mt-0.5`}>
+                                                                                    <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+                                                                                    <path d="M13 5v2" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                                                                                    <path d="M13 17v2" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                                                                                    <path d="M13 11v2" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                                                                                </svg>
+                                                                                <div className="flex flex-col gap-0.5">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <p className="text-[14px] font-semibold text-black">{label}</p>
+                                                                                        {renderStatusIndicator()}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-4 py-5 text-right">
+                                                                            <p className="text-[13px] font-medium text-black">{formatCurrency(price)}</p>
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            });
+                                                        })()}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <div className="-mt-4 flex justify-center relative z-10">
+                                                <button 
+                                                    onClick={() => setIsTicketDetailsOpen(true)}
+                                                    className="px-4 py-2 rounded-full border border-black/5 bg-white text-[11px] font-bold text-blue-600 hover:bg-black/5 hover:text-black transition-all active:scale-[0.98] shadow-sm"
+                                                >
+                                                    View Details
+                                                </button>
+                                            </div>
+
+                                            {/* Financial Summary */}
+                                            <div className="flex flex-col gap-4 !mt-10 px-1">
+                                                <div className="flex justify-between items-center">
+                                                    <p className="text-[10px] font-bold text-black/30 uppercase tracking-wider">Subtotal</p>
+                                                    <p className="text-[13px] font-semibold text-black">{formatCurrency(selectedOrder.total_amount)}</p>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <p className="text-[10px] font-bold text-black/30 uppercase tracking-wider">Tax</p>
+                                                    <p className="text-[13px] font-semibold text-black">{formatCurrency(0)}</p>
+                                                </div>
+                                                <div className="flex justify-between items-center pt-4 border-t border-black/5">
+                                                    <p className="text-[11px] font-bold text-black uppercase tracking-wider">Total</p>
+                                                    <p className="text-xl font-black text-black tracking-tight">{formatCurrency(selectedOrder.total_amount)}</p>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    </div>
+                                </div>
+
+                                {/* Modal Footer */}
+                                <div className="p-8 bg-gray-50/50 border-t border-black/5 sticky bottom-0">
+                                    <div className="flex items-center gap-3">
+                                        {(() => {
+                                            const hasChanges = selectedAction && 
+                                                selectedAction !== selectedOrder.status;
+                                                
+                                            return (
+                                                <button 
+                                                    disabled={!hasChanges || isUpdating}
+                                                    onClick={handleAcceptChanges}
+                                                    className={`flex-1 px-6 py-4 text-sm font-bold text-white bg-black rounded-2xl transition-all duration-300 flex items-center justify-center gap-2 shadow-2xl active:scale-[0.98] disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed ${hasChanges && !isUpdating ? 'hover:bg-black/90 shadow-black/20' : 'shadow-transparent'}`}
+                                                >
+                                                    {isUpdating ? (
+                                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                                    ) : (
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    )}
+                                                    {isUpdating ? 'Updating...' : 'Accept Changes'}
+                                                </button>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+                            </motion.div>
+
+                            {/* Nested Ticket Details Modal */}
+                            <AnimatePresence>
+                                {isTicketDetailsOpen && (
+                                    <motion.div
+                                        initial={{ x: '100%' }}
+                                        animate={{ x: 0 }}
+                                        exit={{ x: '100%' }}
+                                        transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+                                        className="absolute inset-y-0 right-0 h-full w-full md:w-[400px] md:h-[92vh] bg-white md:rounded-2xl md:mt-[4vh] md:mr-6 flex flex-col shadow-2xl z-20 border-l border-black/5 overflow-hidden"
+                                    >
+                                        <div className="px-6 py-4 border-b border-black/5 flex items-center justify-between bg-white sticky top-0 z-10">
+                                            <div>
+                                                <p className="text-sm font-normal text-black tracking-tighter">
+                                                    Ticket Detail <span className="font-semibold">#{selectedOrder.id?.slice(0, 12)?.toUpperCase()}</span>
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setIsTicketDetailsOpen(false)}
+                                                className="p-1 hover:bg-black/5 rounded-full transition-colors group"
+                                            >
+                                                <X className="w-5 h-5 text-black/40 group-hover:text-black transition-colors" />
+                                            </button>
+                                        </div>
+
+                                        <div className="flex-1 overflow-y-auto no-scrollbar p-6">
+                                            <div className="space-y-8">
+                                                {(selectedOrder.tickets || []).map((ticket: any, index: number) => (
+                                                    <div key={ticket.id} className="relative">
+                                                        <div className="flex items-center justify-between mb-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-6 h-6 rounded-full bg-black/5 flex items-center justify-center text-[10px] font-bold text-black/40">
+                                                                    {index + 1}
+                                                                </div>
+                                                                <p className="text-[13px] font-bold text-black uppercase tracking-tight">
+                                                                    {ticket.event_tickets?.label || 'General Admission'}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {ticket.ticket_status?.toLowerCase() === 'used' ? (
+                                                                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-100/60">
+                                                                        <Scan className="w-3 h-3 text-blue-500" />
+                                                                        <span className="text-[9px] font-bold text-blue-600 uppercase">Scanned</span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-100/60">
+                                                                        <Clock className="w-3 h-3 text-slate-400" />
+                                                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Awaiting Scan</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-gray-50/50 p-4 rounded-xl border border-black/5 space-y-4">
+                                                            <div className="grid grid-cols-2 gap-4">
+                                                                <div>
+                                                                    <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Full Name</p>
+                                                                    <p className="text-[13px] font-semibold text-black leading-tight">
+                                                                        {selectedOrder.profiles?.display_name || 'Variance'}
+                                                                    </p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Email Address</p>
+                                                                    <p className="text-[11px] font-medium text-black truncate">
+                                                                        {selectedOrder.profiles?.email || selectedOrder.buyer_email || 'askvariance@gmail.com'}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-black/5">
+                                                                <div>
+                                                                    <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Phone Number</p>
+                                                                    <p className="text-[11px] font-medium text-black">
+                                                                        {selectedOrder.profiles?.phone_number || 'Not provided'}
+                                                                    </p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Price</p>
+                                                                    <p className="text-[11px] font-bold text-black">{formatCurrency(ticket.total_amount || ticket.event_tickets?.price || 0)}</p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="pt-3 border-t border-black/5">
+                                                                <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Ticket ID</p>
+                                                                <p className="text-[11px] font-mono text-black break-all leading-relaxed">{ticket.id.toUpperCase()}</p>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-black/5">
+                                                                <div>
+                                                                    <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Purchase Date</p>
+                                                                    <p className="text-[11px] font-medium text-black">{new Date(ticket.created_at).toLocaleDateString('en-GB')}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Time</p>
+                                                                    <p className="text-[11px] font-medium text-black">{new Date(ticket.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {index < (selectedOrder.tickets?.length || 0) - 1 && (
+                                                            <div className="absolute -bottom-4 left-3 w-[1px] h-4 bg-black/5" />
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="p-6 bg-gray-50/50 border-t border-black/5 mt-auto">
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <p className="text-black/40 font-medium">Order Total Items: <span className="text-black">{(selectedOrder.tickets?.length || 0)}</span></p>
+                                                <p className="text-black/40 font-medium">Ref No: <span className="text-black">{selectedOrder.id.slice(0, 8).toUpperCase()}</span></p>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    )}
+                </AnimatePresence>
+                {/* Search Side Drawer */}
+            <AnimatePresence mode="wait">
+                {isSearchOpen && (
+                    <div className="fixed inset-0 z-[100] flex justify-end overflow-hidden">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            onClick={() => {
+                                setIsSearchOpen(false);
+                                setSearchTerm('');
+                            }}
+                        />
+                        <motion.div
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+                            className="relative h-full w-full md:w-[420px] md:h-[95vh] bg-white flex flex-col overflow-y-auto no-scrollbar md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-10px_0_25px_rgba(0,0,0,0.15)] z-10"
+                        >
+                            {/* Drawer Header */}
+                            <div className="px-6 py-4 border-b border-black/5 flex items-center justify-between bg-white sticky top-0 z-10">
+                                <div>
+                                    <p className="text-sm font-semibold text-black tracking-tighter">
+                                        Search Orders
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setIsSearchOpen(false);
+                                        setSearchTerm('');
+                                    }}
+                                    className="p-1 hover:bg-black/5 rounded-full transition-colors group"
+                                >
+                                    <X className="w-5 h-5 text-black/40 group-hover:text-black transition-colors" />
+                                </button>
+                            </div>
+
+                            {/* Search Input Section */}
+                            <div className="p-6 bg-white">
+                                <div className="relative flex items-center">
+                                    <div className="absolute left-4 z-10">
+                                        <Search className="w-5 h-5 text-black/40" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        placeholder="Search by ID, Name, or Email..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full px-4 py-2 pl-10 h-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent transition-all duration-200 shadow-sm"
+                                        style={{ minWidth: '200px', boxSizing: 'border-box' }}
+                                    />
+                                    {searchTerm && (
+                                        <button
+                                            onClick={() => setSearchTerm('')}
+                                            className="absolute right-4 p-1 hover:bg-black/5 rounded-full transition-colors"
+                                        >
+                                            <XCircle className="w-4 h-4 text-black/30 hover:text-black/60 transition-colors" />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Search Results */}
+                            <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-4 pb-8">
+                                <div className="space-y-3">
+                                    {isSearchingOrders ? (
+                                        <div className="space-y-4 pt-4">
+                                            {[1, 2, 3, 4].map((i) => (
+                                                <div key={i} className="p-4 bg-white border border-black/5 rounded-xl animate-pulse">
+                                                    <div className="flex items-start justify-between mb-3">
+                                                        <div className="space-y-2 flex-1">
+                                                            <div className="h-4 w-1/2 bg-black/5 rounded" />
+                                                            <div className="h-3 w-1/3 bg-black/5 rounded" />
+                                                        </div>
+                                                        <div className="w-16 h-6 bg-black/5 rounded" />
+                                                    </div>
+                                                    <div className="flex items-center justify-between pt-3 border-t border-black/5">
+                                                        <div className="h-3 w-1/4 bg-black/5 rounded" />
+                                                        <div className="h-4 w-1/6 bg-black/5 rounded" />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : !searchTerm ? (
+                                        <div className="flex flex-col items-center justify-center text-center pt-24 pb-12 opacity-80">
+                                            <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mb-4 text-3xl">
+                                                🔍
+                                            </div>
+                                            <h3 className="text-sm font-semibold text-black">Find an Order</h3>
+                                            <p className="text-[13px] text-black/50 mt-1">Start typing to search your orders</p>
+                                        </div>
+                                    ) : searchResultOrders.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center text-center pt-24 pb-12">
+                                            <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mb-4">
+                                                <CircleSlash className="w-8 h-8 text-red-400" />
+                                            </div>
+                                            <h3 className="text-sm font-semibold text-black">No results found</h3>
+                                            <p className="text-[13px] text-black/50 mt-1 px-4">We couldn't find any orders matching "{searchTerm}"</p>
+                                        </div>
+                                    ) : (
+                                        searchResultOrders.map((order) => {
+                                            const status = order.status?.toLowerCase() || '';
+                                            let statusColor = "bg-gray-50 text-gray-600 border-gray-200";
+                                            let StatusIcon = Clock;
+
+                                            if (status === 'paid' || status === 'completed' || status === 'valid') {
+                                                statusColor = "bg-green-50 text-green-700 border-green-200";
+                                                StatusIcon = CheckCircle2;
+                                            } else if (status === 'cancelled' || status === 'refunded') {
+                                                statusColor = "bg-red-50 text-red-700 border-red-200";
+                                                StatusIcon = Ban;
+                                            } else if (status === 'attended' || status === 'used') {
+                                                statusColor = "bg-blue-50 text-blue-700 border-blue-200";
+                                                StatusIcon = UserCheck;
+                                            }
+
+                                            return (
+                                                <div 
+                                                    key={order.id}
+                                                    onClick={() => {
+                                                        setSelectedOrder(order);
+                                                        setSelectedAction(order.status);
+                                                        setIsSearchOpen(false);
+                                                        setIsModalOpen(true);
+                                                    }}
+                                                    className="group p-4 bg-white border border-black/5 hover:border-black/15 shadow-sm rounded-xl cursor-pointer transition-all active:scale-[0.99] flex flex-col gap-3"
+                                                >
+                                                    <div className="flex items-start justify-between">
+                                                        <div>
+                                                            <p className="text-[13px] font-bold text-black mb-1">{order.profiles?.display_name || 'Guest User'}</p>
+                                                            <p className="text-[12px] font-medium text-black/50 font-mono tracking-tight">{order.id?.slice(0, 8)?.toUpperCase()}...{order.id?.slice(-4)?.toUpperCase()}</p>
+                                                        </div>
+                                                        <div className={`px-2 py-1 rounded-md border flex items-center gap-1.5 ${statusColor}`}>
+                                                            <StatusIcon className="w-3 h-3" />
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider">{order.status}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-between pt-3 border-t border-black/5">
+                                                        <p className="text-[12px] font-medium text-black/60">{new Date(order.created_at).toLocaleDateString('en-GB')}</p>
+                                                        <p className="text-[14px] font-bold tracking-tight text-black">{formatCurrency(order.total_amount)}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
         </div>
     );
 }
+

@@ -6,6 +6,7 @@ import Logo from './Logo';
 import TextLogo from './TextLogo';
 import MobileMenu from './MobileMenu';
 import UserAvatar from './UserAvatar';
+import SearchOverlay from './SearchOverlay';
 import { useAuth } from '@/contexts/AuthContext';
 import { isProfileComplete } from '@/lib/api/profiles';
 
@@ -31,12 +32,13 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(false);
   const navigate = useNavigate();
   const [profile, setProfile] = useState<any>(null);
   const location = useLocation();
   const checkedProfileRef = useRef(false);
-  const { user: authUser, loading, refreshUser } = useAuth();
+  const { user: authUser, loading, refreshUser, logout } = useAuth();
   const [sessionUser, setSessionUser] = useState<any>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
@@ -58,6 +60,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
     };
     void handleIncompleteProfile();
   }, [authUser, loading, refreshUser]);
+
   const isProfilePage = location.pathname === '/profile' || location.pathname === '/profile/';
   const isBlogPage = location.pathname === '/blog' || location.pathname === '/blog/';
 
@@ -67,6 +70,32 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Toggle overlay on Cmd+K or Ctrl+K
+      if (
+        (e.metaKey && e.key.toLowerCase() === 'k') ||
+        (e.ctrlKey && e.key.toLowerCase() === 'k')
+      ) {
+        e.preventDefault();
+        setIsSearchOverlayOpen((prev) => !prev);
+      }
+
+      // '/' key (when not typing in inputs/textareas)
+      if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
+        e.preventDefault();
+        setIsSearchOverlayOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
   useEffect(() => {
@@ -80,7 +109,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   // Removed auto-redirect on route change; incomplete sessions are signed out silently instead.
 
   // Navigation links for authenticated users
-  const shouldShowAcceptTips = String(profile?.support_enabled).toLowerCase() !== 'true';
+  const shouldShowAcceptTips = String(authUser?.support_enabled).toLowerCase() !== 'true';
 
   const authLinks: NavLink[] = [
     ...(shouldShowAcceptTips ? [{ name: 'Accept Tip$', path: '/profile/support-setup' } as MenuItem] : []),
@@ -124,9 +153,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   };
 
   const handleSignOut = async () => {
-    await signOutSilent();
-    setUser(null);
-    setProfile(null);
+    await logout();
     setActiveDropdown(null);
     navigate('/');
   };
@@ -183,8 +210,8 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
               {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
                 <div className="sm:hidden">
                   <button
-                    className="p-1.5 text-black hover:text-gray-800"
-                    onClick={() => { }}
+                    className="p-1.5 text-black hover:text-gray-800 animate-pulse-subtle"
+                    onClick={() => setIsSearchOverlayOpen(true)}
                     aria-label="Search"
                   >
                     <Search className="h-5 w-5" strokeWidth={2.5} />
@@ -193,42 +220,18 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
               )}
             </motion.div>
 
-            {/* Search Box - shown on medium screens and up with expand-on-focus animation */}
+            {/* Search Box Trigger - shown on medium screens and up */}
             {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
-              <motion.div
+              <motion.button
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.2 }}
-                className="relative hidden sm:flex items-center flex-shrink min-w-0"
-                style={{ flex: '0 1 auto' }}
+                onClick={() => setIsSearchOverlayOpen(true)}
+                className="relative hidden sm:flex items-center text-left bg-gray-100/80 hover:bg-gray-200/50 border border-transparent hover:border-gray-200/80 rounded-full px-3.5 py-2 text-sm text-gray-500 w-[180px] transition-all duration-200 cursor-pointer select-none"
               >
-                <div className="relative">
-                  <motion.div
-                    className="relative"
-                    initial={false}
-                    animate={{
-                      width: isSearchFocused ? '280px' : '200px',
-                    }}
-                    transition={{ duration: 0.3, ease: 'easeInOut' }}
-                  >
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onFocus={() => setIsSearchFocused(true)}
-                      onBlur={() => setIsSearchFocused(false)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSearch(e)}
-                      className={`w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent transition-all duration-200`}
-                      placeholder="Search for events, shows, and creators..."
-                      style={{
-                        minWidth: '200px',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  </motion.div>
-                </div>
-              </motion.div>
+                <Search className="w-4 h-4 text-gray-400 mr-2.5 shrink-0" />
+                <span className="truncate flex-1 text-gray-400 font-medium">Search...</span>
+              </motion.button>
             )}
 
             {/* Desktop Navigation - shown only on large (lg) and up */}
@@ -453,15 +456,15 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
                       className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gray-100 text-black/80 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
                       aria-label="Account menu"
                     >
-                      {profile?.avatar_url ? (
+                      {authUser?.avatar_url ? (
                         <img
-                          src={profile.avatar_url}
-                          alt={profile?.full_name || user.email || 'Profile'}
+                          src={authUser.avatar_url}
+                          alt={authUser?.name || authUser?.email || 'Profile'}
                           className="h-full w-full object-cover"
                         />
                       ) : (
                         <span className="flex h-full w-full items-center justify-center bg-black text-sm font-semibold uppercase text-white">
-                          {(profile?.full_name || user.email || 'A').charAt(0)}
+                          {(authUser?.name || authUser?.email || 'A').charAt(0)}
                         </span>
                       )}
                     </button>
@@ -484,24 +487,24 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
                               onClick={() => setActiveDropdown(null)}
                             >
                               <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100">
-                                {profile?.avatar_url ? (
+                                {authUser?.avatar_url ? (
                                   <img
-                                    src={profile.avatar_url}
-                                    alt={profile?.full_name || user.email || 'Profile'}
+                                    src={authUser.avatar_url}
+                                    alt={authUser?.name || authUser?.email || 'Profile'}
                                     className="h-full w-full object-cover"
                                   />
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center bg-black text-xs font-bold uppercase text-white">
-                                    {(profile?.full_name || user.email || 'A').charAt(0)}
+                                    {(authUser?.name || authUser?.email || 'A').charAt(0)}
                                   </div>
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="truncate text-[16px] font-semibold leading-tight text-gray-950">
-                                  {profile?.full_name || profile?.username || user.email?.split('@')[0] || 'Your profile'}
+                                  {authUser?.name || authUser?.username || authUser?.email?.split('@')[0] || 'Your profile'}
                                 </div>
                                 <div className="mt-1 truncate text-[13px] font-medium leading-tight text-gray-500">
-                                  {user.email}
+                                  {authUser?.email}
                                 </div>
                               </div>
                             </Link>
@@ -612,8 +615,18 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
         <MobileMenu
           isOpen={isMobileMenuOpen}
           onClose={() => setIsMobileMenuOpen(false)}
+          onOpenSearch={() => {
+            setIsMobileMenuOpen(false);
+            setIsSearchOverlayOpen(true);
+          }}
         />
       )}
+
+      {/* Spotlight Search Overlay */}
+      <SearchOverlay
+        isOpen={isSearchOverlayOpen}
+        onClose={() => setIsSearchOverlayOpen(false)}
+      />
     </nav>
   );
 };

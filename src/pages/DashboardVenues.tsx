@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Plus, MapPin, Globe, Edit2, Trash2, Loader2 } from 'lucide-react';
+import { Plus, MapPin, Globe, Edit2, Trash2 } from 'lucide-react';
 import { listVenues, deleteVenue, createVenue, updateVenue } from '@/lib/api/venues';
 import type { Venue, VenueCreateRequest } from '@/lib/api/venues';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import VenueForm from '@/components/VenueForm';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 export default function DashboardVenues() {
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -84,7 +85,7 @@ export default function DashboardVenues() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          <AmptiveSpinner className="h-8 w-8 animate-spin text-gray-400" />
         </div>
       ) : venues.length === 0 ? (
         <div className="text-center border border-dashed border-gray-200 rounded-xl py-20 bg-white shadow-sm">

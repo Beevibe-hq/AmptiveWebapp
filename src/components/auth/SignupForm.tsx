@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { SIGNUP_KEYS } from '@/lib/constants';
 import { checkEmailExists } from '@/lib/api/auth';
 

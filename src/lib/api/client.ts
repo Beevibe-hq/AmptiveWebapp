@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://amptive.onrender.com/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://amptive-staging.getamptive.com/api/v1';
 const ACCESS_TOKEN_KEY = 'amptive.auth_token';
 const REFRESH_TOKEN_KEY = 'amptive.refresh_token';
 const ACCESS_TOKEN_EXPIRY_KEY = 'amptive.auth_token_expiry';
@@ -54,12 +54,27 @@ async function refreshAccessToken(): Promise<boolean> {
       return false;
     }
 
-    const data: TokenRefreshResponse = await response.json();
+    const json = await response.json();
+    
+    let data: TokenRefreshResponse;
+    if (json && typeof json === 'object' && 'status' in json && 'data' in json) {
+      data = json.data;
+    } else {
+      data = json;
+    }
+
+    if (!data || !data.access_token) {
+      clearSessionTokens();
+      return false;
+    }
+
     const expiresIn = data.expires_in ?? 3600;
     const expiresAt = Date.now() + (expiresIn * 1000);
 
     localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
-    localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+    if (data.refresh_token) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+    }
     localStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(expiresAt));
     return true;
   } catch {
@@ -158,7 +173,12 @@ async function executeRequest<T>(
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
     console.error('API Error Response:', errorBody);
-    const errorMessage = errorBody.message || errorBody.detail || JSON.stringify(errorBody) || `HTTP ${response.status}`;
+    let errorMessage = errorBody.message || errorBody.detail || `HTTP ${response.status}`;
+    if (errorBody.errors && Array.isArray(errorBody.errors)) {
+      errorMessage += ` (Validation: ${JSON.stringify(errorBody.errors)})`;
+    } else if (typeof errorBody === 'object' && Object.keys(errorBody).length > 0 && !errorBody.message && !errorBody.detail) {
+      errorMessage = JSON.stringify(errorBody);
+    }
     throw new Error(errorMessage);
   }
 

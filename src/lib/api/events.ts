@@ -69,6 +69,7 @@ export interface StandaloneEventCreateRequest {
   show_type: 'free' | 'paid';
   price?: number;
   scheduled_for?: string;
+  ended_at?: string;
   community_id?: string;
   tag_ids?: string[];
   co_host_ids?: string[];
@@ -85,6 +86,7 @@ export interface StandaloneEventUpdateRequest {
   show_type?: 'free' | 'paid';
   price?: number;
   scheduled_for?: string;
+  ended_at?: string;
   community_id?: string;
   tag_ids?: string[];
   co_host_ids?: string[];
@@ -153,7 +155,11 @@ export async function deleteEvent(eventId: string): Promise<{ ok: boolean; error
   }
 }
 
-export async function getEventsByUser(): Promise<StandaloneEvent[]> {
+export async function getEventsByUser(userId?: string): Promise<StandaloneEvent[]> {
+  if (userId) {
+    const response = await $events.list({ userId });
+    return (response?.events || []) as StandaloneEvent[];
+  }
   const response = await $events.getForCurrentUser();
   return (response?.events || []) as StandaloneEvent[];
 }

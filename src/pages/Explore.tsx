@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, X } from 'lucide-react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { listEvents, StandaloneEvent } from '@/lib/api/events';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ReactCalendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 
@@ -21,11 +21,22 @@ const COMMUNITIES = [
 const defaultCenter = { lat: 6.5244, lng: 3.3792 };
 
 export default function Explore() {
+    const location = useLocation();
+    const urlParams = new URLSearchParams(location.search);
+    const urlQuery = urlParams.get('q') || urlParams.get('search') || '';
+
     const [viewMode, setViewMode] = useState<'list' | 'map'>(() => sessionStorage.getItem('explore_viewMode') as 'list' | 'map' || 'list');
-    const [searchQuery, _setSearchQuery] = useState(() => sessionStorage.getItem('explore_searchQuery') || '');
+    const [searchQuery, setSearchQuery] = useState(() => urlQuery || sessionStorage.getItem('explore_searchQuery') || '');
     const [events, setEvents] = useState<StandaloneEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [map, setMap] = useState<google.maps.Map | null>(null);
+
+    // Synchronize searchQuery with URL query parameter changes
+    useEffect(() => {
+        if (urlQuery !== null && urlQuery !== undefined) {
+            setSearchQuery(urlQuery);
+        }
+    }, [urlQuery]);
 
     // Filter States - Persisted
     const [dateFilter, setDateFilter] = useState(() => sessionStorage.getItem('explore_dateFilter') || 'All Upcoming');
@@ -463,7 +474,9 @@ export default function Explore() {
 
                                                         {/* Location */}
                                                         <div className="text-sm text-gray-500 truncate mt-0.5">
-                                                            {event.location?.venue || event.location?.city || 'TBA'}
+                                                            {event.location?.type === 'online' ? 'Online' : (
+                                                                [event.location?.venue || event.venue?.name, event.location?.city || event.venue?.city].filter(Boolean).join(', ') || 'TBA'
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </Link>

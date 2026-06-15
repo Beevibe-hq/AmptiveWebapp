@@ -6,7 +6,7 @@ import { register } from '@/lib/api/auth';
 import { uploadImage } from '@/lib/api/storage';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { checkUsernameAvailability } from '@/lib/api/profiles';
+import { checkUsernameAvailability, updateProfile } from '@/lib/api/profiles';
 
 const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
 
@@ -175,6 +175,22 @@ export default function CompleteProfilePage() {
     if (step === 2) {
       if (!password || password.length < 8) {
         toastError('Your password should be at least 8 characters.');
+        return;
+      }
+      if (!/[A-Z]/.test(password)) {
+        toastError('Your password must contain at least one uppercase letter.');
+        return;
+      }
+      if (!/[a-z]/.test(password)) {
+        toastError('Your password must contain at least one lowercase letter.');
+        return;
+      }
+      if (!/[0-9]/.test(password)) {
+        toastError('Your password must contain at least one number.');
+        return;
+      }
+      if (!/[^A-Za-z0-9]/.test(password)) {
+        toastError('Your password must contain at least one special character (e.g. !@#$%).');
         return;
       }
     }
@@ -346,20 +362,11 @@ export default function CompleteProfilePage() {
     }
     setLoading(true);
     try {
-      let profilePictureUrl: string | undefined;
-
-      if (avatarPreview && !avatarPreview.startsWith('data:image/svg')) {
-        const res = await fetch(avatarPreview);
-        const blob = await res.blob();
-        const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
-        profilePictureUrl = await uploadImage(file, 'profile-picture');
-      }
-
+      // Step 1: Register the user FIRST to get an auth token
       const { status, error } = await register(email, password, {
         username: username.trim().toLowerCase(),
         dob: effectiveDob,
         name: fullName.trim(),
-        profile_picture: profilePictureUrl,
       });
       if (!status) {
         toastError(error || 'Failed to register. Please try again.');
@@ -367,13 +374,27 @@ export default function CompleteProfilePage() {
         return;
       }
 
+      // Step 2: Now that the user is logged in, upload the image if present
+      if (avatarPreview && !avatarPreview.startsWith('data:image/svg')) {
+        const res = await fetch(avatarPreview);
+        const blob = await res.blob();
+        const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
+        const profilePictureUrl = await uploadImage(file, 'profile-picture');
+        
+        // Step 3: Update the user profile with the new image URL
+        if (profilePictureUrl) {
+          await updateProfile({ profile_picture: profilePictureUrl });
+        }
+      }
+
       sessionStorage.removeItem(SIGNUP_KEYS.email);
       await refreshUser();
       toastSuccess('Account created! Welcome to Amptive.');
       const redirectTo = location.state?.from || '/';
       setTimeout(() => navigate(redirectTo), 500);
-    } catch (e) {
-      toastError('Something went wrong. Please try again.');
+    } catch (e: any) {
+      console.error('Registration Error:', e);
+      toastError(e.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }

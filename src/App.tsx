@@ -84,7 +84,8 @@ function MainLayout() {
   const shouldShowRouteSplash =
     location.pathname === '/events/create' ||
     location.pathname === '/explore' ||
-    location.pathname === '/profile/support-setup';
+    location.pathname === '/profile/support-setup' ||
+    location.pathname === '/profile/edit';
   const [showRouteSplash, setShowRouteSplash] = React.useState(shouldShowRouteSplash);
 
   React.useEffect(() => {

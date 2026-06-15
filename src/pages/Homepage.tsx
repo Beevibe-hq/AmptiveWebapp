@@ -4,7 +4,9 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Calendar } from 'lucide-react';
 import QRCodeGenerator from '../components/QRCodeGenerator';
-import { listEvents } from '@/lib/api/events';
+import { listEvents } from '../lib/api/events';
+import { getTicketsForEvent } from '../lib/api/tickets';
+import LocationMap from '../components/LocationMap';
 import { listCommunities, Community } from '@/lib/api/communities';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -67,7 +69,7 @@ const TrendingCard: React.FC<TrendingCardProps> = ({
   </div>
 );
 // Images moved to public directory for Netlify
-import EventCard, { MediaSource } from '../components/EventCard';
+import EventCard, { MediaSource, EventCardSkeleton } from '../components/EventCard';
 import GeometricPattern from '../components/GeometricPattern';
 
 interface EventType {
@@ -76,7 +78,7 @@ interface EventType {
   location: string;
   country: string;
   ticket_status: string;
-  price: number;
+  price: number | any[];
   date: string;
   media: MediaSource;
 }
@@ -90,6 +92,22 @@ const techConferenceCardStyles = `
     color: rgba(255, 255, 255, 0.9) !important;
   }
 `;
+
+
+
+const TopEventRowSkeleton = () => (
+  <div className="grid grid-cols-[40px,minmax(300px,2fr),minmax(180px,1.5fr),minmax(100px,1fr),minmax(120px,1fr),minmax(100px,1fr)] gap-8 items-center px-4 py-4 rounded-lg animate-pulse">
+    <div className="w-4 h-4 bg-gray-200 rounded mx-auto"></div>
+    <div className="flex items-center space-x-3">
+      <div className="w-10 h-10 bg-gray-200 rounded-md"></div>
+      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+    </div>
+    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+    <div className="h-6 bg-gray-200 rounded-full w-20"></div>
+    <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+  </div>
+);
 
 // Community section images
 const communityMusicImage = '/images/Community card 1.png';
@@ -571,17 +589,47 @@ const Homepage: React.FC = () => {
         setLoadingEvents(true);
 
         const eventsData = await listEvents({ page_size: 20 });
+        
+        // Fetch tickets for all events to handle multiple prices correctly
+        const eventsWithTickets = await Promise.all((eventsData || []).map(async (event: any) => {
+          try {
+            const tickets = await getTicketsForEvent(event.event_id);
+            return { ...event, tickets };
+          } catch {
+            return { ...event, tickets: [] };
+          }
+        }));
+
         // Transform database events to match EventType interface
-        const transformedEvents: EventType[] = (eventsData || []).map((event: any) => {
-          const rawPrice = event.price_from;
-          const price = rawPrice != null ? Number(rawPrice) : 0;
+        const transformedEvents: EventType[] = eventsWithTickets.map((event: any) => {
+          const tickets = event.tickets || [];
+          let finalPrice: number | any[] = 0;
+          
+          if (tickets.length > 0) {
+            // Filter out sold out tickets so the "From X" price reflects what's actually available
+            const availableTickets = tickets.filter((t: any) => t.quantity_remaining === undefined || t.quantity_remaining === null || t.quantity_remaining > 0);
+            
+            // If all tickets are sold out, we can just pass tickets since the card will override and display 'Sold Out'
+            finalPrice = availableTickets.length > 0 ? availableTickets : tickets;
+          } else {
+            const rawPrice = event.price_from;
+            finalPrice = rawPrice != null ? Number(rawPrice) : 0;
+          }
+
+          let isSoldOut = false;
+          if (tickets.length > 0) {
+            isSoldOut = tickets.every((t: any) => t.quantity_remaining !== undefined && t.quantity_remaining !== null && t.quantity_remaining <= 0);
+          } else {
+            isSoldOut = event.is_sold_out;
+          }
+
           return {
             id: event.event_id,
             title: event.title,
             location: event.venue?.name || event.location?.venue || event.location?.city || 'Online',
             country: event.venue?.city || event.location?.city || 'Nigeria',
-            ticket_status: event.is_sold_out? 'Sold Out': 'On Sale',
-            price,
+            ticket_status: isSoldOut ? 'Sold Out' : 'On Sale',
+            price: finalPrice,
             date: event.scheduled_for ? new Date(event.scheduled_for).toISOString() : '',
             media: {
               type: 'image' as const,
@@ -627,7 +675,7 @@ const Homepage: React.FC = () => {
         description: "Life is freaking hard. We are hard. Let's get through it together. Join Glennon Doyle and her sister Amanda as they discuss hard things and how to survive them.",
         image: '/images/we-can-do-hard-things.jpeg',
         gradient: 'linear-gradient(135deg, #8B3A3A 0%, #CD5C5C 50%, #D2691E 100%)',
-        avatars: ['/images/glennon-doyle.jpeg', 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3']
+        avatars: ['https://i.pravatar.cc/150?img=1', 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3']
       },
       {
         id: 2,
@@ -1572,8 +1620,14 @@ const Homepage: React.FC = () => {
               {/* Scrollable content */}
               <div className="overflow-x-auto pb-6">
                 <div className="flex space-x-6 w-max min-w-full pl-4 pr-4">
-                  {filteredEvents.length > 0 ? (
-                    filteredEvents.map(event => (
+                  {loadingEvents ? (
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <div key={`desktop-skeleton-${i}`} className="w-72 flex-shrink-0">
+                        <EventCardSkeleton />
+                      </div>
+                    ))
+                  ) : filteredEvents.length > 0 ? (
+                    filteredEvents.slice(0, 5).map(event => (
                       <div
                         key={event.id}
                         onClick={() => navigate(`/events/${event.id}`)}
@@ -1614,21 +1668,36 @@ const Homepage: React.FC = () => {
             </div>
 
             {/* Show More Button for Desktop */}
-            <div className="mt-10 w-full px-6">
-              <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
-                View more events
-              </button>
-            </div>
+            {filteredEvents.length > 5 && (
+              <div className="mt-10 w-full px-6">
+                <button 
+                  onClick={() => navigate('/events')}
+                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200"
+                >
+                  View more events
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Mobile Layout */}
           <div className="sm:hidden">
-            {filteredEvents.length > 0 ? (
+            {loadingEvents ? (
+              <div className="-mx-2 px-4 overflow-x-auto pb-4">
+                <div className="flex space-x-3 w-max">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={`mob-skeleton-${i}`} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
+                      <EventCardSkeleton />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : filteredEvents.length > 0 ? (
               <>
                 {/* Horizontal Scrollable Cards */}
                 <div className="-mx-2 px-4 overflow-x-auto pb-4">
                   <div className="flex space-x-3 w-max">
-                    {filteredEvents.map((event, index) => (
+                    {filteredEvents.slice(0, 5).map((event, index) => (
                       <div
                         key={index}
                         onClick={() => navigate(`/events/${event.id}`)}
@@ -1648,11 +1717,16 @@ const Homepage: React.FC = () => {
                 </div>
 
                 {/* Show More Button for Mobile */}
-                <div className="mt-2 w-full px-4">
-                  <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
-                    View more events
-                  </button>
-                </div>
+                {filteredEvents.length > 5 && (
+                  <div className="mt-2 w-full px-4">
+                    <button 
+                      onClick={() => navigate('/events')}
+                      className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200"
+                    >
+                      View more events
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <div className="p-6 text-center">
@@ -1698,9 +1772,9 @@ const Homepage: React.FC = () => {
             {/* Table Rows */}
             <div className="space-y-3">
               {loadingEvents ? (
-                <div className="text-center py-12 text-gray-500">
-                  Loading events...
-                </div>
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TopEventRowSkeleton key={`top-event-skeleton-${i}`} />
+                ))
               ) : filteredEvents.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   No upcoming events found
@@ -1724,8 +1798,13 @@ const Homepage: React.FC = () => {
                       <span className="font-medium text-gray-900 truncate">{event.title}</span>
                     </div>
                     <div className="text-gray-600 truncate" title={event.location}>{event.location}</div>
-                    <div className="font-medium">
-                      {event.price && event.price > 0 ? `₦${event.price.toLocaleString()}` : 'Free'}
+                    <div className="font-medium text-gray-900">
+                      {Array.isArray(event.price) && event.price.length > 0
+                        ? (event.price.length === 1
+                            ? (event.price[0].price > 0 ? `₦${event.price[0].price.toLocaleString()}` : 'Free')
+                            : `₦${Math.min(...event.price.map((t: any) => t.price)).toLocaleString()}+`
+                          )
+                        : (event.price && (event.price as number) > 0 ? `₦${Number(event.price).toLocaleString()}` : 'Free')}
                     </div>
                     <div>
                       <div className="inline-block">
@@ -1767,9 +1846,11 @@ const Homepage: React.FC = () => {
           <div className="-mx-2 px-4 overflow-x-auto pb-2">
             <div className="flex space-x-3 w-max">
               {loadingEvents ? (
-                <div className="text-center py-12 text-gray-500">
-                  Loading events...
-                </div>
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={`mob-top-skeleton-${i}`} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
+                    <EventCardSkeleton />
+                  </div>
+                ))
               ) : filteredEvents.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   No upcoming events found
@@ -1995,7 +2076,7 @@ const Homepage: React.FC = () => {
               <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
                 <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
                   <img
-                    src="/images/1mouth-analog-v2.gif"
+                    src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80"
                     alt="1analog Girl"
                     className="w-full h-full object-cover rounded-lg"
                   />

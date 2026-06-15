@@ -1,13 +1,15 @@
-
 import { useEffect, useState, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { MapPin, Share2, Ticket, Check, Globe } from 'lucide-react';
+import { MapPin, Share2, Ticket, Check, Globe, X, ExternalLink } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import amptiveLogo from '@/assets/amptivelogo.svg';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { QRCodeSVG } from 'qrcode.react';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent, getRelatedEvents, publishEvent, StandaloneEvent } from '@/lib/api/events';
+import { getProfileByUserId } from '@/lib/api/profiles';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -61,6 +63,7 @@ type EventTicket = {
   price: number;
   currency?: string | null;
   quantity?: number | null;
+  quantity_remaining?: number | null;
   benefits?: string[];
   color_theme?: string | null;
 };
@@ -161,6 +164,46 @@ const EventDetail = () => {
   const [error, setError] = useState<string | null>(null);
   const [dominantColor, setDominantColor] = useState<{ r: number; g: number; b: number } | null>(null);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+
+  // Handle escape key to close image modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedImageUrl(null);
+      }
+    };
+    if (selectedImageUrl) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedImageUrl]);
+
+  const handleDescriptionClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    
+    // 1. Check if the clicked element is an image
+    const img = target.closest('img');
+    if (img) {
+      e.preventDefault();
+      e.stopPropagation();
+      setSelectedImageUrl(img.src);
+      return;
+    }
+
+    // 2. Check if the clicked element is a link (anchor tag)
+    const anchor = target.closest('a');
+    if (anchor) {
+      e.preventDefault();
+      const href = anchor.getAttribute('href');
+      if (href) {
+        window.open(href, '_blank', 'noopener,noreferrer');
+      }
+    }
+  };
+
   const [showStickyButton, setShowStickyButton] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const mobileCtaRef = useRef<HTMLDivElement>(null);
@@ -233,17 +276,19 @@ const EventDetail = () => {
 
         // Fetch Organizer
         if (eventData.host?.user_id) {
-          // const profile = await getProfileByUserId(eventData.host!.user_id);
-          const profile = eventData.host
+          const profile = await getProfileByUserId(eventData.host!.user_id);
+          // const profile = eventData.host
           if (profile) {
             setOrganizerProfile(profile);
           } else {
-            console.error('Error fetching organizer profile');
+            console.log('API Host Data:', eventData.host);
+            // Fallback to the host data provided in the event response
             setOrganizerProfile({
               id: eventData.host.user_id,
-              username: 'Event Host',
-              full_name: 'Event Host',
-              avatar_url: null
+              username: eventData.host.username || 'Event Host',
+              full_name: eventData.host.display_name || eventData.host.name || eventData.host.username,
+              profile_picture: eventData.host.profile_image_url || eventData.host.profile_picture || null,
+              avatar_url: eventData.host.profile_image_url || eventData.host.profile_picture || null
             });
           }
         }
@@ -267,8 +312,10 @@ const EventDetail = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-900 border-t-transparent" />
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-white">
+        <div className="flex h-24 w-24 items-center justify-center">
+          <AmptiveSpinner className="h-full w-full text-black" />
+        </div>
       </div>
     );
   }
@@ -319,28 +366,6 @@ const EventDetail = () => {
       ? "w-full rounded-xl py-3 text-center font-bold shadow-lg active:scale-[0.98]"
       : "w-full rounded-2xl py-4 text-center font-bold transition-transform hover:scale-[1.02] active:scale-[0.98]";
 
-    if (isOrganizer) {
-      return {
-        button: (
-          <Link to={`/dashboard/events/${event.id}/edit`} className={`${baseClasses} bg-black text-white block`}>
-            Manage Event
-          </Link>
-        ),
-        footerText: "Manage your event dashboard"
-      };
-    }
-
-    if (isEventEnded) {
-      return {
-        button: (
-          <button disabled className={`${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`}>
-            Event Ended
-          </button>
-        ),
-        footerText: null
-      };
-    }
-
     if (isDraft && isOrganizer) {
       return {
         button: (
@@ -359,11 +384,22 @@ const EventDetail = () => {
     if (isOrganizer) {
       return {
         button: (
-          <Link to={`/events/${event.event_id}/manage`} className={`${baseClasses} bg-black text-white block`}>
+          <Link to={`/dashboard/events/${event.event_id}/edit`} className={`${baseClasses} bg-black text-white block`}>
             Manage Event
           </Link>
         ),
         footerText: "Manage your event dashboard"
+      };
+    }
+
+    if (isEventEnded) {
+      return {
+        button: (
+          <button disabled className={`${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`}>
+            Event Ended
+          </button>
+        ),
+        footerText: null
       };
     }
 
@@ -372,6 +408,19 @@ const EventDetail = () => {
         button: (
           <button disabled className={`${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`}>
             No Tickets Available
+          </button>
+        ),
+        footerText: null
+      };
+    }
+
+    const isCompletelySoldOut = hasTickets && tickets.every(t => t.quantity_remaining !== undefined && t.quantity_remaining !== null && t.quantity_remaining <= 0);
+
+    if (isCompletelySoldOut) {
+      return {
+        button: (
+          <button disabled className={`${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`}>
+            Sold Out
           </button>
         ),
         footerText: null
@@ -420,12 +469,23 @@ const EventDetail = () => {
                   <div>
                     {/* Organizer Badge */}
                     {displayProfile && (
-                      <Link to={`/profile/${displayProfile.username || event.host?.user_id}`} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors mb-4 group/badge">
+                      <Link 
+                        to={`/profile/${displayProfile.username || event.host?.user_id}`} 
+                        state={{ 
+                          hostData: {
+                            user_id: event.host?.user_id || displayProfile.id,
+                            username: displayProfile.username,
+                            full_name: displayProfile.full_name,
+                            avatar_url: displayProfile.avatar_url || displayProfile.profile_picture
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors mb-4 group/badge"
+                      >
                         <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-600 overflow-hidden flex-shrink-0">
-                          {displayProfile.avatar_url ? (
+                          {(displayProfile.profile_picture || displayProfile.avatar_url) ? (
                             <>
                               <img
-                                src={displayProfile.avatar_url}
+                                src={displayProfile.profile_picture || displayProfile.avatar_url}
                                 alt={displayProfile.username || 'User'}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
@@ -468,7 +528,7 @@ const EventDetail = () => {
                     </div>
                     <div>
                       <h3 className="text-base font-semibold text-gray-900 leading-tight">
-                        {event.scheduled_for ? new Date(event.scheduled_for).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Date TBD'}
+                        {event.scheduled_for ? new Date(event.scheduled_for).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : 'TBA'}
                       </h3>
                       <p className="text-sm text-gray-500 mt-1">
                         {event.scheduled_for ? new Date(event.scheduled_for).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}
@@ -516,7 +576,7 @@ const EventDetail = () => {
                       ) : (
                         <>
                           <h3 className="text-base font-semibold text-gray-900 leading-tight">
-                            {event.location?.type === 'online' ? 'Online Event' : (event.location?.venue || 'Venue TBD')}
+                            {event.location?.type === 'online' ? 'Online Event' : (event.location?.venue || 'TBA')}
                           </h3>
                           {event.location?.type !== 'online' && event.location?.city && (
                             <p className="text-sm text-gray-500 mt-1">{event.location?.city}</p>
@@ -557,10 +617,20 @@ const EventDetail = () => {
                 </div>
                 <div>
                   <div className="prose prose-lg max-w-none relative group/description">
+                    <style>{`
+                      .ProseMirror img {
+                        cursor: zoom-in;
+                        transition: transform 0.2s ease, box-shadow 0.2s ease;
+                      }
+                      .ProseMirror img:hover {
+                        transform: scale(1.01);
+                        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+                      }
+                    `}</style>
                     <div
                       dangerouslySetInnerHTML={{ __html: event.description || '<p>No description provided.</p>' }}
-                      className={`text-base text-black leading-relaxed [&>h1]:text-xl [&>h1]:font-bold [&>h1]:text-black [&>h1]:mb-3 [&>p]:mb-4 [&>ul]:list-disc [&>ul]:pl-5 [&>img]:rounded-2xl [&>img]:my-6 [&>img]:w-full transition-all duration-500 ease-in-out overflow-hidden ${isDescriptionExpanded ? 'max-h-[5000px]' : 'max-h-[240px]'
-                        }`}
+                      className={`ProseMirror text-base text-black transition-all duration-500 ease-in-out overflow-hidden ${isDescriptionExpanded ? 'max-h-[5000px]' : 'max-h-[240px]'}`}
+                      onClick={handleDescriptionClick}
                     />
 
                     {/* Gradient Overlay when collapsed */}
@@ -606,9 +676,10 @@ const EventDetail = () => {
                     {tickets.map((ticket, _index) => {
                       const benefits = deriveTicketBenefits(ticket);
                       const theme = TICKET_THEMES[ticket.color_theme || 'silver'] || TICKET_THEMES.silver;
+                      const isSoldOut = ticket.quantity_remaining !== undefined && ticket.quantity_remaining !== null && ticket.quantity_remaining <= 0;
 
                       return (
-                        <div key={ticket.id} className="group relative min-h-[14rem] flex-shrink-0 snap-center [perspective:1600px]" style={{ width: '85vw', maxWidth: '360px' }}>
+                        <div key={ticket.id} className={`group relative min-h-[14rem] flex-shrink-0 snap-center [perspective:1600px] ${isSoldOut ? 'opacity-60 grayscale cursor-not-allowed' : ''}`} style={{ width: '85vw', maxWidth: '360px' }}>
                           <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
                             {/* Front */}
                             <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-3xl border ${theme.border} ${theme.gradient} px-6 py-6 backdrop-blur-sm shadow-md hover:shadow-lg transition-shadow [backface-visibility:hidden]`}>
@@ -627,9 +698,15 @@ const EventDetail = () => {
                                 <span className={`text-3xl font-bold ${theme.text} tracking-tight`}>
                                   {formatTicketPrice(ticket.price, ticket.currency ?? 'NGN')}
                                 </span>
-                                <button className={`px-5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 ${theme.text} text-xs font-bold transition-colors uppercase whitespace-nowrap`}>
-                                  PER GUEST
-                                </button>
+                                {isSoldOut ? (
+                                  <span className={`px-5 py-1.5 rounded-full bg-red-500 text-white text-xs font-bold transition-colors uppercase whitespace-nowrap shadow-sm`}>
+                                    SOLD OUT
+                                  </span>
+                                ) : (
+                                  <button className={`px-5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 ${theme.text} text-xs font-bold transition-colors uppercase whitespace-nowrap`}>
+                                    PER GUEST
+                                  </button>
+                                )}
                               </div>
                             </div>
 
@@ -705,9 +782,9 @@ const EventDetail = () => {
               {/* More Events Widget (Right Column - Desktop) */}
               {relatedEvents.length > 0 && (
                 <section className="pt-12 border-t border-gray-100">
-                  <h3 className="text-sm font-bold text-gray-900 mb-6 tracking-wider">
+                  <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
                     More from {displayProfile.username ? displayProfile.username.charAt(0).toUpperCase() + displayProfile.username.slice(1) : 'Host'}
-                  </h3>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {relatedEvents.slice(0, 4).map((evt) => (
                       <Link key={evt.event_id} to={`/events/${evt.event_id}`} className="group flex items-center gap-3 bg-gray-50/50 p-2 rounded-xl hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
@@ -804,6 +881,57 @@ const EventDetail = () => {
 
         </div>
       </div>
+
+      <AnimatePresence>
+        {selectedImageUrl && (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedImageUrl(null)}
+          >
+            <motion.div
+              className="relative max-w-5xl max-h-[90vh] w-full flex flex-col items-center justify-center"
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Bar Actions */}
+              <div className="absolute -top-12 right-0 flex items-center gap-3">
+                <a
+                  href={selectedImageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md shadow-lg transition-all active:scale-95 border border-white/5"
+                  title="Open in new window"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span>Open Original</span>
+                </a>
+                <button
+                  onClick={() => setSelectedImageUrl(null)}
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md shadow-lg transition-all active:scale-95 hover:rotate-90 duration-200 border border-white/5"
+                  title="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Preview Image Container */}
+              <div className="relative overflow-hidden rounded-2xl md:rounded-3xl border border-white/10 bg-black/20 shadow-2xl flex items-center justify-center max-w-full max-h-[80vh]">
+                <img
+                  src={selectedImageUrl}
+                  alt="Description Preview"
+                  className="max-w-full max-h-[80vh] object-contain rounded-2xl md:rounded-3xl select-none"
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div >
   );
 };

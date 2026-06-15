@@ -39,9 +39,10 @@ type LinkItem = MenuLink | DropdownLink;
 interface MobileMenuProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenSearch?: () => void;
 }
 
-const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
+const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const isSupportPage = location.pathname.startsWith('/support/');
@@ -214,14 +215,12 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
             {/* Header with Search */}
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               {!isSupportPage && (
-                <form onSubmit={handleSearch} className="relative flex-1 mr-2">
-                  <input
-                    type="text"
-                    className="w-full px-4 py-2 pl-10 text-sm text-gray-700 bg-gray-100 border border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-transparent"
-                    placeholder="Search for events, tasks, and more..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
+                <button
+                  type="button"
+                  onClick={() => onOpenSearch?.()}
+                  className="relative flex-1 mr-2 flex items-center text-left bg-gray-100 border border-transparent rounded-full px-4 py-2.5 pl-10 text-sm text-gray-400 select-none cursor-pointer"
+                >
+                  <span>Search for events, tasks...</span>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="24"
@@ -237,7 +236,7 @@ const MobileMenu = ({ isOpen, onClose }: MobileMenuProps) => {
                     <circle cx="11" cy="11" r="8" />
                     <path d="m21 21-4.3-4.3" />
                   </svg>
-                </form>
+                </button>
               )}
               {isSupportPage && <div className="flex-1" />}
               <button

@@ -14,10 +14,10 @@ import {
     Paperclip,
     Bold,
     Italic,
-    Strikethrough,
-    Loader2
+    Strikethrough
 } from 'lucide-react';
 import { uploadImage } from '@/lib/api/storage';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 interface RichTextEditorProps {
     value: string;
@@ -73,6 +73,8 @@ export default function RichTextEditor({
             attributes: {
                 class: 'prose prose-sm max-w-none focus:outline-none min-h-[150px] px-5 py-4',
             },
+            scrollThreshold: 50,
+            scrollMargin: 50,
         },
     });
 
@@ -139,7 +141,7 @@ export default function RichTextEditor({
                     <div className="flex flex-col items-center gap-3">
                         <span className="relative flex h-8 w-8">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <Loader2 className="relative inline-flex h-8 w-8 text-blue-500 animate-spin" />
+                            <AmptiveSpinner className="relative inline-flex h-8 w-8 text-blue-500 animate-spin" />
                         </span>
                         <span className="text-sm font-medium text-blue-600 animate-pulse">Processing file...</span>
                     </div>
@@ -255,7 +257,9 @@ export default function RichTextEditor({
                 </label>
             </div>
 
-            <EditorContent editor={editor} />
+            <div className="max-h-[250px] md:max-h-[400px] overflow-y-auto rounded-b-2xl scroll-smooth">
+                <EditorContent editor={editor} />
+            </div>
         </div>
     );
 }

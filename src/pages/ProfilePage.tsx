@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { updateProfileAvatar } from '@/lib/api/profiles';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { updateProfileAvatar, getProfileByUserId, getProfileByUsername } from '@/lib/api/profiles';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { UserProfile } from '@/lib/api/services';
+import { useAuth } from '@/contexts/AuthContext';
 
 type EventStatus = 'upcoming' | 'live' | 'past';
 
@@ -56,9 +57,10 @@ const formatEventTimeLabel = (iso?: string | null) => {
   return `${hourString}:${minuteString}${suffix}`;
 };
 
-const buildLocationLabel = (venue?: string | null, city?: string | null) => {
+const buildLocationLabel = (venue?: string | null, city?: string | null, type?: string | null) => {
+  if (type === 'online') return 'Online';
   const parts = [venue, city].filter(Boolean);
-  return parts.length ? parts.join(', ') : 'Location to be announced';
+  return parts.length ? parts.join(', ') : 'TBA';
 };
 
 type EventTicket = {
@@ -125,7 +127,11 @@ const mapStandaloneEvents = (
         title: e.title ?? 'Untitled Event',
         dateLabel: formatEventDateLabel(e.scheduled_for),
         startTimeLabel,
-        locationLabel: buildLocationLabel(e.location?.venue, e.location?.city),
+        locationLabel: buildLocationLabel(
+          e.venue?.name || e.location?.venue,
+          e.venue?.city || e.location?.city,
+          e.location?.type || e.venue?.venue_type
+        ),
         coverImage: e.thumbnail_url ?? null,
         detailsUrl: `/events/${e.event_id}`,
         manageUrl: `/dashboard/events/${e.event_id}/edit`,
@@ -137,10 +143,13 @@ const mapStandaloneEvents = (
     });
 
 const ProfilePage = () => {
+  const location = useLocation();
+  const hostData = location.state?.hostData as { user_id?: string; username: string; full_name: string; avatar_url: string | null } | undefined;
+  
   const { id: urlUserId } = useParams<{ id: string }>();
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const { user, loading: authLoading } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [imageLoading, setImageLoading] = useState(true);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
   const [shadowColor, setShadowColor] = useState<string | null>(null);
@@ -153,7 +162,10 @@ const ProfilePage = () => {
   const fadeOutTimeoutRef = useRef<number | null>(null);
   const fadeInTimeoutRef = useRef<number | null>(null);
   const [pastOffset, setPastOffset] = useState(0);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const isPastStackingEnabled = true;
+  const isMyProfile = !!(user && (urlUserId === user.user_id || urlUserId === user.username || !urlUserId));
+  
   const [isMobileView, setIsMobileView] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(max-width: 639px)').matches;
@@ -232,10 +244,17 @@ const ProfilePage = () => {
         // If it is a UUID, getProfileById works. If it is a username, we need to fetch by username.
 
         let profileData: UserProfile | null = null;
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
-
-          profileData = await getCurrentUser();
         
+        if (urlUserId && urlUserId !== user?.user_id) {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+          if (isUuid) {
+            profileData = await getProfileByUserId(targetId);
+          } else {
+            profileData = await getProfileByUsername(targetId);
+          }
+        } else {
+          profileData = user;
+        }
 
         if (!cancelled) {
           setProfile(profileData);
@@ -279,15 +298,21 @@ const ProfilePage = () => {
     let intervalId: number | undefined;
 
     const run = async () => {
-      const targetId = profile?.user_id || (urlUserId ? undefined : user?.user_id); // Use profile.user_id if profile loaded, else falback
+      const targetId = profile?.user_id || hostData?.user_id || (urlUserId ? undefined : user?.user_id); // Use profile.user_id if profile loaded, else falback
 
       // Wait for profile to load if we are using a username URL
+      if (!targetId && profileLoading) {
+        return;
+      }
+
       if (!targetId) {
+        setEventsLoading(false);
         setUpcomingEvents([]);
         setPastEvents([]);
         return;
       }
 
+      setEventsLoading(true);
       try {
         const { upcoming, past } = await loadEvents(targetId);
         if (!cancelled) {
@@ -300,6 +325,10 @@ const ProfilePage = () => {
           setUpcomingEvents([]);
           setPastEvents([]);
         }
+      } finally {
+        if (!cancelled) {
+          setEventsLoading(false);
+        }
       }
     };
 
@@ -311,6 +340,55 @@ const ProfilePage = () => {
       if (intervalId) window.clearInterval(intervalId);
     };
   }, [user?.user_id, urlUserId, profile?.user_id, loadEvents]); // Updated dependencies
+
+  const ProfileEventCardSkeleton = ({ type = 'upcoming' }: { type?: 'upcoming' | 'past' }) => {
+    const isPast = type === 'past';
+    return (
+      <div className={`flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3 min-w-0 ${isPast ? 'w-[96%] sm:w-[85%] lg:w-[70%] self-center' : 'w-[95%] max-w-[480px] mx-auto sm:w-full sm:max-w-none'}`}>
+        {!isPast && (
+          <>
+            <div className="flex items-center gap-3 sm:hidden">
+              <div className="flex flex-col items-center">
+                <div className="h-3 w-8 bg-gray-200 animate-pulse rounded"></div>
+                <div className="h-5 w-10 bg-gray-300 animate-pulse rounded mt-1"></div>
+              </div>
+              <div className="relative flex-1 h-6">
+                <div className="absolute left-0 right-2 top-1/2 h-px -translate-y-1/2 bg-gray-200" />
+              </div>
+            </div>
+            <div className="hidden sm:flex sm:w-20 sm:flex-col sm:items-center sm:pt-1">
+              <div className="text-center">
+                <div className="h-3 w-8 bg-gray-200 animate-pulse rounded mx-auto"></div>
+                <div className="h-5 w-10 bg-gray-300 animate-pulse rounded mt-1 mx-auto"></div>
+              </div>
+              <div className="relative mt-3 flex-1 w-full">
+                <div className="absolute left-1/2 right-0 top-0 bottom-1/2 -translate-x-1/2 w-px bg-gray-200" />
+              </div>
+            </div>
+          </>
+        )}
+  
+        <div className="relative w-full flex-1 overflow-hidden rounded-2xl border bg-gray-50/50 p-2.5 sm:p-5 shadow-sm">
+          <div className="relative z-10 flex flex-row gap-2.5 sm:items-start sm:gap-4 animate-pulse">
+            <div className="flex-1 flex flex-col text-left min-w-0">
+              <div className="h-3 w-20 bg-gray-200 rounded mb-3"></div>
+              <div className="h-5 sm:h-6 w-3/4 bg-gray-200 rounded mb-2"></div>
+              <div className="h-3 w-1/2 bg-gray-200 rounded mb-4"></div>
+              <div className="mt-2">
+                 <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
+              </div>
+              <div className="mt-auto w-full pt-6 text-left">
+                 <div className="h-8 w-24 bg-gray-200 rounded-full"></div>
+              </div>
+            </div>
+            <div className="flex-shrink-0 self-start">
+              <div className="relative aspect-square w-16 sm:w-24 md:w-28 lg:w-32 bg-gray-200 rounded-xl"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderEventCard = useCallback(
     (
@@ -358,13 +436,11 @@ const ProfilePage = () => {
         return 'bg-[repeating-linear-gradient(to_right,rgba(0,0,0,0.65),rgba(0,0,0,0.65)_8px,transparent_8px,transparent_16px)]';
       })();
 
-      const fullTitle = event.title ?? '';
-      const mobileTitle = fullTitle.length > 20 ? `${fullTitle.slice(0, 20)}…` : fullTitle;
-      const desktopTitle = fullTitle.length > 30 ? `${fullTitle.slice(0, 30)}…` : fullTitle;
+
       const ctaTarget = isPast
         ? event.detailsUrl || `/events/${event.id}`
-        : event.manageUrl;
-      const ctaLabel = isPast ? 'View Recap' : 'Manage Event';
+        : isMyProfile ? event.manageUrl : (event.detailsUrl || `/events/${event.id}`);
+      const ctaLabel = isPast ? 'View Recap' : (isMyProfile ? 'Manage Event' : 'View Event');
 
       const hasTickets = event.tickets.length > 0;
       const multipleTickets = event.tickets.length > 1;
@@ -411,7 +487,7 @@ const ProfilePage = () => {
 
       const overlapTopClass = options?.stacked && (options.index ?? 0) > 0 ? ' -mt-12 sm:-mt-18' : '';
       const stackedWrapperClasses = options?.stacked ? ' transition-transform hover:-translate-y-1' : '';
-      const stackedWidthClasses = options?.stacked ? ' w-[96%] sm:w-[85%] lg:w-[70%]' : '';
+      const stackedWidthClasses = options?.stacked ? ' w-[96%] sm:w-[85%] lg:w-[70%]' : ' w-[95%] max-w-[480px] mx-auto sm:w-full sm:max-w-none';
       const stackedAlignmentClasses = options?.stacked ? ' self-center' : '';
       const baseZ = options?.stacked ? (options.total ?? 0) - (options.index ?? 0) : 0;
       const wrapperStyle = options?.stacked
@@ -461,7 +537,7 @@ const ProfilePage = () => {
       return (
         <div
           key={event.id}
-          className={`flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3${overlapTopClass}${stackedWrapperClasses}${stackedWidthClasses}${stackedAlignmentClasses}`}
+          className={`flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3 min-w-0${overlapTopClass}${stackedWrapperClasses}${stackedWidthClasses}${stackedAlignmentClasses}`}
           ref={options?.setNode}
           data-event-id={event.id}
           style={wrapperStyle}
@@ -504,23 +580,22 @@ const ProfilePage = () => {
             className={`relative w-full flex-1 overflow-hidden rounded-2xl border bg-gradient-to-br from-gray-100 via-orange-50/20 to-gray-100 text-sm shadow-sm shadow-[0_8px_20px_rgba(15,23,42,0.05)] backdrop-blur-lg transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2 focus:ring-offset-gray-100 sm:ml-0 ${cardBorderClasses}`}
             style={cardStyle}
           >
-            <div className="relative z-10 flex flex-row gap-2 p-3 sm:items-start sm:gap-4 sm:p-5">
-              <div className="flex-1 flex flex-col text-left">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-gray-500">
-                  <svg className={`h-4 w-4 ${iconColorClass}`} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <div className="relative z-10 flex flex-row gap-2.5 p-2.5 sm:items-start sm:gap-4 sm:p-5">
+              <div className="flex-1 flex flex-col text-left min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-medium uppercase tracking-[0.12em] sm:tracking-[0.18em] text-gray-500">
+                  <svg className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${iconColorClass}`} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
                   </svg>
                   <span>{event.dateLabel}</span>
                 </div>
-                <h3 className="mt-3 text-xl font-semibold text-gray-900 sm:text-2xl">
-                  <span className="truncate sm:hidden">{mobileTitle}</span>
-                  <span className="hidden truncate sm:inline">{desktopTitle}</span>
+                <h3 className="mt-2.5 sm:mt-3 text-lg sm:text-2xl font-semibold text-gray-900 truncate" title={event.title}>
+                  {event.title}
                 </h3>
-                <p className="mt-1 text-sm font-medium text-gray-700 sm:text-base">{event.locationLabel}</p>
+                <p className="mt-1 text-xs sm:text-base font-medium text-gray-700">{event.locationLabel}</p>
                 {hasTickets ? (
                   multipleTickets && minPricedTicket ? (
-                    <div className="mt-4">
-                      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${ticketPillClasses}`}>
+                    <div className="mt-3 sm:mt-4">
+                      <span className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold ${ticketPillClasses}`}>
                         <span>From</span>
                         <span className={ticketPriceClasses}>
                           {formatTicketPrice(minPricedTicket.price, minPricedTicket.currency)}
@@ -528,8 +603,8 @@ const ProfilePage = () => {
                       </span>
                     </div>
                   ) : singleTicket ? (
-                    <div className="mt-4">
-                      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${ticketPillClasses}`}>
+                    <div className="mt-3 sm:mt-4">
+                      <span className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold ${ticketPillClasses}`}>
                         <span className={ticketPriceClasses}>
                           {formatTicketPrice(singleTicket.price, singleTicket.currency)}
                         </span>
@@ -537,17 +612,17 @@ const ProfilePage = () => {
                     </div>
                   ) : null
                 ) : (
-                  <div className="mt-4">
-                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${freePillClasses}`}>
+                  <div className="mt-3 sm:mt-4">
+                    <span className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold ${freePillClasses}`}>
                       Free
                     </span>
                   </div>
                 )}
                 {ctaTarget && (
-                  <div className="mt-auto w-full pt-8 text-left">
+                  <div className="mt-auto w-full pt-4 sm:pt-8 text-left">
                     <button
                       type="button"
-                      className="mt-4 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                      className="mt-3 sm:mt-4 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-black/10 bg-white px-3.5 py-1.5 sm:px-4 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] sm:tracking-[0.15em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
                       onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
@@ -555,7 +630,7 @@ const ProfilePage = () => {
                       }}
                     >
                       <span>{ctaLabel}</span>
-                      <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                      <svg aria-hidden="true" className="h-3 w-3 sm:h-3.5 sm:w-3.5" viewBox="0 0 20 20" fill="currentColor">
                         <path d="M13.44 9.25H4.5a.75.75 0 0 0 0 1.5h8.94l-2.22 2.22a.75.75 0 1 0 1.06 1.06l3.5-3.5a.75.75 0 0 0 0-1.06l-3.5-3.5a.75.75 0 1 0-1.06 1.06l2.22 2.22Z" />
                       </svg>
                     </button>
@@ -563,7 +638,7 @@ const ProfilePage = () => {
                 )}
               </div>
               <div className="flex-shrink-0 self-start sm:self-start">
-                <div className="relative aspect-square w-20 sm:w-24 md:w-28 lg:w-32 overflow-hidden rounded-xl">
+                <div className="relative aspect-square w-16 sm:w-24 md:w-28 lg:w-32 overflow-hidden rounded-xl">
                   {event.coverImage && !failedCardImageIds.has(event.id) ? (
                     <img
                       src={event.coverImage}
@@ -592,13 +667,13 @@ const ProfilePage = () => {
         </div>
       );
     },
-    [navigate]
+    [navigate, isMyProfile]
   );
 
-  const uploadedAvatar: string | undefined = profileAvatarUrl || undefined;
+  const uploadedAvatar: string | undefined = profileAvatarUrl || hostData?.avatar_url || undefined;
 
   // Deterministic emoji avatar fallback
-  const seed = (user?.username || user?.email || 'guest').toLowerCase();
+  const seed = (profile?.username || hostData?.username || urlUserId || user?.username || user?.email || 'guest').toLowerCase();
   const emojiSet = useMemo(
     () => ['😀', '😎', '🤠', '🦄', '🐼', '🐸', '🐯', '🐵', '🐧', '🐰', '🐨', '🦊', '🐙', '🐳', '🐝', '🐢', '🐞', '🌸', '🌼', '🍀', '🍉', '🍓', '🍍', '⚡', '⭐', '🌙', '☀️', '🔥', '🎧', '🎨', '🎯', '🚀', '🧠', '💎', '💜', '💛', '💚', '💙', '🧸'],
     []
@@ -786,30 +861,12 @@ const ProfilePage = () => {
   }, [shadowColor]);
 
   useEffect(() => {
-    const hydrateUser = async () => {
-      try {
-        const u = await getCurrentUser();
+    if (!authLoading && !user && !urlUserId) {
+      navigate('/login');
+    }
+  }, [authLoading, user, urlUserId, navigate]);
 
-        if (!u && !urlUserId) {
-          navigate('/login');
-          return;
-        }
-
-        if (u) {
-          setUser(u);
-        }
-      } catch (error) {
-        console.error('Error hydrating user session:', error);
-        if (!urlUserId) navigate('/login');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    hydrateUser();
-  }, [navigate, urlUserId]);
-
-  if (loading || profileLoading) {
+  if (profileLoading || (authLoading && !urlUserId)) {
     return (
       <div className="min-h-screen bg-white">
         {/* Blur Background */}
@@ -829,38 +886,29 @@ const ProfilePage = () => {
         )}
 
         {/* Skeleton Content */}
-        <div className="relative z-10 w-full px-4 pt-20 pb-8">
-          <div className="px-6 py-8 sm:px-10">
-            <div className="mx-auto h-64 w-64 md:h-80 md:w-80 rounded-full overflow-hidden bg-gray-200 animate-pulse" />
-            <div className="mt-6 h-4 w-48 bg-gray-200 rounded animate-pulse" />
-            <div className="mt-4 h-20 w-3/4 bg-gray-200 rounded animate-pulse" />
+        <div className="relative z-10 w-full pl-3 pr-4 pt-20 pb-8">
+          <div className="px-4 py-8 sm:px-8 sm:py-10 text-center flex flex-col items-center">
+            <div className="mx-auto h-64 w-64 md:h-80 md:w-80 rounded-full bg-gray-200 animate-pulse shadow-xl" />
+            <div className="mt-6 md:mt-4 h-12 md:h-[92px] w-3/4 max-w-xl bg-gray-200 rounded-lg animate-pulse" />
+            <div className="mt-4 h-5 w-48 bg-gray-200 rounded-md animate-pulse" />
+            <div className="mt-7 flex flex-row items-center justify-center gap-3">
+              <div className="h-10 md:h-12 w-32 md:w-36 rounded-full bg-gray-200 animate-pulse" />
+              <div className="h-10 md:h-12 w-32 md:w-36 rounded-full bg-gray-200 animate-pulse" />
+            </div>
           </div>
 
-          <div className="border-t border-gray-200">
-            <div className="pl-4 pr-6 py-8 sm:px-10 space-y-8">
-              <div>
-                <div className="h-5 w-40 bg-gray-200 rounded mb-4 animate-pulse" />
-                <div className="space-y-4">
-                  <div className="h-16 w-full bg-gray-200 rounded animate-pulse" />
-                  <div className="h-16 w-full bg-gray-200 rounded animate-pulse" />
-                </div>
+          <div className="mt-20">
+            <div className="flex flex-row items-center justify-between pb-4">
+              <div className="h-8 w-24 bg-gray-200 rounded-md animate-pulse" />
+              <div className="flex space-x-4">
+                <div className="h-10 w-24 rounded-full bg-gray-200 animate-pulse" />
+                <div className="h-10 w-24 rounded-full bg-gray-200 animate-pulse" />
               </div>
+            </div>
 
-              <div>
-                <div className="h-5 w-36 bg-gray-200 rounded mb-4 animate-pulse" />
-                <div className="space-y-4">
-                  <div className="h-16 w-full bg-gray-200 rounded animate-pulse" />
-                  <div className="h-16 w-full bg-gray-200 rounded animate-pulse" />
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 pt-6">
-                <div className="h-5 w-32 bg-gray-200 rounded mb-4 animate-pulse" />
-                <div className="space-y-4">
-                  <div className="h-10 bg-gray-200 rounded animate-pulse" />
-                  <div className="h-10 bg-gray-200 rounded animate-pulse" />
-                </div>
-              </div>
+            <div className="mt-6 grid gap-6 sm:grid-cols-2 max-w-xl mx-auto sm:max-w-none">
+               <div className="h-48 w-full rounded-2xl bg-gray-200 animate-pulse" />
+               <div className="h-48 w-full rounded-2xl bg-gray-200 animate-pulse" />
             </div>
           </div>
         </div>
@@ -892,19 +940,20 @@ const ProfilePage = () => {
         <div className="px-4 py-8 sm:px-8 sm:py-10 text-center">
           <div className="relative mx-auto h-64 w-64 md:h-80 md:w-80">
             <div className="h-full w-full rounded-full overflow-hidden shadow-xl bg-white" style={avatarShadowStyle}>
-              {loading ? (
-                <div className="w-full h-full bg-gray-200 animate-pulse rounded-full" />
-              ) : uploadedAvatar && !imgError ? (
-                <img
-                  src={uploadedAvatar}
-                  alt={user?.email || 'User'}
-                  className="w-full h-full object-cover"
-                  onLoad={() => setLoading(false)}
-                  onError={() => {
-                    setImgError(true);
-                    setLoading(false);
-                  }}
-                />
+              {uploadedAvatar && !imgError ? (
+                <>
+                  {imageLoading && <div className="absolute inset-0 bg-gray-200 animate-pulse rounded-full" />}
+                  <img
+                    src={uploadedAvatar}
+                    alt={user?.email || 'User'}
+                    className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
+                    onLoad={() => setImageLoading(false)}
+                    onError={() => {
+                      setImgError(true);
+                      setImageLoading(false);
+                    }}
+                  />
+                </>
               ) : (
                 <div
                   className="w-full h-full flex items-center justify-center text-9xl"
@@ -945,10 +994,10 @@ const ProfilePage = () => {
             )}
           </div>
 
-          <h1 className="w-full font-bold text-black text-center whitespace-nowrap overflow-visible mt-3 md:mt-1 text-[40px] md:text-[92px]" style={{ fontWeight: 700, color: '#000000' }}>
-            {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+          <h1 className="w-full font-bold text-black text-center break-words px-4 mt-3 md:mt-1 text-3xl md:text-[92px]" style={{ fontWeight: 700, color: '#000000' }}>
+            {profile?.name || (urlUserId === user?.user_id || !urlUserId ? user?.name : undefined) || hostData?.full_name || urlUserId || 'User'}
           </h1>
-          <p className="mt-1 text-gray-600 text-center">@{profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</p>
+          <p className="mt-1 text-gray-600 text-center">@{profile?.username || (urlUserId === user?.user_id || !urlUserId ? user?.username : undefined) || hostData?.username || urlUserId || 'user'}</p>
           <div className="mt-7 flex flex-row flex-wrap items-center justify-center gap-3">
             {user?.id && profile?.user_id && user.id === profile.user_id && (
               <>
@@ -1017,28 +1066,49 @@ const ProfilePage = () => {
 
             <div className="mt-6">
               {activeEventTab === 'upcoming' && (
-                upcomingEvents.length > 0 ? (
-                  <div className="grid gap-6 lg:grid-cols-2">
+                eventsLoading ? (
+                  <div className="grid gap-6 sm:grid-cols-2 max-w-xl mx-auto sm:max-w-none">
+                    {[1, 2].map(i => <ProfileEventCardSkeleton key={i} type="upcoming" />)}
+                  </div>
+                ) : upcomingEvents.length > 0 ? (
+                  <div className="grid gap-6 sm:grid-cols-2 max-w-xl mx-auto sm:max-w-none">
                     {upcomingEvents.map(event => renderEventCard(event))}
                   </div>
                 ) : (
                   <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">
                     <div className="mx-auto mb-4 text-4xl">😮</div>
                     <h3 className="text-lg font-semibold text-gray-700">No upcoming events</h3>
-                    <p className="mt-2 text-sm">Create your first event to share it with your audience.</p>
-                    <button
-                      type="button"
-                      onClick={() => navigate('/events/create')}
-                      className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-black rounded-full hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
-                    >
-                      <span>Create event</span>
-                    </button>
+                    {isMyProfile ? (
+                      <>
+                        <p className="mt-2 text-sm">Create your first event to share it with your audience.</p>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/events/create')}
+                          className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-black rounded-full hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          <span>Create event</span>
+                        </button>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm">This host doesn't have any upcoming events right now. Check back later!</p>
+                    )}
                   </div>
                 )
               )}
 
               {activeEventTab === 'past' && (
-                pastEvents.length > 0 ? (
+                eventsLoading ? (
+                  <div className="flex flex-col items-stretch gap-4 sm:gap-0 sm:items-center">
+                    {[1, 2].map(i => (
+                      <div key={i} className="w-full sm:w-[85%] lg:w-[70%] mb-4 flex justify-center">
+                        <ProfileEventCardSkeleton type="past" />
+                      </div>
+                    ))}
+                  </div>
+                ) : pastEvents.length > 0 ? (
                   <>
                     <div
                       className={`relative flex flex-col items-stretch gap-4 sm:gap-0 sm:items-center transition-opacity duration-200 ease-in-out ${pastFadeState === 'out'
@@ -1086,7 +1156,11 @@ const ProfilePage = () => {
                   <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-12">
                     <div className="mx-auto mb-4 text-4xl">😮</div>
                     <h3 className="text-lg font-semibold text-gray-700">No past events</h3>
-                    <p className="mt-2 text-sm">Events you host will appear here once they’re completed.</p>
+                    <p className="mt-2 text-sm">
+                      {isMyProfile
+                        ? "Events you host will appear here once they're completed."
+                        : "This host hasn't hosted any events yet."}
+                    </p>
                   </div>
                 )
               )}

@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getSupportProfile, updateSupportProfile, SupportProfile } from '@/lib/api/support';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
-import { ArrowLeft, Check, Heart, Loader2, Save, Sparkles, Wallet, Gift, ArrowRight, Users, Store, Building2, Brush, Calendar, Copy } from 'lucide-react';
+import {  ArrowLeft, Check, Heart, Save, Sparkles, Wallet, Gift, ArrowRight, Users, Store, Building2, Brush, Calendar, Copy , Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from '@/components/Navbar';
 import SupportCard from '@/components/SupportCard';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { getEmojiFallback } from '@/utils/avatar';
 
 interface CharacterProgressProps {
     current: number;
@@ -113,7 +115,7 @@ const MOCK_CARDS = [
     }
 ];
 
-function HeroCardAnimation() {
+function HeroCardAnimation({ userAvatar }: { userAvatar?: string | null }) {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [index, setIndex] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
@@ -202,7 +204,7 @@ function HeroCardAnimation() {
                                 <SupportCard
                                     name={card.name}
                                     username={card.username}
-                                    avatarUrl={card.avatarUrl}
+                                    avatarUrl={userAvatar || card.avatarUrl}
                                     message={card.message}
                                     profileType={card.profileType}
                                     variant={card.variant}
@@ -281,7 +283,7 @@ function HeroCardAnimation() {
                     <SupportCard
                         name={card.name}
                         username={card.username}
-                        avatarUrl={card.avatarUrl}
+                        avatarUrl={userAvatar || card.avatarUrl}
                         message={card.message}
                         profileType={card.profileType}
                         variant={card.variant}
@@ -447,7 +449,7 @@ export default function SupportSetup() {
     if (initialLoading) {
         return (
             <div className="flex h-screen items-center justify-center bg-white">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                <AmptiveSpinner className="h-8 w-8 animate-spin text-gray-400" />
             </div>
         );
     }
@@ -477,7 +479,7 @@ export default function SupportSetup() {
                                     <div className="hidden md:block absolute -inset-4 bg-blue-500/5 rounded-[2.5rem] blur-2xl group-hover:bg-blue-500/10 transition-all duration-700" />
                                     {/* Remove border, shadow, and overflow on mobile, and break out to screen edges */}
                                     <div className="relative h-[360px] md:h-auto w-screen left-1/2 -translate-x-1/2 md:static md:w-auto md:translate-x-0 md:aspect-square md:overflow-hidden md:rounded-[2rem] md:border md:border-gray-200 shadow-none md:max-w-none">
-                                        <HeroCardAnimation />
+                                        <HeroCardAnimation userAvatar={avatarUrl || user?.avatar_url || user?.profile_picture} />
                                     </div>
                                 </div>
                             </motion.div>
@@ -615,15 +617,15 @@ export default function SupportSetup() {
 
                                 <div className="flex flex-col md:flex-row md:items-center gap-6">
                                     <div className="w-20 h-20 rounded-full bg-white border border-black/5 flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
-                                        {avatarUrl ? (
+                                        {avatarUrl || user?.avatar_url || user?.profile_picture ? (
                                             <img
-                                                src={avatarUrl}
+                                                src={avatarUrl || user?.avatar_url || user?.profile_picture}
                                                 alt="Profile"
                                                 className="w-full h-full object-cover"
                                             />
                                         ) : (
-                                            <div className="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center text-rose-500">
-                                                <Heart className="w-8 h-8 fill-current" />
+                                            <div className="w-full h-full rounded-full bg-gray-100 flex items-center justify-center text-4xl">
+                                                {getEmojiFallback(user?.username || user?.name || '')}
                                             </div>
                                         )}
                                     </div>
@@ -883,7 +885,7 @@ export default function SupportSetup() {
                                             <SupportCard
                                                 name={existingProfile?.full_name || user?.email?.split('@')[0] || 'Member'}
                                                 username={existingProfile?.username || user?.email?.split('@')[0] || 'member'}
-                                                avatarUrl={avatarUrl || ''}
+                                                avatarUrl={avatarUrl || user?.avatar_url || user?.profile_picture || ''}
                                                 message={supportMessage || "Create. Share. Grow. Support. Repeat."}
                                                 variant={supportCardVariant}
                                                 onVariantChange={setSupportCardVariant}
@@ -950,7 +952,7 @@ export default function SupportSetup() {
                             <SupportCard
                                 name={existingProfile?.full_name || user?.email?.split('@')[0] || 'Member'}
                                 username={existingProfile?.username || user?.email?.split('@')[0] || 'member'}
-                                avatarUrl={avatarUrl || ''}
+                                avatarUrl={avatarUrl || user?.avatar_url || user?.profile_picture || ''}
                                 message={supportMessage}
                                 variant={supportCardVariant}
                                 profileType={profileType}

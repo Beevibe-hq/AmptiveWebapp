@@ -198,9 +198,12 @@ const EventCard: React.FC<EventCardProps> = ({
     
     // Handle array of ticket prices
     if (Array.isArray(propPrice) && propPrice.length > 0) {
+      if (propPrice.length === 1) {
+        return formatPrice(propPrice[0].price);
+      }
       const prices = propPrice.map(t => t.price);
       const minPrice = Math.min(...prices);
-      return `From ${formatPrice(minPrice)}`;
+      return `${formatPrice(minPrice)}+`;
     }
     
     // Handle single price
@@ -235,7 +238,7 @@ const EventCard: React.FC<EventCardProps> = ({
         {/* Location */}
         <div className="flex flex-col mb-2">
           <span className="text-xs text-gray-500">Location</span>
-          <span className="font-medium text-sm text-gray-600">{location}</span>
+          <span className="font-medium text-sm text-gray-600 truncate sm:whitespace-normal sm:overflow-visible">{location}</span>
         </div>
         
         {/* Price */}
@@ -258,5 +261,18 @@ const EventCard: React.FC<EventCardProps> = ({
     </div>
   );
 };
+
+export const EventCardSkeleton = () => (
+  <div className="bg-white rounded-lg overflow-hidden shadow-sm border border-gray-200 animate-pulse">
+    <div className="aspect-square bg-gray-200 rounded-t-xl mx-2 mt-2"></div>
+    <div className="p-3">
+      <div className="h-3 bg-gray-200 rounded w-1/3 mb-2"></div>
+      <div className="h-4 bg-gray-200 rounded w-2/3 mb-3"></div>
+      <div className="h-3 bg-gray-200 rounded w-1/4 mb-1"></div>
+      <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
+      <div className="h-6 bg-gray-200 rounded-full w-full mt-1.5"></div>
+    </div>
+  </div>
+);
 
 export default EventCard;

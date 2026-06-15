@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getPurchasesByUser, type TicketPurchase } from '@/lib/api/purchases';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 
 // Theme definitions copied from CreateEvent for consistency
@@ -102,7 +103,7 @@ const MyTickets = () => {
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
+                <AmptiveSpinner className="h-8 w-8 text-black" />
             </div>
         );
     }

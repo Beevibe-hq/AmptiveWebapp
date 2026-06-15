@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle } from 'lucide-react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { getCurrentUser } from '@/lib/api/auth';
 import { verifyPaymentRef } from '@/lib/api/payment';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 export default function PaystackCallback() {
     const [searchParams] = useSearchParams();
@@ -59,7 +60,7 @@ export default function PaystackCallback() {
             <div className="space-y-4 max-w-md">
                 {status === 'verifying' && (
                     <>
-                        <Loader2 className="h-12 w-12 animate-spin text-gray-900 mx-auto" />
+                        <AmptiveSpinner className="h-12 w-12 animate-spin text-gray-900 mx-auto" />
                         <h2 className="text-2xl font-bold text-gray-900">Verifying Payment</h2>
                         <p className="text-gray-500">{message}</p>
                     </>

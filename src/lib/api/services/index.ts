@@ -144,7 +144,7 @@ export const $auth = {
 
 export const $events = {
   list: (params?: Record<string, string>) => {
-    const endpoint = EVENTS_PREFIX + (params ? `/?${new URLSearchParams(params).toString()}` : '');
+    const endpoint = EVENTS_PREFIX + '/' + (params ? `?${new URLSearchParams(params).toString()}` : '');
     return api.get<{ events: unknown[]; total: number }>(endpoint, { skipAuth: true });
   },
 
@@ -176,7 +176,7 @@ export const $events = {
 
 export const $communities = {
   list: (params?: Record<string, string>) => {
-    const endpoint = COMMUNITIES_PREFIX + (params ? `/?${new URLSearchParams(params).toString()}` : '');
+    const endpoint = COMMUNITIES_PREFIX + '/' + (params ? `?${new URLSearchParams(params).toString()}` : '');
     return api.get<{ communities: unknown[]; total: number }>(endpoint, { skipAuth: true });
   },
 

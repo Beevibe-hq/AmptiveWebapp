@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MapPin, Globe, Plus, Edit2, Loader2, ChevronDown } from 'lucide-react';
-import { listVenues, createVenue, updateVenue } from '@/lib/api/venues';
+import { MapPin, Globe, Plus, Edit2, ChevronDown, Loader2, X } from "lucide-react";
+import { listVenues, createVenue, updateVenue, deleteVenue } from '@/lib/api/venues';
 import type { Venue, VenueCreateRequest } from '@/lib/api/venues';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import VenueForm from './VenueForm';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 interface VenueSelectorProps {
   selectedVenueId?: string | null;
@@ -41,12 +42,43 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
     fetchVenues();
   }, []);
 
+  const handleOpen = () => {
+    if (selectedVenueId) {
+      const venueToEdit = venues.find((v) => v.venue_id === selectedVenueId) ||
+        (draftPayload && selectedVenueId.startsWith('draft-')
+          ? {
+              venue_id: selectedVenueId,
+              name: draftPayload.name,
+              venue_type: draftPayload.venue_type,
+              city: draftPayload.city,
+              state: draftPayload.state,
+              address_line1: draftPayload.address_line1,
+              country: draftPayload.country,
+              postal_code: draftPayload.postal_code,
+              latitude: draftPayload.latitude,
+              longitude: draftPayload.longitude,
+              place_id: draftPayload.place_id,
+              place_provider: draftPayload.place_provider,
+              platform_note: draftPayload.platform_note,
+              description: draftPayload.description,
+            } as Venue
+          : null);
+      setEditingVenue(venueToEdit);
+      setShowForm(true); // Open directly in Edit mode
+    } else {
+      setEditingVenue(null);
+      setShowForm(false); // Open in Select list mode
+    }
+    setOpen(true);
+  };
+
   const handleSaveVenue = useCallback(async (payload: VenueCreateRequest) => {
     try {
       if (editingVenue) {
         if (deferVenueCreation && editingVenue.venue_id.startsWith('draft-')) {
           setDraftPayload(payload);
           onDraftVenue?.(payload);
+          setOpen(false);
           setShowForm(false);
           setEditingVenue(null);
           return;
@@ -63,6 +95,7 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
           setDraftPayload(payload);
           onDraftVenue?.(payload);
           onVenueSelect(tempId, payload.venue_type);
+          setOpen(false);
           setShowForm(false);
           setEditingVenue(null);
           return;
@@ -75,6 +108,7 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
         toastSuccess('Venue created');
         onVenueSelect(result.id, result.venue_type as 'physical' | 'virtual');
       }
+      setOpen(false);
       setShowForm(false);
       setEditingVenue(null);
       await fetchVenues();
@@ -85,28 +119,32 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
 
   return (
     <div className="relative">
-      <label className="block text-sm font-medium text-gray-700 mb-2">Venue</label>
+      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Venue</label>
 
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between rounded-2xl px-5 py-4 text-left bg-black/5 hover:bg-black/10 transition-colors"
+        onClick={handleOpen}
+        className="w-full flex items-center justify-between rounded-2xl border border-gray-100/50 px-5 py-3.5 text-left bg-black/5 hover:bg-black/10 focus:outline-none focus:ring-4 focus:ring-blue-500/10 active:scale-[0.99] transition-all duration-200"
       >
         {loading ? (
           <span className="flex items-center gap-2 text-gray-400">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading venues...
+            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+            <span className="text-sm font-medium">Loading venues...</span>
           </span>
         ) : selectedVenue ? (
           <div className="flex items-center gap-3 min-w-0">
-            {selectedVenue.venue_type === 'physical' ? (
-              <MapPin className="h-5 w-5 text-emerald-500 shrink-0" />
-            ) : (
-              <Globe className="h-5 w-5 text-blue-500 shrink-0" />
-            )}
+            <div className={`p-2 rounded-xl shrink-0 ${
+              selectedVenue.venue_type === 'physical' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
+            }`}>
+              {selectedVenue.venue_type === 'physical' ? (
+                <MapPin className="h-4 w-4" />
+              ) : (
+                <Globe className="h-4 w-4" />
+              )}
+            </div>
             <div className="min-w-0">
-              <div className="text-sm font-medium text-gray-900 truncate">{selectedVenue.name}</div>
-              <div className="text-xs text-gray-500 truncate">
+              <div className="text-sm font-bold text-gray-900 truncate">{selectedVenue.name}</div>
+              <div className="text-[11px] font-medium text-gray-500 truncate mt-0.5">
                 {selectedVenue.venue_type === 'physical'
                   ? [selectedVenue.city, selectedVenue.state].filter(Boolean).join(', ') || selectedVenue.address_line1
                   : 'On the App'}
@@ -114,100 +152,64 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
             </div>
           </div>
         ) : (
-          <span className="text-gray-500">Select a venue</span>
+          <span className="text-sm text-gray-500 font-medium">Select a venue</span>
         )}
-        <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="absolute z-20 w-full mt-2 bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden max-h-72 overflow-y-auto">
-          {venues.length === 0 && !loading ? (
-            <div className="px-5 py-8 text-center text-sm text-gray-500">
-              No venues yet. Create one below.
-            </div>
-          ) : (
-            venues.map((venue) => (
-              <button
-                key={venue.venue_id}
-                type="button"
-                onClick={() => {
-                  onVenueSelect(venue.venue_id, venue.venue_type);
-                  setOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 ${
-                  selectedVenueId === venue.venue_id ? 'bg-blue-50/50' : ''
-                }`}
-              >
-                {venue.venue_type === 'physical' ? (
-                  <MapPin className="h-5 w-5 text-emerald-500 shrink-0" />
-                ) : (
-                  <Globe className="h-5 w-5 text-blue-500 shrink-0" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-gray-900 truncate">{venue.name}</div>
-                  <div className="text-xs text-gray-500 truncate">
-                    {venue.venue_type === 'physical'
-                      ? [venue.city, venue.state].filter(Boolean).join(', ') || venue.address_line1
-                      : 'On the App'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingVenue(venue);
-                    setShowForm(true);
-                    setOpen(false);
-                  }}
-                  className="p-2 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors shrink-0"
-                >
-                  <Edit2 className="h-4 w-4" />
-                </button>
-              </button>
-            ))
-          )}
-
-          <div className="border-t border-gray-100 p-2">
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          {selectedVenue && (
             <button
               type="button"
               onClick={() => {
+                onVenueSelect(null);
+                onDraftVenue?.(null);
+                setDraftPayload(null);
+              }}
+              className="p-1 rounded-full hover:bg-black/10 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+          <ChevronDown className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-300 ${open ? 'rotate-180 text-blue-500' : ''}`} />
+        </div>
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <VenueForm
+              initialVenue={editingVenue}
+              onSave={handleSaveVenue}
+              onCancel={() => {
+                setOpen(false);
                 setEditingVenue(null);
-                setShowForm(true);
+              }}
+              onClear={selectedVenueId ? () => {
+                onVenueSelect(null);
+                onDraftVenue?.(null);
+                setDraftPayload(null);
+                setOpen(false);
+                setEditingVenue(null);
+              } : undefined}
+              existingVenues={venues}
+              selectedVenueId={selectedVenueId}
+              onSelectVenue={(venueId) => {
+                const venue = venues.find(v => v.venue_id === venueId);
+                onVenueSelect(venueId, venue?.venue_type);
                 setOpen(false);
               }}
-              className="w-full flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Add New Venue
-            </button>
+              onDeleteVenue={async (venue) => {
+                if (!confirm(`Delete "${venue.name}"? This cannot be undone.`)) return;
+                const result = await deleteVenue(venue.venue_id);
+                if (result.ok) {
+                  toastSuccess('Venue deleted');
+                  await fetchVenues();
+                } else {
+                  toastError(result.error || 'Failed to delete venue');
+                }
+              }}
+              isInline={true}
+            />
           </div>
-
-          {selectedVenueId && (
-            <div className="border-t border-gray-100 p-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onVenueSelect(null);
-                  setOpen(false);
-                }}
-                className="w-full flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors"
-              >
-                No venue
-              </button>
-            </div>
-          )}
         </div>
-      )}
-
-      {showForm && (
-        <VenueForm
-          initialVenue={editingVenue}
-          onSave={handleSaveVenue}
-          onCancel={() => {
-            setShowForm(false);
-            setEditingVenue(null);
-          }}
-        />
       )}
     </div>
   );

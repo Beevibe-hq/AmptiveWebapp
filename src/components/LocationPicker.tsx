@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapPin, Loader2 } from 'lucide-react';
+import {  MapPin , Loader2 } from "lucide-react";
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 interface LocationPickerProps {
     onLocationSelect: (venue: string, city: string, lat?: number, lng?: number) => void;

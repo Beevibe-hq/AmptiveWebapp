@@ -3,6 +3,7 @@ import { Plus, Search, CalendarDays, Ticket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getSession } from '@/lib/api/auth';
 import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { getTicketsForEvent } from '@/lib/api/tickets';
 
 export default function DashboardEvents() {
     const [events, setEvents] = useState<StandaloneEvent[]>([]);
@@ -69,6 +70,32 @@ export default function DashboardEvents() {
     const startIndex = (currentPage - 1) * eventsPerPage;
     const endIndex = Math.min(startIndex + eventsPerPage, filteredEvents.length);
     const paginatedEvents = filteredEvents.slice(startIndex, endIndex);
+
+    const [ticketCounts, setTicketCounts] = useState<Record<string, number>>({});
+
+    useEffect(() => {
+        const fetchTicketCounts = async () => {
+            const counts: Record<string, number> = {};
+            await Promise.all(paginatedEvents.map(async (event) => {
+                // If we already have the count, or the event already includes it natively, skip
+                if (ticketCounts[event.event_id] !== undefined) return;
+                
+                try {
+                    const tickets = await getTicketsForEvent(event.event_id);
+                    counts[event.event_id] = tickets.length;
+                } catch {
+                    counts[event.event_id] = 0;
+                }
+            }));
+            if (Object.keys(counts).length > 0) {
+                setTicketCounts(prev => ({ ...prev, ...counts }));
+            }
+        };
+        
+        if (paginatedEvents.length > 0) {
+            fetchTicketCounts();
+        }
+    }, [paginatedEvents]);
 
     const handlePreviousPage = () => {
         if (currentPage > 1) {
@@ -176,7 +203,7 @@ export default function DashboardEvents() {
                                     <div className="bg-white/90 backdrop-blur-sm text-black text-[10px] font-bold px-2 py-1 rounded-full border border-black/5 flex items-center gap-1 shadow-sm">
                                         <Ticket className="w-3 h-3 text-black/70" />
                                         <span className="text-black/70">
-                                            {event.event_tickets?.length || 0}
+                                            {ticketCounts[event.event_id] ?? (event as any).ticket_count ?? event.event_tickets?.length ?? 0}
                                         </span>
                                     </div>
                                 </div>

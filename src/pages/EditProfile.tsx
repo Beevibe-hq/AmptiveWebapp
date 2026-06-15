@@ -2,17 +2,18 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { checkUsernameAvailability, updateProfile } from '@/lib/api/profiles';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
-import { Camera, Loader2, Save } from 'lucide-react';
+import {  Camera, Save , Loader2 } from "lucide-react";
 import Navbar from '@/components/Navbar';
 import { useAuth } from '@/contexts/AuthContext';
 import { uploadImage } from '@/lib/api/storage';
 import { UserProfile } from '@/lib/api/services';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 export default function EditProfile() {
     const navigate = useNavigate();
-    const {user} =  useAuth()
+    const {user, refreshUser} =  useAuth()
     const [saving, setSaving] = useState(false);
-    const [initialLoading, _setInitialLoading] = useState(true);
+    const [initialLoading, setInitialLoading] = useState(true);
 
     // Form State
     const [fullName, setFullName] = useState('');
@@ -30,6 +31,26 @@ export default function EditProfile() {
     const initialUsernameRef = useRef<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Hydrate form fields from user data
+    useEffect(() => {
+        if (user) {
+            setFullName(user.name || '');
+            setUsername(user.username || '');
+            setDob(user.dob || '');
+            _setAvatarUrl(user.avatar_url || user.profile_picture || null);
+            initialUsernameRef.current = user.username || null;
+            setInitialLoading(false);
+        } else {
+            // If no user after auth finishes loading, redirect
+            const timer = setTimeout(() => {
+                if (!user) {
+                    navigate('/login');
+                }
+            }, 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [user, navigate]);
 
     // Check Username Availability Effect
     useEffect(() => {
@@ -147,6 +168,7 @@ export default function EditProfile() {
             const { ok, error } = await updateProfile(updates);
             if (!ok) throw new Error(error || 'Failed to update profile');
 
+            await refreshUser();
             toastSuccess('Profile updated successfully!');
             navigate(`/profile/${user.user_id}`);
         } catch (error: any) {
@@ -159,8 +181,10 @@ export default function EditProfile() {
 
     if (initialLoading) {
         return (
-            <div className="flex h-screen items-center justify-center bg-white">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-white">
+                <div className="flex h-24 w-24 items-center justify-center">
+                    <AmptiveSpinner className="h-full w-full text-black" />
+                </div>
             </div>
         );
     }
@@ -206,11 +230,13 @@ export default function EditProfile() {
                             <div className="space-y-6">
                                 <section className="group">
                                     <div>
-                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 mb-4">
-                                            <span className="text-xs flex items-baseline gap-1 font-medium text-gray-600">
-                                                Since {user?.created_at ? new Date(user.created_at).getFullYear() : '...'}
-                                            </span>
-                                        </div>
+                                        {user?.created_at && (
+                                            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 mb-4">
+                                                <span className="text-xs flex items-baseline gap-1 font-medium text-gray-600">
+                                                    Since {new Date(user.created_at).getFullYear()}
+                                                </span>
+                                            </div>
+                                        )}
                                         <h1 className="text-3xl md:text-[40px] font-bold text-black tracking-tight leading-[1.1] mb-2">
                                             Edit Profile
                                         </h1>

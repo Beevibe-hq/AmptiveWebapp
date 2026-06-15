@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, Plus, Minus, ChevronDown, CheckCircle2, Ticket } from 'lucide-react';
+import {  Plus, Minus, ChevronDown, CheckCircle2, Ticket , Loader2 } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { TICKET_THEMES } from '@/lib/constants';
@@ -10,6 +10,7 @@ import { getEvent } from '@/lib/api/events';
 import { EventTicket, getTicketsForEvent } from '@/lib/api/tickets';
 import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 type EventRecord = {
     id: string;
@@ -59,7 +60,7 @@ export default function CheckoutPage() {
             if (a.isMe && (!a.name || !a.email)) {
                 return {
                     ...a,
-                    name: a.name || currentUser.name || '',
+                    name: a.name || currentUser.name || currentUser.username || '',
                     email: a.email || currentUser.email || '',
                 };
             }
@@ -292,7 +293,7 @@ export default function CheckoutPage() {
     if (loading) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-white">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
+                <AmptiveSpinner className="h-8 w-8 animate-spin text-gray-900" />
             </div>
         );
     }
@@ -408,7 +409,6 @@ export default function CheckoutPage() {
                         <div className="space-y-4">
                             <div className="flex items-center gap-3 p-4 rounded-2xl bg-gray-50/50 border border-gray-100">
                                 <input
-                                    disabled={currentUser ? false : true}
                                     type="checkbox"
                                     id="isMe"
                                     checked={attendees[0]?.isMe}
@@ -418,8 +418,8 @@ export default function CheckoutPage() {
                                             {
                                                 ...prev[0],
                                                 isMe: checked,
-                                                name: checked ? (currentUser?.name || '') : '',
-                                                email: checked ? (currentUser?.email || '') : ''
+                                                name: checked ? (currentUser?.name || currentUser?.username || buyerName || '') : '',
+                                                email: checked ? (currentUser?.email || buyerEmail || '') : ''
                                             }
                                         ]);
                                     }}
@@ -489,7 +489,6 @@ export default function CheckoutPage() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <input
-                                                disabled={currentUser ? false : true}
                                                 type="checkbox"
                                                 id={`isMe-${idx}`}
                                                 checked={attendee.isMe}
@@ -500,8 +499,8 @@ export default function CheckoutPage() {
                                                         next[idx] = {
                                                             ...next[idx],
                                                             isMe: checked,
-                                                            name: checked ? (currentUser?.name || '') : '',
-                                                            email: checked ? (currentUser?.email || '') : ''
+                                                            name: checked ? (currentUser?.name || currentUser?.username || buyerName || '') : '',
+                                                            email: checked ? (currentUser?.email || buyerEmail || '') : ''
                                                         };
                                                         return next;
                                                     });
@@ -585,7 +584,6 @@ export default function CheckoutPage() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <input
-                                                disabled={currentUser ? false : true}
                                                 type="checkbox"
                                                 id={`isMe-${idx}`}
                                                 checked={attendee.isMe}
@@ -596,8 +594,8 @@ export default function CheckoutPage() {
                                                         next[idx] = {
                                                             ...next[idx],
                                                             isMe: checked,
-                                                            name: checked ? (currentUser?.name || '') : '',
-                                                            email: checked ? (currentUser?.email || '') : ''
+                                                            name: checked ? (currentUser?.name || currentUser?.username || buyerName || '') : '',
+                                                            email: checked ? (currentUser?.email || buyerEmail || '') : ''
                                                         };
                                                         return next;
                                                     });

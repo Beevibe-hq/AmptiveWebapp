@@ -18,6 +18,9 @@ export interface EventTicket {
   is_physical?: boolean;
   created_at?: string;
   quantity?: number;
+  has_early_bird?: boolean;
+  early_bird_units?: number;
+  early_bird_discount_percentage?: number;
 }
 
 export interface CheckoutItem {
@@ -61,6 +64,9 @@ export interface TicketCreateInput {
   benefits?: string[];
   color_theme?: string | null;
   is_physical?: boolean;
+  has_early_bird?: boolean;
+  early_bird_units?: number;
+  early_bird_discount_percentage?: number;
 }
 
 export async function getTicketsForEvent(eventId: string): Promise<EventTicket[]> {

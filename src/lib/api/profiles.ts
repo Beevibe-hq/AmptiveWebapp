@@ -1,4 +1,6 @@
 import { $users, $auth, type UserProfile } from './services';
+import { api } from './client';
+
 
 
 export interface UpdateProfilePayload {
@@ -23,7 +25,7 @@ export function normalizeUserProfile(user: Partial<UserProfile> | null | undefin
   const id = String(user.id || user.user_id || '');
   if (!id) return null;
 
-  const name = user.name || '';
+  const name = user.name || (user as any).display_name || (user as any).full_name || '';
   const username = user.username || '';
   const profilePicture = user.profile_picture ?? user.avatar_url ?? null;
 
@@ -83,6 +85,17 @@ export async function getProfile(userId?: string): Promise<UserProfile | null> {
 export async function getProfileByUserId(targetUserId: string): Promise<UserProfile | null> {
   try {
     const response = await $users.getById(targetUserId);
+    return normalizeUserProfile(response);
+  } catch {
+    return null;
+  }
+}
+
+export async function getProfileByUsername(targetUsername: string): Promise<UserProfile | null> {
+  try {
+    const response = await api.get<UserProfile>(
+      `/users/by-username/${encodeURIComponent(targetUsername)}`
+    );
     return normalizeUserProfile(response);
   } catch {
     return null;

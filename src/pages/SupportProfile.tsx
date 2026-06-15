@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { QrCode, Share2, MoreHorizontal, Youtube, Twitch, Heart, Check, Loader2, ArrowLeft, Star, Briefcase, Eye, Settings, CreditCard, Users, Coffee, Crown, Zap, Gift } from 'lucide-react';
+import {  QrCode, Share2, MoreHorizontal, Youtube, Twitch, Heart, Check, ArrowLeft, Star, Briefcase, Eye, Settings, CreditCard, Users, Coffee, Crown, Zap, Gift , Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
 import SupportCard from '@/components/SupportCard';
 import Navbar from '@/components/Navbar';
@@ -11,6 +11,7 @@ import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { playSwoosh, playSuccessChime } from '@/utils/audio';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 export default function SupportProfile() {
   const { id } = useParams<{ id: string }>();
@@ -277,7 +278,7 @@ export default function SupportProfile() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <AmptiveSpinner className="w-8 h-8 animate-spin text-blue-600" />
       </div>
     );
   }

@@ -93,7 +93,7 @@ export default function VerifyOtpPage() {
           <h2 className="text-center text-[28px] font-bold text-gray-900">Verify your email</h2>
           {email && (
             <>
-              <p className="text-gray-600 text-center mb-6">We sent a 6-digit code to {email}</p>
+              <p className="text-gray-600 text-center mb-6">We sent a 4-digit code to {email}</p>
               <div className="mt-2 flex justify-center">
                 <button
                   type="button"

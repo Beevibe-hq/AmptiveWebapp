@@ -1,3 +1,4 @@
+import { getEmojiFallback } from '@/utils/avatar';
 import React, { useState } from 'react';
 import { QrCode, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,6 +22,18 @@ const getRgba = (hex: string, alpha: number) => {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+
+const SupportAvatar = ({ url, name, username, className }: { url?: string; name: string; username: string; className: string }) => {
+  if (url) {
+    return <img src={url} alt={name} className={className} />;
+  }
+  return (
+    <div className={`bg-gray-100 flex items-center justify-center text-center ${className}`} style={{ fontSize: className.includes('w-14') ? '1.75rem' : '3rem' }}>
+      {getEmojiFallback(username)}
+    </div>
+  );
 };
 
 const SupportCard: React.FC<SupportCardProps> = ({
@@ -679,7 +692,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                               {/* Avatar Overlay */}
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className="bg-white p-0.5 rounded-full shadow-sm">
-                                  <img src={avatarUrl} alt={name} className="w-14 h-14 rounded-full object-cover" />
+                                  <SupportAvatar url={avatarUrl} name={name} username={username} className="w-14 h-14 rounded-full object-cover" />
                                 </div>
                               </div>
                             </div>
@@ -713,7 +726,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                               {/* Avatar Overlay */}
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className={`p-1 rounded-full ${current.variant === 'bold-cosmic' ? 'bg-[#e6e8e1]' : 'bg-white'}`}>
-                                  <img src={avatarUrl} alt={name} className="w-14 h-14 rounded-full object-cover" />
+                                  <SupportAvatar url={avatarUrl} name={name} username={username} className="w-14 h-14 rounded-full object-cover" />
                                 </div>
                               </div>
                             </div>
@@ -748,7 +761,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                               {/* Avatar Overlay */}
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className="bg-white p-1 rounded-full">
-                                  <img src={avatarUrl} alt={name} className="w-14 h-14 rounded-full object-cover" />
+                                  <SupportAvatar url={avatarUrl} name={name} username={username} className="w-14 h-14 rounded-full object-cover" />
                                 </div>
                               </div>
                             </div>
@@ -894,7 +907,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                       <div className="relative w-20 h-20 md:w-28 md:h-28">
                         <div className="absolute inset-0 bg-white/30 rounded-full blur-2xl" />
                         <div className="relative w-full h-full rounded-full overflow-hidden shadow-2xl border-[6px] border-white">
-                          <img src={avatarUrl} alt={name} className="w-full h-full object-cover" />
+                          <SupportAvatar url={avatarUrl} name={name} username={username} className="w-full h-full object-cover" />
                         </div>
                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full border border-white text-[9px] font-black uppercase tracking-widest bg-[#064E3B] text-white whitespace-nowrap">
                           {username}
@@ -983,7 +996,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           className="relative w-full h-full rounded-full overflow-hidden shadow-2xl border-[6px]"
                           style={{ borderColor: current.accent }}
                         >
-                          <img src={avatarUrl} alt={name} className="w-full h-full object-cover" />
+                          <SupportAvatar url={avatarUrl} name={name} username={username} className="w-full h-full object-cover" />
                         </div>
                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full border border-white text-[9px] font-black uppercase tracking-widest bg-[#312E81] text-white whitespace-nowrap">
                           {username}

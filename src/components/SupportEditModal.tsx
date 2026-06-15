@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Loader2, Upload, Trash2, Wand2, Minus, Plus, RotateCw, Share2, Twitter, Youtube } from 'lucide-react';
+import {  X, Camera, Upload, Trash2, Wand2, Minus, Plus, RotateCw, Share2, Twitter, Youtube , Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
 import Cropper from 'react-easy-crop';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/api/storage';
 import { updateSupportProfile, SupportProfile } from '@/lib/api/support';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 interface SupportEditModalProps {
   isOpen: boolean;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 } from 'lucide-react';
+import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2 } from "lucide-react";
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
@@ -12,6 +12,7 @@ import VenueSelector from '@/components/VenueSelector';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api/client';
 import { uploadImage } from '@/lib/api/storage';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 
 const TICKET_THEMES: Record<TicketTheme, {
@@ -73,6 +74,7 @@ type FormState = {
   summary: string;
   description: string;
   startDateTime: string | null;
+  endDateTime: string | null;
   venue: string;
   city: string;
   latitude?: number | null;
@@ -120,6 +122,7 @@ const buildInitialFormState = (): FormState => {
     summary: '',
     description: '',
     startDateTime: null,
+    endDateTime: null,
     venue: '',
     city: '',
     latitude: null,
@@ -328,12 +331,12 @@ const CreateEvent = () => {
         showType: 'paid',
         tickets: prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
+            ? { ...t, label: ticketForm.title, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
             : t
         ),
         price: deriveEventPrice(prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
+            ? { ...t, label: ticketForm.title, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
             : t
         )),
       }));
@@ -341,6 +344,7 @@ const CreateEvent = () => {
       const newTicket: EventTicket = {
         id: `ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         label: ticketForm.title,
+        title: ticketForm.title,
         price,
         currency: ticketForm.currency,
         benefits,
@@ -351,7 +355,8 @@ const CreateEvent = () => {
         quantity_sold: 0,
         quantity_remaining: 0,
         reserved_quantity: 0,
-        is_active: false
+        is_active: false,
+        has_early_bird: false
       };
       setForm(prev => ({ ...prev, showType: 'paid', tickets: [...prev.tickets, newTicket], price: deriveEventPrice([...prev.tickets, newTicket]) }));
     }
@@ -406,16 +411,8 @@ const CreateEvent = () => {
   };
 
   useEffect(() => {
-    const updateDominantColor = async () => {
-      if (form.coverImage) {
-        const color = await getAverageColor(form.coverImage);
-        if (color) setDominantColor(color);
-      } else {
-        setDominantColor(null);
-      }
-    };
-    updateDominantColor();
-  }, [form.coverImage, setDominantColor]);
+    setDominantColor(null);
+  }, [setDominantColor]);
 
   useEffect(() => {
     const shuffled = [...GALLERY_IMAGES].sort(() => 0.5 - Math.random());
@@ -493,6 +490,7 @@ const CreateEvent = () => {
           title: event.title || '',
           description: event.description || '',
           startDateTime: safeFormat(event.scheduled_for),
+          endDateTime: safeFormat(event.ended_at),
           coverImage: event.thumbnail_url || '',
           price: deriveEventPrice(tickets || []),
           tickets: tickets,
@@ -641,17 +639,30 @@ const CreateEvent = () => {
 
     const isPublished = id && eventStatus.toLowerCase() !== 'draft';
 
-    if (!form.startDateTime) {
-      if (isPublished) {
-        toastError('Published events must have a start date. You cannot unset it.');
-        return;
-      }
-    } else {
-      const startTime = new Date(form.startDateTime);
+    let startTime: Date | null = null;
+    if (form.startDateTime) {
+      startTime = new Date(form.startDateTime);
       if (Number.isNaN(startTime.getTime())) {
         toastError('Start time is invalid.');
         return;
       }
+    } else if (isPublished) {
+      toastError('Published events must have a start date. You cannot unset it.');
+      return;
+    }
+
+    let endTimeIso: string | undefined = undefined;
+    if (form.endDateTime) {
+      const endTime = new Date(form.endDateTime);
+      if (Number.isNaN(endTime.getTime())) {
+        toastError('End time is invalid.');
+        return;
+      }
+      if (startTime && endTime <= startTime) {
+        toastError('End time must be after the start time.');
+        return;
+      }
+      endTimeIso = endTime.toISOString();
     }
 
     setSubmitting(true);
@@ -668,8 +679,6 @@ const CreateEvent = () => {
         }
       }
 
-      const startTime = form.startDateTime ? new Date(form.startDateTime) : null;
-
       let resolvedVenueId = form.venueId;
       if (form.draftVenue && form.venueId?.startsWith('draft-')) {
         const venueResult = await createVenue(form.draftVenue);
@@ -685,6 +694,7 @@ const CreateEvent = () => {
         show_type: form.showType,
         price: form.price,
         scheduled_for: startTime ? startTime.toISOString() : undefined,
+        ended_at: endTimeIso,
         hand_raising: form.handRaising,
         allow_whispers: form.allowWhispers,
         venue_id: resolvedVenueId || null,
@@ -730,13 +740,16 @@ const CreateEvent = () => {
         if (newTickets.length > 0) {
           for (const ticket of newTickets) {
             const ticketPayload = {
-              label: ticket.label,
+              label: ticket.label || ticket.title,
               price: ticket.price,
               currency: ticket.currency,
               quantity_total: ticket.quantity ?? null,
               benefits: ticket.benefits,
               color_theme: ticket.color_theme,
               is_physical: false,
+              has_early_bird: ticket.has_early_bird,
+              early_bird_units: ticket.early_bird_units,
+              early_bird_discount_percentage: ticket.early_bird_discount_percentage,
             };
 
             await createNewTicket(ticketPayload, eventId);
@@ -747,12 +760,15 @@ const CreateEvent = () => {
         if (existingTickets.length > 0) {
           for (const ticket of existingTickets) {
             await updateTicket(ticket.id, {
-              label: ticket.label,
+              label: ticket.label || ticket.title,
               price: ticket.price,
               currency: ticket.currency,
               quantity_total: ticket.quantity ?? null,
               benefits: ticket.benefits,
               color_theme: ticket.color_theme,
+              has_early_bird: ticket.has_early_bird,
+              early_bird_units: ticket.early_bird_units,
+              early_bird_discount_percentage: ticket.early_bird_discount_percentage,
             });
           }
         }
@@ -803,7 +819,7 @@ const CreateEvent = () => {
   if (!ready || loadingEvent) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" aria-label="Loading" />
+        <AmptiveSpinner className="h-8 w-8 animate-spin text-gray-400" aria-label="Loading" />
       </div>
     );
   }
@@ -821,7 +837,7 @@ const CreateEvent = () => {
         }}
       />
 
-      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 py-4 lg:py-6 pt-24 lg:pt-32">
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 py-4 lg:py-6 pt-20 lg:pt-24">
         <div className="flex flex-col-reverse lg:flex-row gap-6 lg:gap-12 items-start">
 
           {/* Main Form Area */}
@@ -870,25 +886,36 @@ const CreateEvent = () => {
                     Schedule
                   </div>
 
-                  <div className="lg:px-2">
-                    <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start Date & Time</label>
-                    <input
-                      type="datetime-local"
-                      min={nowIsoLocal}
-                      value={form.startDateTime ? datetimeValue(form.startDateTime) : ''}
-                      onChange={(e) => {
-                        if (isPublished && !e.target.value) {
-                          toastError('Published events must have a start date.');
-                          return;
-                        }
-                        setForm(prev => ({ ...prev, startDateTime: e.target.value || null }));
-                      }}
-                      className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
-                      placeholder="Leave empty to save as draft"
-                    />
-                    {!form.startDateTime && !id && (
-                      <p className="mt-2 text-xs text-gray-400">Leave empty to save as a draft</p>
-                    )}
+                  <div className="grid gap-6 sm:grid-cols-2 lg:px-2">
+                    <div>
+                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start</label>
+                      <input
+                        type="datetime-local"
+                        min={nowIsoLocal}
+                        value={form.startDateTime ? datetimeValue(form.startDateTime) : ''}
+                        onChange={(e) => {
+                          if (isPublished && !e.target.value) {
+                            toastError('Published events must have a start date.');
+                            return;
+                          }
+                          setForm(prev => ({ ...prev, startDateTime: e.target.value || null }));
+                        }}
+                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                        required={isPublished}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">End (Optional)</label>
+                      <input
+                        type="datetime-local"
+                        min={form.startDateTime ? datetimeValue(form.startDateTime) : nowIsoLocal}
+                        value={form.endDateTime ? datetimeValue(form.endDateTime) : ''}
+                        onChange={(e) => {
+                          setForm(prev => ({ ...prev, endDateTime: e.target.value || null }));
+                        }}
+                        className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                      />
+                    </div>
                   </div>
                   <div className="mx-2 flex items-center gap-2 text-xs text-gray-500 bg-gray-100/50 px-4 py-2 rounded-full w-fit border border-gray-100">
                     <Globe className="h-3.5 w-3.5" />
@@ -940,12 +967,13 @@ const CreateEvent = () => {
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
+                                <div className={`flex-shrink-0 w-5 h-5 rounded-full border border-black/10 shadow-[inset_-2px_-2px_4px_rgba(0,0,0,0.2),inset_2px_2px_4px_rgba(255,255,255,0.7),0_2px_4px_rgba(0,0,0,0.1)] ${TICKET_THEMES[ticket.color_theme || 'silver'].gradient}`} />
                                 <h5 className="font-bold text-gray-900">{ticket.label}</h5>
                                 <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
                                   {formatTicketPrice(ticket.price, ticket.currency)}
                                 </span>
                               </div>
-                              <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                              <p className="text-sm text-gray-500 mt-1 pl-6 line-clamp-1">
                                 {deriveTicketBenefits(ticket).join(' • ')}
                               </p>
                             </div>
@@ -984,79 +1012,173 @@ const CreateEvent = () => {
                   </div>
                 </section>
 
-                {/* Event Settings */}
-                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                    <Sparkles className="h-4 w-4 text-amber-500" />
-                    Settings
-                  </div>
-
-                  <div className="space-y-4 lg:px-2">
-                    {/* Free / Paid Indicator */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Event Type</p>
-                        <p className="text-xs text-gray-500">Auto-detected from tickets</p>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                        form.showType === 'paid'
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      }`}>
-                        {form.showType === 'paid' ? 'Paid' : 'Free'}
-                      </span>
+                {/* Early Bird Settings */}
+                {form.tickets.length > 0 && (
+                  <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
+                    <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                      <Sparkles className="h-4 w-4 text-blue-600" />
+                      Early Bird Settings
                     </div>
 
-                    {/* Event Price (auto-derived) */}
-                    {form.showType === 'paid' && form.tickets.length > 0 && (
-                      <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50/50 border border-amber-100">
+                    <p className="text-sm text-gray-500 lg:mx-2 leading-relaxed">
+                      Offer discounted tickets to your first buyers to drive early bookings, build momentum, and secure initial sales for your event.
+                    </p>
+
+                    <div className="lg:px-2 space-y-4">
+                      {form.tickets.map((ticket) => (
+                        <div
+                          key={ticket.id}
+                          className="group flex flex-col p-5 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 transition-all duration-300 gap-4"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="flex items-center gap-2.5">
+                                <div className={`flex-shrink-0 w-5 h-5 rounded-full border border-black/10 shadow-[inset_-2px_-2px_4px_rgba(0,0,0,0.2),inset_2px_2px_4px_rgba(255,255,255,0.7),0_2px_4px_rgba(0,0,0,0.1)] ${TICKET_THEMES[ticket.color_theme || 'silver'].gradient}`} />
+                                <h5 className="font-bold text-gray-900">{ticket.label || ticket.title}</h5>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5 pl-6">
+                                Base Price: {formatTicketPrice(ticket.price, ticket.currency)}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForm(prev => ({
+                                  ...prev,
+                                  tickets: prev.tickets.map(t =>
+                                    t.id === ticket.id
+                                      ? { ...t, has_early_bird: !t.has_early_bird }
+                                      : t
+                                  )
+                                }));
+                              }}
+                              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${ticket.has_early_bird ? 'bg-blue-600' : 'bg-gray-200'}`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${ticket.has_early_bird ? 'translate-x-5' : 'translate-x-0'}`}
+                              />
+                            </button>
+                          </div>
+
+                          {ticket.has_early_bird && (
+                            <div className="grid gap-6 sm:grid-cols-2 pt-4 border-t border-gray-50 animate-in fade-in slide-in-from-top-2 duration-300">
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                  Units to be sold
+                                </label>
+                                <input
+                                  type="number"
+                                  value={ticket.early_bird_units || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    let parsedVal = val ? parseInt(val) : undefined;
+                                    if (parsedVal !== undefined && ticket.quantity !== undefined && parsedVal > ticket.quantity) {
+                                      parsedVal = ticket.quantity;
+                                    }
+                                    setForm(prev => ({
+                                      ...prev,
+                                      tickets: prev.tickets.map(t =>
+                                        t.id === ticket.id
+                                          ? { ...t, early_bird_units: parsedVal }
+                                          : t
+                                      )
+                                    }));
+                                  }}
+                                  placeholder="e.g. 10"
+                                  min="1"
+                                  max={ticket.quantity}
+                                  step="1"
+                                  className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                                />
+                                {ticket.quantity !== undefined && (
+                                  <p className="mt-1.5 text-xs text-gray-500">
+                                    Max limit: {ticket.quantity.toLocaleString()} units
+                                  </p>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                  Percentage Drop (%)
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={ticket.early_bird_discount_percentage || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setForm(prev => ({
+                                        ...prev,
+                                        tickets: prev.tickets.map(t =>
+                                          t.id === ticket.id
+                                            ? { ...t, early_bird_discount_percentage: val ? parseFloat(val) : undefined }
+                                            : t
+                                        )
+                                      }));
+                                    }}
+                                    placeholder="e.g. 30"
+                                    min="0"
+                                    max="100"
+                                    step="0.1"
+                                    className="block w-full rounded-2xl px-3.5 py-3 pr-10 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                                  />
+                                  <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-gray-500 font-medium">
+                                    %
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Event Settings */}
+                {form.venueType === 'virtual' && (
+                  <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                    <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
+                      <Sparkles className="h-4 w-4 text-amber-500" />
+                      Settings
+                    </div>
+
+                    <div className="space-y-4 lg:px-2">
+                      {/* Hand Raising Toggle */}
+                      <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-medium text-gray-900">Event Price</p>
-                          <p className="text-xs text-gray-500">Auto-derived from regular ticket</p>
+                          <p className="text-sm font-medium text-gray-900">Hand Raising</p>
+                          <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
                         </div>
-                        <span className="text-lg font-bold text-gray-900">{formatTicketPrice(form.price)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
+                          />
+                        </button>
                       </div>
-                    )}
 
-                    {form.venueType === 'virtual' && (
-                      <>
-                        {/* Hand Raising Toggle */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">Hand Raising</p>
-                            <p className="text-xs text-gray-500">Attendees can raise hands to speak</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setForm(prev => ({ ...prev, handRaising: !prev.handRaising }))}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.handRaising ? 'bg-blue-500' : 'bg-gray-200'}`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.handRaising ? 'translate-x-6' : 'translate-x-1'}`}
-                            />
-                          </button>
+                      {/* Allow Whispers Toggle */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
+                          <p className="text-xs text-gray-500">Private messages between attendees</p>
                         </div>
-
-                        {/* Allow Whispers Toggle */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">Allow Whispers</p>
-                            <p className="text-xs text-gray-500">Private messages between attendees</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
-                            />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </section>
+                        <button
+                          type="button"
+                          onClick={() => setForm(prev => ({ ...prev, allowWhispers: !prev.allowWhispers }))}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${form.allowWhispers ? 'bg-purple-500' : 'bg-gray-200'}`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${form.allowWhispers ? 'translate-x-6' : 'translate-x-1'}`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                )}
 
               </div>
 
@@ -1505,14 +1627,14 @@ const CreateEvent = () => {
                     <button
                       type="button"
                       onClick={handleSaveTicket}
-                      className="flex-1 px-6 py-3.5 rounded-xl bg-black text-white text-sm font-semibold hover:bg-gray-900 transition-transform active:scale-[0.98]"
+                      className="flex-1 px-6 py-3.5 rounded-full bg-black text-white text-sm font-semibold hover:bg-gray-900 transition-transform active:scale-[0.98]"
                     >
                       {editingTicketId ? 'Update Ticket' : 'Save Ticket'}
                     </button>
                     <button
                       type="button"
                       onClick={handleCancelTicketForm}
-                      className="px-6 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors"
+                      className="px-6 py-3.5 rounded-full bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors"
                     >
                       Cancel
                     </button>
