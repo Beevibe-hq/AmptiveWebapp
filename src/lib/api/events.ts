@@ -3,6 +3,7 @@ import type { Venue } from './venues';
 
 export interface StandaloneEvent {
   event_tickets: any;
+  ticket_types?: any[];
   event_id: string;
   title: string;
   description?: string | null;

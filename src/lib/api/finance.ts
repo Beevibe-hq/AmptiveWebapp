@@ -27,7 +27,8 @@ export interface BuyerProfile {
 export async function getEventOwnerPurchases(): Promise<PurchaseRecord[]> {
   try {
     const response = await $finance.getEventOwnerPurchases();
-    return (response.purchases || []) as PurchaseRecord[];
+    if (Array.isArray(response)) return response as PurchaseRecord[];
+    return ((response as any)?.purchases || (response as any)?.data?.purchases || (response as any)?.data || []) as PurchaseRecord[];
   } catch {
     return [];
   }

@@ -12,6 +12,7 @@ import Help from './pages/Help';
 import Invest from './pages/Invest';
 import Shop from './pages/Shop';
 import Community from './pages/Community';
+import CommunityEvents from './pages/CommunityEvents';
 import AITool from './pages/AITool';
 import NewChat from './pages/NewChat';
 import ChatMode from './pages/ChatMode';
@@ -127,6 +128,7 @@ function MainLayout() {
           <Route path="/invest" element={<Invest />} />
           <Route path="/shop" element={<Shop />} />
           <Route path="/community" element={<Community />} />
+          <Route path="/community/:id" element={<CommunityEvents />} />
           <Route path="/help" element={<Help />} />
           <Route path="/ai-tool" element={<AITool />} />
           <Route path="/ai-chat" element={<NewChat />} />

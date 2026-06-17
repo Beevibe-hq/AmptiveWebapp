@@ -2,21 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, X } from 'lucide-react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { listEvents, StandaloneEvent } from '@/lib/api/events';
+import { listCommunities, type Community } from '@/lib/api/communities';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ReactCalendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
-
-
-// Mock Communities
-const COMMUNITIES = [
-    { id: 'all', label: 'All Communities' },
-    { id: 'music', label: 'Music' },
-    { id: 'art-culture', label: 'Art & Culture' },
-    { id: 'technology', label: 'Technology' },
-    { id: 'sports', label: 'Sports' },
-    { id: 'fashion', label: 'Fashion' },
-    { id: 'other', label: 'Other' },
-];
 
 const defaultCenter = { lat: 6.5244, lng: 3.3792 };
 
@@ -24,10 +13,12 @@ export default function Explore() {
     const location = useLocation();
     const urlParams = new URLSearchParams(location.search);
     const urlQuery = urlParams.get('q') || urlParams.get('search') || '';
+    const urlCommunity = urlParams.get('community') || '';
 
     const [viewMode, setViewMode] = useState<'list' | 'map'>(() => sessionStorage.getItem('explore_viewMode') as 'list' | 'map' || 'list');
     const [searchQuery, setSearchQuery] = useState(() => urlQuery || sessionStorage.getItem('explore_searchQuery') || '');
     const [events, setEvents] = useState<StandaloneEvent[]>([]);
+    const [communities, setCommunities] = useState<Community[]>([]);
     const [loading, setLoading] = useState(true);
     const [map, setMap] = useState<google.maps.Map | null>(null);
 
@@ -41,7 +32,7 @@ export default function Explore() {
     // Filter States - Persisted
     const [dateFilter, setDateFilter] = useState(() => sessionStorage.getItem('explore_dateFilter') || 'All Upcoming');
     const [locFilter, setLocFilter] = useState(() => sessionStorage.getItem('explore_locFilter') || 'Nigeria');
-    const [communityFilter, setCommunityFilter] = useState(() => sessionStorage.getItem('explore_communityFilter') || 'All Communities');
+    const [communityFilter, setCommunityFilter] = useState(() => urlCommunity || sessionStorage.getItem('explore_communityFilter') || 'all');
     const [priceFilter, setPriceFilter] = useState<string[]>(() => {
         const stored = sessionStorage.getItem('explore_priceFilter');
         return stored ? JSON.parse(stored) : [];
@@ -68,6 +59,25 @@ export default function Explore() {
         id: 'google-map-script',
         googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
     });
+
+    useEffect(() => {
+        let cancelled = false;
+        const fetchCommunities = async () => {
+            const data = await listCommunities({ page_size: 100 }).catch(() => []);
+            if (!cancelled) setCommunities(data || []);
+        };
+
+        fetchCommunities();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (urlCommunity) {
+            setCommunityFilter(urlCommunity);
+        }
+    }, [urlCommunity]);
 
     const fetchEvents = async () => {
         setLoading(true);
@@ -126,6 +136,14 @@ export default function Explore() {
                     return e.title.toLowerCase().includes(searchLower) ||
                         venueStr.toLowerCase().includes(searchLower) ||
                         cityStr.toLowerCase().includes(searchLower);
+                });
+            }
+
+            if (communityFilter !== 'all') {
+                filtered = filtered.filter(e => {
+                    const communityId = e.community?.community_id || (e as any).community_id;
+                    const communityName = e.community?.name || '';
+                    return communityId === communityFilter || communityName === communityFilter;
                 });
             }
 
@@ -197,7 +215,7 @@ export default function Explore() {
                                 onClick={() => {
                                     setDateFilter('All Upcoming');
                                     setLocFilter('Nigeria');
-                                    setCommunityFilter('All Communities');
+                                    setCommunityFilter('all');
                                     setPriceFilter([]);
                                 }}
                                 className="text-xs font-medium text-gray-500 flex items-center gap-1 hover:text-black"
@@ -346,15 +364,20 @@ export default function Explore() {
                                 <h3 className="text-lg text-gray-900 font-bold">
                                     By Community
                                 </h3>
-                                <button className="text-xs text-gray-500 hover:underline hover:text-black" onClick={() => setCommunityFilter('All Communities')}>Reset</button>
+                                <button className="text-xs text-gray-500 hover:underline hover:text-black" onClick={() => setCommunityFilter('all')}>Reset</button>
                             </div>
                             <div className="flex flex-wrap gap-2 mb-3">
-                                {COMMUNITIES.map(c => (
+                                <FilterPill
+                                    label="All Communities"
+                                    active={communityFilter === 'all'}
+                                    onClick={() => setCommunityFilter('all')}
+                                />
+                                {communities.map(c => (
                                     <FilterPill
-                                        key={c.id}
-                                        label={c.label}
-                                        active={communityFilter === c.label}
-                                        onClick={() => setCommunityFilter(c.label)}
+                                        key={c.community_id}
+                                        label={c.name}
+                                        active={communityFilter === c.community_id}
+                                        onClick={() => setCommunityFilter(c.community_id)}
                                     />
                                 ))}
                             </div>

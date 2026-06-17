@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, Calendar, Users, ArrowRight, CornerDownLeft, Compass, PlusSquare, Ticket, HelpCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { listEvents, StandaloneEvent } from '@/lib/api/events';
 import { listCommunities, Community } from '@/lib/api/communities';
+import { searchProfiles } from '@/lib/api/profiles';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SearchOverlayProps {
@@ -26,13 +28,51 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const [query, setQuery] = useState('');
   const [events, setEvents] = useState<StandaloneEvent[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSearchingProfiles, setIsSearchingProfiles] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const { user: authUser } = useAuth();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setProfiles([]);
+      setIsSearchingProfiles(false);
+      return;
+    }
+
+    setIsSearchingProfiles(true);
+    const timer = setTimeout(async () => {
+      try {
+        const data = await searchProfiles(trimmed);
+        setProfiles(data || []);
+      } catch {
+        setProfiles([]);
+      } finally {
+        setIsSearchingProfiles(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [query, isOpen]);
 
   // Load data when opened
   useEffect(() => {
@@ -99,6 +139,20 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     const list: any[] = [];
     const seen = new Set<string>();
 
+    profiles.forEach((profile) => {
+      const userId = profile.user_id || profile.id;
+      if (userId && !seen.has(userId)) {
+        seen.add(userId);
+        list.push({
+          user_id: userId,
+          username: profile.username || '',
+          name: profile.name || profile.full_name || profile.display_name || '',
+          email: profile.email || '',
+          profile_picture: profile.profile_picture || profile.avatar_url || null,
+        });
+      }
+    });
+
     if (authUser && authUser.user_id) {
       seen.add(authUser.user_id);
       list.push({
@@ -135,7 +189,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     });
 
     return list;
-  }, [events, authUser]);
+  }, [events, authUser, profiles]);
 
   // Filter items based on query
   const filteredItems = useMemo<NavigableItem[]>(() => {
@@ -237,7 +291,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
         type: 'community',
         title: c.name,
         subtitle: `${c.member_count || 0} members • Community`,
-        url: '/community', // Note: community pages go to /community since detail page is coming soon
+        url: `/community/${c.community_id}`,
         image: c.image || c.cover_image,
       });
     });
@@ -246,15 +300,16 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     const matchingCreators = creators.filter((c) => {
       const name = c.name?.toLowerCase() || '';
       const username = c.username?.toLowerCase() || '';
-      return name.includes(trimmed) || username.includes(trimmed);
+      const email = c.email?.toLowerCase() || '';
+      return name.includes(trimmed) || username.includes(trimmed) || email.includes(trimmed);
     });
 
-    matchingCreators.slice(0, 3).forEach((c) => {
+    matchingCreators.slice(0, 6).forEach((c) => {
       items.push({
         id: `creator-${c.user_id}`,
         type: 'profile',
         title: c.name || `@${c.username}` || 'Creator',
-        subtitle: c.username ? `@${c.username}` : 'Host',
+        subtitle: c.username ? `@${c.username}` : (c.email || 'Profile'),
         url: `/profile/${c.user_id}`,
         image: c.profile_picture,
       });
@@ -307,7 +362,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const handleNavigate = (item: NavigableItem) => {
     if (item.type === 'profile') {
       const id = item.id.replace('creator-', '');
-      const rawUsername = item.subtitle?.replace('@', '') || '';
+      const rawUsername = item.subtitle?.startsWith('@') ? item.subtitle.replace('@', '') : '';
       navigate(item.url, {
         state: {
           hostData: {
@@ -326,7 +381,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
 
   if (!isOpen) return null;
 
-  return (
+  const overlay = (
     <AnimatePresence>
       <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] px-4 md:px-0">
         {/* Glassmorphic Backdrop */}
@@ -350,12 +405,11 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
         >
           {/* Header Input Section */}
           <div className="relative flex items-center border-b border-gray-100 px-5 py-4">
-            <Search className="w-5.5 h-5.5 text-gray-400 mr-3.5 shrink-0" strokeWidth={2.2} />
             <input
               ref={inputRef}
               type="text"
-              className="w-full text-lg text-gray-900 placeholder-gray-400 bg-transparent border-0 focus:outline-none focus:ring-0 p-0"
-              placeholder="Search for events, tasks, communities..."
+              className="w-full text-base text-gray-900 placeholder-gray-400 bg-transparent border-0 p-0 focus:outline-none focus:ring-0 sm:text-lg"
+              placeholder="Search for events, users, communities..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -378,34 +432,29 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
             className="flex-1 overflow-y-auto px-2 py-3 divide-y divide-gray-50"
             style={{ scrollBehavior: 'smooth' }}
           >
-            {isLoading && (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-400 space-y-4">
-                <div className="w-12 h-12 flex items-center justify-center">
-                  <svg
-                    className="h-full w-full animate-pulse text-black"
-                    viewBox="0 0 105 84"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-label="Loading..."
-                  >
-                    <path
-                      d="M96.9489 58.3115C96.7382 63.182 96.0281 67.7666 92.1577 68.4573C91.8456 68.5049 91.5725 68.5347 91.276 68.5347C86.7111 68.5347 82.7783 62.3186 78.6114 55.7691C75.8569 51.4524 72.5951 46.3081 69.7158 44.5397C69.0603 44.1348 68.1083 44.1825 67.5465 44.6647C65.1665 46.7249 63.4186 52.4884 61.9828 57.3172C59.7199 64.8551 57.5662 72 52.5175 72C47.4688 72 45.3152 64.861 43.0522 57.3053C41.6164 52.4706 39.8763 46.6832 37.4964 44.6409C36.9423 44.1646 36.0059 44.111 35.3427 44.504C32.4477 46.2247 29.1625 51.4107 26.3846 55.7751C22.2177 62.3246 18.2849 68.5407 13.72 68.5407C13.4235 68.5407 13.1582 68.5109 12.8383 68.4633C8.97567 67.7666 8.26558 63.182 8.05489 58.3115C7.46965 44.6528 11.5741 31.1668 19.8845 19.3003C22.6469 15.3349 26.0179 11.3933 29.8492 12.078C34.773 12.9413 34.7496 20.2589 34.7262 28.0052C34.7262 32.1611 34.7106 37.0078 35.725 39.8777C36.0996 40.9315 37.9646 41.0804 38.6278 40.1099C40.4226 37.4662 41.8193 32.828 43.0132 28.8388C45.2761 21.283 47.4298 14.1441 52.4785 14.1441C57.5272 14.1441 59.6808 21.283 61.9438 28.8566C63.1455 32.8697 64.55 37.5496 66.3604 40.1813C67.0237 41.1459 68.8808 40.997 69.2554 39.9491C70.2854 37.0852 70.2776 32.1969 70.2776 28.0052C70.2542 20.2589 70.2386 12.9413 75.1546 12.078C79.0094 11.3933 82.3569 15.3349 85.1193 19.3003C93.4297 31.1668 97.5107 44.6528 96.9489 58.3115Z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                </div>
-                <span className="text-xs font-semibold uppercase tracking-wider">Loading items...</span>
+            {(isLoading || isSearchingProfiles) && (
+              <div className="space-y-1 py-1">
+                {[1, 2, 3, 4, 5].map((item) => (
+                  <div key={item} className="flex items-center gap-3.5 px-3.5 py-3 rounded-2xl">
+                    <div className="h-10 w-10 shrink-0 rounded-full bg-gray-100 animate-pulse" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-4 w-2/5 rounded-full bg-gray-100 animate-pulse" />
+                      <div className="h-3 w-3/5 rounded-full bg-gray-100 animate-pulse" />
+                    </div>
+                    <div className="h-4 w-4 rounded-full bg-gray-100 animate-pulse" />
+                  </div>
+                ))}
               </div>
             )}
 
-            {!isLoading && filteredItems.length === 0 && (
+            {!isLoading && !isSearchingProfiles && filteredItems.length === 0 && (
               <div className="text-center py-16 px-4">
                 <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4 border border-gray-100">
                   <Search className="w-5 h-5 text-gray-400" />
                 </div>
                 <h3 className="text-sm font-bold text-gray-900 mb-1">No results found for "{query}"</h3>
                 <p className="text-xs text-gray-500 max-w-xs mx-auto leading-relaxed">
-                  We couldn't find any events or communities matching your search. Try different keywords.
+                  We couldn't find any users, events, or communities matching your search. Try a username, full name, event title, or community name.
                 </p>
               </div>
             )}
@@ -446,7 +495,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
                                 className="w-10 h-10 rounded-xl object-cover border border-gray-100"
                               />
                             ) : (
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isActive ? 'bg-gray-200/60 text-gray-700' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
+                              <div className={`w-10 h-10 flex items-center justify-center ${isActive ? 'text-gray-700' : 'text-gray-400'}`}>
                                 <Calendar className="w-5 h-5" />
                               </div>
                             )
@@ -458,7 +507,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
                                 className="w-10 h-10 rounded-full object-cover border border-gray-100"
                               />
                             ) : (
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isActive ? 'bg-gray-200/60 text-gray-700' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
+                              <div className={`w-10 h-10 flex items-center justify-center ${isActive ? 'text-gray-700' : 'text-gray-400'}`}>
                                 <Users className="w-5 h-5" />
                               </div>
                             )
@@ -470,16 +519,16 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
                                 className="w-10 h-10 rounded-full object-cover border border-gray-100"
                               />
                             ) : (
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isActive ? 'bg-gray-200/60 text-gray-700' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
+                              <div className={`w-10 h-10 flex items-center justify-center ${isActive ? 'text-gray-700' : 'text-gray-400'}`}>
                                 <User className="w-5 h-5" />
                               </div>
                             )
                           ) : item.type === 'action' ? (
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isActive ? 'bg-gray-200/60 text-blue-600' : 'bg-blue-50 text-blue-500'}`}>
+                            <div className={`w-10 h-10 flex items-center justify-center ${isActive ? 'text-blue-600' : 'text-blue-500'}`}>
                               <Search className="w-5 h-5" />
                             </div>
                           ) : (
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isActive ? 'bg-gray-200/60 text-gray-700' : 'bg-gray-50 text-gray-500'}`}>
+                            <div className={`w-10 h-10 flex items-center justify-center ${isActive ? 'text-gray-700' : 'text-gray-500'}`}>
                               {item.id === 'quick-explore' && <Compass className="w-5 h-5" />}
                               {item.id === 'quick-create' && <PlusSquare className="w-5 h-5" />}
                               {item.id === 'quick-tickets' && <Ticket className="w-5 h-5" />}
@@ -526,4 +575,6 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
       </div>
     </AnimatePresence>
   );
+
+  return createPortal(overlay, document.body);
 }

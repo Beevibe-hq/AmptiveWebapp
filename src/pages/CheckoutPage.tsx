@@ -7,7 +7,7 @@ import { TICKET_THEMES } from '@/lib/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent } from '@/lib/api/events';
-import { EventTicket, getTicketsForEvent } from '@/lib/api/tickets';
+import { EventTicket, getTicketEarlyBirdRemaining, getTicketLineTotal, getTicketRemaining, getTicketsForEvent, getTicketUnitPrice, isTicketSoldOut } from '@/lib/api/tickets';
 import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
@@ -126,21 +126,51 @@ export default function CheckoutPage() {
         fetchData();
     }, [id]);
 
+    useEffect(() => {
+        setSelection(prev => {
+            let changed = false;
+            const nextSelection: Record<string, number> = {};
+
+            Object.entries(prev).forEach(([ticketId, qty]) => {
+                const ticket = tickets.find(t => t.id === ticketId);
+                const remaining = ticket ? getTicketRemaining(ticket) : null;
+
+                if (!ticket || isTicketSoldOut(ticket) || qty <= 0) {
+                    changed = true;
+                    return;
+                }
+
+                const cappedQty = remaining !== null ? Math.min(qty, remaining) : qty;
+                if (cappedQty !== qty) changed = true;
+                if (cappedQty > 0) nextSelection[ticketId] = cappedQty;
+            });
+
+            return changed ? nextSelection : prev;
+        });
+    }, [tickets]);
+
     const updateQuantity = (ticketId: string, delta: number) => {
+        const ticket = tickets.find(t => t.id === ticketId);
+        const remaining = ticket ? getTicketRemaining(ticket) : null;
+        if (!ticket || (delta > 0 && isTicketSoldOut(ticket))) {
+            return;
+        }
+
         setLastDirection(delta > 0 ? 1 : -1);
         setSelection(prev => {
             const current = prev[ticketId] || 0;
             const next = Math.max(0, current + delta);
+            const cappedNext = remaining !== null ? Math.min(next, remaining) : next;
 
             if (delta > 0) {
                 setSelectedTicketIdForPreview(ticketId);
             }
 
-            if (next === 0) {
+            if (cappedNext === 0) {
                 const { [ticketId]: _, ...rest } = prev;
                 return rest;
             }
-            return { ...prev, [ticketId]: next };
+            return { ...prev, [ticketId]: cappedNext };
         });
     };
 
@@ -152,7 +182,7 @@ export default function CheckoutPage() {
     };
 
     const ticketCost = tickets.reduce((sum, ticket) => {
-        return sum + (ticket.price || 0) * (selection[ticket.id] || 0);
+        return sum + getTicketLineTotal(ticket, selection[ticket.id] || 0);
     }, 0);
 
     const totalAmount = ticketCost + (wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0);
@@ -204,10 +234,38 @@ export default function CheckoutPage() {
 
         setProcessing(true);
         try {
+            const latestTickets = await getTicketsForEvent(eventId!);
+            const unavailableSelection = Object.entries(selection).find(([ticketId, qty]) => {
+                const latestTicket = latestTickets.find(t => t.id === ticketId);
+                const remaining = latestTicket ? getTicketRemaining(latestTicket) : null;
+                return !latestTicket || isTicketSoldOut(latestTicket) || (remaining !== null && qty > remaining);
+            });
+
+            if (unavailableSelection) {
+                const [ticketId] = unavailableSelection;
+                const latestTicket = latestTickets.find(t => t.id === ticketId);
+                toastError(`${latestTicket?.label || 'This ticket'} is sold out or no longer has enough tickets available.`);
+                setTickets(latestTickets);
+                setCheckoutStep('selection');
+                setProcessing(false);
+                return;
+            }
+
             const items: CheckoutItem[] = Object.entries(selection).map(([ticketId, qty]) => ({
                 ticket_type_id: ticketId,
                 quantity: qty,
             }));
+            const ticketPricing = Object.entries(selection).map(([ticketId, qty]) => {
+                const latestTicket = latestTickets.find(t => t.id === ticketId);
+                return {
+                    ticket_type_id: ticketId,
+                    quantity: qty,
+                    unit_price: latestTicket ? getTicketUnitPrice(latestTicket) : 0,
+                    line_total: latestTicket ? getTicketLineTotal(latestTicket, qty) : 0,
+                    base_price: latestTicket?.price || 0,
+                    early_bird_applied: latestTicket ? getTicketEarlyBirdRemaining(latestTicket) > 0 && getTicketUnitPrice(latestTicket) < (latestTicket.price || 0) : false,
+                };
+            });
 
             const attendeesList: Attendee[] = attendees.map(a => ({
                 ticket_type_id: a.ticketId,
@@ -223,6 +281,7 @@ export default function CheckoutPage() {
                 wants_physical_delivery: wantsPhysicalDelivery,
                 metadata: {
                     physical_delivery_fee: wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0,
+                    ticket_pricing: ticketPricing,
                 },
             };
 
@@ -264,7 +323,7 @@ export default function CheckoutPage() {
                         event_title: event.title,
                         tickets: Object.entries(selection).map(([ticketId, qty]) => {
                             const t = tickets.find(tk => tk.id === ticketId);
-                            return { label: t?.label || 'Ticket', quantity: qty, price: t?.price || 0 };
+                            return { label: t?.label || 'Ticket', quantity: qty, price: t ? getTicketLineTotal(t, qty) : 0 };
                         }),
                         total_amount: totalAmount,
                     }));
@@ -714,6 +773,9 @@ export default function CheckoutPage() {
         );
     };
 
+    const availableTickets = tickets.filter(t => !isTicketSoldOut(t));
+    const soldOutTickets = tickets.filter(isTicketSoldOut);
+
     return (
         <div className="bg-white min-h-screen font-sans">
             <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100 px-4 md:px-8 h-[72px] flex items-center justify-between">
@@ -775,108 +837,198 @@ export default function CheckoutPage() {
                             className={`order-1 lg:order-1 space-y-8 font-sans ${activeTab === 'details' ? 'block' : 'hidden lg:block'}`}
                         >
                             <div className="space-y-8">
-                                <h2 className="text-[24px] font-bold text-gray-900" style={{ letterSpacing: '-0.04em' }}>
-                                    Available Tickets
-                                </h2>
+                                {availableTickets.length > 0 && (
+                                    <div>
+                                        <h2 className="mb-4 text-[18px] font-semibold text-gray-900">
+                                            Available tickets
+                                        </h2>
+                                        <div className="space-y-4">
+                                            {availableTickets.map(ticket => {
+                                                const isSelected = selectedTicketIdForPreview === ticket.id;
+                                                const benefitsOpen = showBenefits[ticket.id] || false;
+                                                const remainingCount = getTicketRemaining(ticket);
+                                                const earlyBirdRemaining = getTicketEarlyBirdRemaining(ticket);
+                                                const unitPrice = getTicketUnitPrice(ticket);
+                                                const hasEarlyBirdPrice = earlyBirdRemaining > 0 && unitPrice < (ticket.price || 0);
 
-                                <div className="space-y-4">
-                                    {tickets.map(ticket => {
-                                        const isSelected = selectedTicketIdForPreview === ticket.id;
-                                        const benefitsOpen = showBenefits[ticket.id] || false;
+                                                return (
+                                                    <div
+                                                        key={ticket.id}
+                                                        className={`group relative overflow-hidden border rounded-2xl transition-all duration-300 ${isSelected ? 'border-gray-200 bg-gray-50/50' : 'border-gray-100 bg-white hover:border-gray-200 shadow-sm'}`}
+                                                        onClick={() => setSelectedTicketIdForPreview(ticket.id)}
+                                                    >
+                                                        <div className="py-3 px-5 flex items-center justify-between gap-4">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="min-w-0">
+                                                                    <h3 className="font-bold text-gray-900 truncate">{ticket.label}</h3>
+                                                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-tight">
+                                                                            {unitPrice === 0 ? 'Free' : formatPrice(unitPrice)}
+                                                                        </p>
+                                                                        {hasEarlyBirdPrice && (
+                                                                            <>
+                                                                                <span className="text-xs font-medium text-gray-300 line-through">{formatPrice(ticket.price)}</span>
+                                                                                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-100">Early bird</span>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                    {hasEarlyBirdPrice && (
+                                                                        <span className="mt-1 block text-xs font-medium text-amber-600">
+                                                                            {earlyBirdRemaining} early bird left
+                                                                        </span>
+                                                                    )}
+                                                                    {remainingCount !== null && remainingCount > 0 && remainingCount <= 10 && (
+                                                                        <span className="text-xs font-bold text-amber-600 mt-1 block">Only {remainingCount} left</span>
+                                                                    )}
 
-                                        return (
-                                            <div
-                                                key={ticket.id}
-                                                className={`group relative overflow-hidden border rounded-2xl transition-all duration-300 ${isSelected ? 'border-gray-200 bg-gray-50/50' : 'border-gray-100 bg-white hover:border-gray-200 shadow-sm'}`}
-                                                onClick={() => setSelectedTicketIdForPreview(ticket.id)}
-                                            >
-                                                <div className="py-3 px-5 flex items-center justify-between gap-4">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="min-w-0">
-                                                            <h3 className="font-bold text-gray-900 truncate">{ticket.label}</h3>
-                                                            <p className="text-xs font-semibold text-gray-400 mt-1 uppercase tracking-tight">
-                                                                {ticket.price === 0 ? 'Free' : formatPrice(ticket.price)}
-                                                            </p>
-                                                            {ticket.quantity_remaining !== undefined && ticket.quantity_remaining <= 0 && (
-                                                                <span className="text-xs font-bold text-red-600 mt-1 block">Sold Out</span>
-                                                            )}
-                                                            {ticket.quantity_remaining !== undefined && ticket.quantity_remaining > 0 && ticket.quantity_remaining <= 10 && (
-                                                                <span className="text-xs font-bold text-amber-600 mt-1 block">Only {ticket.quantity_remaining} left</span>
-                                                            )}
-
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); toggleBenefits(ticket.id); }}
-                                                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 transition-all mt-3 group/btn"
-                                                            >
-                                                                <span className="border-b border-transparent group-hover/btn:border-blue-600">
-                                                                    {benefitsOpen ? 'Hide Benefits' : 'View Benefits'}
-                                                                </span>
-                                                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${benefitsOpen ? 'rotate-180' : ''}`} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex items-center gap-4">
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); updateQuantity(ticket.id, -1); }}
-                                                            disabled={!selection[ticket.id]}
-                                                            className="h-10 w-10 flex items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 hover:text-black hover:border-black disabled:opacity-20 transition-all font-sans"
-                                                        >
-                                                            <Minus className="h-4 w-4" />
-                                                        </button>
-                                                        <div className="w-6 flex items-center justify-center overflow-hidden">
-                                                            <AnimatePresence mode="popLayout" initial={false}>
-                                                                <motion.span
-                                                                    key={selection[ticket.id] || 0}
-                                                                    initial={{ y: lastDirection > 0 ? 20 : -20, opacity: 0 }}
-                                                                    animate={{ y: 0, opacity: 1 }}
-                                                                    exit={{ y: lastDirection > 0 ? -20 : 20, opacity: 0 }}
-                                                                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                                                                    className="text-center text-base font-bold tabular-nums text-gray-900"
-                                                                >
-                                                                    {selection[ticket.id] || 0}
-                                                                </motion.span>
-                                                            </AnimatePresence>
-                                                        </div>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); updateQuantity(ticket.id, 1); }}
-                                                            disabled={ticket.quantity_remaining !== null && ticket.quantity_remaining !== undefined && (selection[ticket.id] || 0) >= ticket.quantity_remaining}
-                                                            className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-gray-800 transition-all shadow-md active:scale-95 font-sans disabled:opacity-30 disabled:cursor-not-allowed"
-                                                        >
-                                                            <Plus className="h-4 w-4" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <AnimatePresence>
-                                                    {benefitsOpen && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: 'easeInOut' }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50/30">
-                                                                <div className="space-y-3">
-                                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Included Benefits</p>
-                                                                    <ul className="grid grid-cols-1 gap-2">
-                                                                        {(Array.isArray(ticket.benefits) ? ticket.benefits : []).map((benefit, i) => (
-                                                                            <li key={i} className="flex items-start gap-2.5 text-[13px] font-medium text-gray-600 leading-tight">
-                                                                                <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                                                                                <span>{benefit}</span>
-                                                                            </li>
-                                                                        ))}
-                                                                    </ul>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); toggleBenefits(ticket.id); }}
+                                                                        className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 transition-all mt-3 group/btn"
+                                                                    >
+                                                                        <span className="border-b border-transparent group-hover/btn:border-blue-600">
+                                                                            {benefitsOpen ? 'Hide Benefits' : 'View Benefits'}
+                                                                        </span>
+                                                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${benefitsOpen ? 'rotate-180' : ''}`} />
+                                                                    </button>
                                                                 </div>
                                                             </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+
+                                                            <div className="flex items-center gap-4">
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(ticket.id, -1); }}
+                                                                    disabled={!selection[ticket.id]}
+                                                                    className="h-10 w-10 flex items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 hover:text-black hover:border-black disabled:opacity-20 transition-all font-sans"
+                                                                >
+                                                                    <Minus className="h-4 w-4" />
+                                                                </button>
+                                                                <div className="w-6 flex items-center justify-center overflow-hidden">
+                                                                    <AnimatePresence mode="popLayout" initial={false}>
+                                                                        <motion.span
+                                                                            key={selection[ticket.id] || 0}
+                                                                            initial={{ y: lastDirection > 0 ? 20 : -20, opacity: 0 }}
+                                                                            animate={{ y: 0, opacity: 1 }}
+                                                                            exit={{ y: lastDirection > 0 ? -20 : 20, opacity: 0 }}
+                                                                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                                                            className="text-center text-base font-bold tabular-nums text-gray-900"
+                                                                        >
+                                                                            {selection[ticket.id] || 0}
+                                                                        </motion.span>
+                                                                    </AnimatePresence>
+                                                                </div>
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(ticket.id, 1); }}
+                                                                    disabled={remainingCount !== null && (selection[ticket.id] || 0) >= remainingCount}
+                                                                    className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-gray-800 transition-all shadow-md active:scale-95 font-sans disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                >
+                                                                    <Plus className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        <AnimatePresence>
+                                                            {benefitsOpen && (
+                                                                <motion.div
+                                                                    initial={{ height: 0, opacity: 0 }}
+                                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                                    exit={{ height: 0, opacity: 0 }}
+                                                                    transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                                                    className="overflow-hidden"
+                                                                >
+                                                                    <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50/30">
+                                                                        <div className="space-y-3">
+                                                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Included Benefits</p>
+                                                                            <ul className="grid grid-cols-1 gap-2">
+                                                                                {(Array.isArray(ticket.benefits) ? ticket.benefits : []).map((benefit, i) => (
+                                                                                    <li key={i} className="flex items-start gap-2.5 text-[13px] font-medium text-gray-600 leading-tight">
+                                                                                        <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                                                                        <span>{benefit}</span>
+                                                                                    </li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        </div>
+                                                                    </div>
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {soldOutTickets.length > 0 && (
+                                    <div className="mt-8">
+                                        <h3 className="pl-1 mb-4 text-[14px] font-semibold text-gray-500">
+                                            Sold out
+                                        </h3>
+                                        <div className="space-y-4">
+                                            {soldOutTickets.map(ticket => {
+                                                const benefitsOpen = showBenefits[ticket.id] || false;
+
+                                                return (
+                                                    <div
+                                                        key={ticket.id}
+                                                        className="relative overflow-hidden border border-gray-100 bg-gray-50/50 rounded-2xl opacity-60 cursor-not-allowed"
+                                                    >
+                                                        <div className="py-3 px-5 flex items-center justify-between gap-4">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="min-w-0">
+                                                                    <h3 className="font-bold text-gray-900 truncate">{ticket.label}</h3>
+                                                                    <p className="text-xs font-semibold text-gray-400 mt-1 uppercase tracking-tight">
+                                                                        {ticket.price === 0 ? 'Free' : formatPrice(ticket.price)}
+                                                                    </p>
+
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); toggleBenefits(ticket.id); }}
+                                                                        className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 transition-all mt-3 group/btn"
+                                                                    >
+                                                                        <span className="border-b border-transparent group-hover/btn:border-blue-600">
+                                                                            {benefitsOpen ? 'Hide Benefits' : 'View Benefits'}
+                                                                        </span>
+                                                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${benefitsOpen ? 'rotate-180' : ''}`} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center">
+                                                                <span className="rounded-full bg-rose-50 px-4 py-2 text-[12px] font-semibold text-rose-600 ring-1 ring-rose-100">
+                                                                    Sold out
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <AnimatePresence>
+                                                            {benefitsOpen && (
+                                                                <motion.div
+                                                                    initial={{ height: 0, opacity: 0 }}
+                                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                                    exit={{ height: 0, opacity: 0 }}
+                                                                    transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                                                    className="overflow-hidden"
+                                                                >
+                                                                    <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50/30">
+                                                                        <div className="space-y-3">
+                                                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Included Benefits</p>
+                                                                            <ul className="grid grid-cols-1 gap-2">
+                                                                                {(Array.isArray(ticket.benefits) ? ticket.benefits : []).map((benefit, i) => (
+                                                                                    <li key={i} className="flex items-start gap-2.5 text-[13px] font-medium text-gray-600 leading-tight">
+                                                                                        <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                                                                        <span>{benefit}</span>
+                                                                                    </li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        </div>
+                                                                    </div>
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="pt-10 border-t border-gray-100 space-y-6">
                                     {/* Physical Ticket Delivery */}
@@ -1019,7 +1171,7 @@ export default function CheckoutPage() {
                                                             <p className="font-bold text-gray-900 text-sm">{ticket.label}</p>
                                                             <p className="text-xs text-gray-500">x{quantity}</p>
                                                         </div>
-                                                        <span className="font-bold text-gray-900">{formatPrice(ticket.price * quantity)}</span>
+                                                        <span className="font-bold text-gray-900">{formatPrice(getTicketLineTotal(ticket, quantity))}</span>
                                                     </div>
                                                 );
                                             })}
@@ -1097,8 +1249,8 @@ export default function CheckoutPage() {
 
                     <div className={`lg:pl-8 order-2 lg:order-2 ${activeTab === 'preview' ? 'block' : 'hidden lg:block'}`}>
                         <div className="h-fit lg:sticky lg:top-32 flex flex-col items-center">
-                            <h2 className="hidden lg:block text-xl font-medium mb-8 pt-0 w-full text-left" style={{ letterSpacing: '-0.04em' }}>
-                                Ticket Preview
+                            <h2 className="hidden lg:block mb-8 pt-0 w-full text-left text-[18px] font-semibold text-gray-900">
+                                Ticket preview
                             </h2>
 
                             {previewTicket || selectedTicketsList.length > 0 ? (
@@ -1122,6 +1274,8 @@ export default function CheckoutPage() {
                                     >
                                         {(previewTicket ? [previewTicket, ...visibleStack] : visibleStack).map((t, i) => {
                                             const theme = TICKET_THEMES[t.color_theme || 'silver'] || TICKET_THEMES.silver;
+                                            const unitPrice = getTicketUnitPrice(t);
+                                            const hasEarlyBirdPrice = getTicketEarlyBirdRemaining(t) > 0 && unitPrice < (t.price || 0);
                                             return (
                                                 <div key={`swipe-${t.id}-${i}`} className="w-full flex-shrink-0 snap-center flex justify-center px-4">
                                                     <div className="group relative w-full max-w-[380px] mx-auto [perspective:1600px]">
@@ -1143,9 +1297,21 @@ export default function CheckoutPage() {
 
                                                             <div className="relative z-10 mt-6 flex items-end justify-between gap-2">
                                                                 <div className="flex flex-col gap-2">
-                                                                    <span className={`text-3xl font-bold ${theme.text} truncate`}>
-                                                                        {t.price === 0 ? 'Free' : formatPrice(t.price)}
-                                                                    </span>
+                                                                    <div className="flex flex-wrap items-baseline gap-2">
+                                                                        <span className={`text-3xl font-bold ${theme.text} truncate`}>
+                                                                            {unitPrice === 0 ? 'Free' : formatPrice(unitPrice)}
+                                                                        </span>
+                                                                        {hasEarlyBirdPrice && (
+                                                                            <span className={`text-sm font-semibold line-through opacity-45 ${theme.text}`}>
+                                                                                {formatPrice(t.price)}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {hasEarlyBirdPrice && (
+                                                                        <span className={`w-fit rounded-full bg-white/25 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.text}`}>
+                                                                            Early bird
+                                                                        </span>
+                                                                    )}
                                                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-white/20 border-white/20 ${theme.text} w-fit opacity-80`}>
                                                                         PER GUEST
                                                                     </span>
@@ -1191,6 +1357,8 @@ export default function CheckoutPage() {
                                                 const deck = (previewTicket ? [...visibleStack.slice().reverse(), previewTicket] : [...visibleStack.slice().reverse()]).slice(0, 4);
                                                 return deck.map((t, i) => {
                                                     const theme = TICKET_THEMES[t.color_theme || 'silver'] || TICKET_THEMES.silver;
+                                                    const unitPrice = getTicketUnitPrice(t);
+                                                    const hasEarlyBirdPrice = getTicketEarlyBirdRemaining(t) > 0 && unitPrice < (t.price || 0);
                                                     const total = deck.length;
                                                     const zIndex = 10 + i;
                                                     const scale = 1 - ((total - 1 - i) * 0.04);
@@ -1241,9 +1409,21 @@ export default function CheckoutPage() {
 
                                                                     <div className="relative z-10 mt-6 flex items-end justify-between gap-2">
                                                                         <div className="flex flex-col gap-2">
-                                                                            <span className={`text-3xl font-bold ${theme.text} truncate`}>
-                                                                                {t.price === 0 ? 'Free' : formatPrice(t.price)}
-                                                                            </span>
+                                                                                <div className="flex flex-wrap items-baseline gap-2">
+                                                                                    <span className={`text-3xl font-bold ${theme.text} truncate`}>
+                                                                                        {unitPrice === 0 ? 'Free' : formatPrice(unitPrice)}
+                                                                                    </span>
+                                                                                    {hasEarlyBirdPrice && (
+                                                                                        <span className={`text-sm font-semibold line-through opacity-45 ${theme.text}`}>
+                                                                                            {formatPrice(t.price)}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                                {hasEarlyBirdPrice && (
+                                                                                    <span className={`w-fit rounded-full bg-white/25 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.text}`}>
+                                                                                        Early bird
+                                                                                    </span>
+                                                                                )}
                                                                             <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-white/20 border-white/20 ${theme.text} w-fit opacity-80`}>
                                                                                 PER GUEST
                                                                             </span>

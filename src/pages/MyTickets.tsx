@@ -1,89 +1,91 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
-import { Link } from 'react-router-dom';
-import { Calendar, MapPin, Ticket as TicketIcon } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Link, useNavigate } from 'react-router-dom';
+import { Calendar, MapPin, Ticket as TicketIcon, X, ChevronDown, User } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { getPurchasesByUser, type TicketPurchase } from '@/lib/api/purchases';
+import { getEvent } from '@/lib/api/events';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { TICKET_THEMES } from '@/lib/constants';
+import amptiveLogo from '@/assets/amptivelogo.svg';
 
+const CARD_PLACEHOLDER_GRADIENTS = [
+    'from-[#2d1b69] via-[#312558] to-[#10142a]',
+    'from-[#0f172a] via-[#1e293b] to-[#111827]',
+    'from-[#1b1a55] via-[#2d3a8c] to-[#0b172d]',
+    'from-[#2f2346] via-[#3b1d6b] to-[#120c1f]',
+];
 
-// Theme definitions copied from CreateEvent for consistency
-type TicketTheme = 'silver' | 'bronze' | 'gold' | 'platinum' | 'obsidian';
-
-const TICKET_THEMES: Record<TicketTheme, {
-    name: string;
-    gradient: string;
-    border: string;
-    text: string;
-    badge: string;
-    badgeText: string;
-}> = {
-    silver: {
-        name: 'Silver',
-        gradient: 'bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200',
-        border: 'border-gray-200',
-        text: 'text-gray-900',
-        badge: 'bg-gray-100 border-gray-200',
-        badgeText: 'text-gray-700'
-    },
-    bronze: {
-        name: 'Bronze',
-        gradient: 'bg-gradient-to-br from-orange-50 via-orange-100 to-orange-200',
-        border: 'border-orange-200',
-        text: 'text-orange-900',
-        badge: 'bg-orange-100 border-orange-200',
-        badgeText: 'text-orange-800'
-    },
-    gold: {
-        name: 'Gold',
-        gradient: 'bg-gradient-to-br from-yellow-50 via-yellow-100 to-yellow-200',
-        border: 'border-yellow-200',
-        text: 'text-yellow-900',
-        badge: 'bg-yellow-100 border-yellow-200',
-        badgeText: 'text-yellow-800'
-    },
-    platinum: {
-        name: 'Platinum',
-        gradient: 'bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200',
-        border: 'border-slate-200',
-        text: 'text-slate-900',
-        badge: 'bg-slate-100 border-slate-200',
-        badgeText: 'text-slate-700'
-    },
-    obsidian: {
-        name: 'Obsidian',
-        gradient: 'bg-gradient-to-br from-gray-800 via-gray-900 to-black',
-        border: 'border-gray-700',
-        text: 'text-white',
-        badge: 'bg-gray-800 border-gray-700',
-        badgeText: 'text-gray-300'
-    }
-};
+interface GroupedEvent {
+    event_id: string;
+    tickets: TicketPurchase[];
+    // Convenience accessors from the first ticket
+    event: TicketPurchase['events'];
+    start_time: string | undefined;
+}
 
 const formatCompactPrice = (price: number, currency: string = 'NGN'): string => {
     if (price === 0) return 'Free';
-
     const formatter = new Intl.NumberFormat(undefined, {
         style: 'currency',
         currency,
         minimumFractionDigits: 0,
         maximumFractionDigits: 1,
     });
-
     if (price >= 1000000) {
         return formatter.format(price / 1000000).replace(currency, '').trim() + 'M';
     }
     if (price >= 100000) {
         return formatter.format(price / 1000).replace(currency, '').trim() + 'K';
     }
-
     return formatter.format(price);
 };
 
+const safeDateFormat = (dateString?: string, formatStr: string = 'PPP') => {
+    if (!dateString) return null;
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return null;
+        return format(date, formatStr);
+    } catch {
+        return null;
+    }
+};
+
+const formatDateLabel = (iso?: string) => {
+    if (!iso) return 'Date to be announced';
+    const date = new Date(iso);
+    if (isNaN(date.getTime())) return 'Date to be announced';
+    return date.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+    });
+};
+
+const formatTimeLabel = (iso?: string) => {
+    if (!iso) return 'Time TBA';
+    const date = new Date(iso);
+    if (isNaN(date.getTime())) return 'Time TBA';
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const suffix = hours >= 12 ? 'PM' : 'AM';
+    const hour12 = ((hours % 12) + 12) % 12 || 12;
+    return `${hour12.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}${suffix}`;
+};
+
 const MyTickets = () => {
+    const navigate = useNavigate();
     const [tickets, setTickets] = useState<TicketPurchase[]>([]);
     const [loading, setLoading] = useState(true);
+    const [activeFilter, setActiveFilter] = useState('Upcoming');
+    const [expandedCard, setExpandedCard] = useState<string | null>(null);
+    const [expandedQR, setExpandedQR] = useState<string | null>(null);
+    const [viewingTicketCard, setViewingTicketCard] = useState<{group: GroupedEvent, ticket: TicketPurchase} | null>(null);
+    const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+    const [eventDetails, setEventDetails] = useState<Record<string, any>>({});
 
     useEffect(() => {
         fetchTickets();
@@ -94,11 +96,455 @@ const MyTickets = () => {
             const data = await getPurchasesByUser();
             setTickets(data || []);
         } catch (err) {
-            console.error('Unexpected error:', err);
+            console.error('Unexpected error fetching tickets:', err);
         } finally {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (tickets.length === 0) return;
+        const fetchMissingEventDetails = async () => {
+            const uniqueEventIds = [...new Set(tickets.map(t => t.event_id))];
+            for (const eventId of uniqueEventIds) {
+                if (eventDetails[eventId]) continue;
+                try {
+                    const event = await getEvent(eventId);
+                    if (event) {
+                        setEventDetails(prev => ({
+                            ...prev,
+                            [eventId]: event
+                        }));
+                    }
+                } catch (err) {
+                    console.error(`Error fetching details for event ${eventId}:`, err);
+                }
+            }
+        };
+        fetchMissingEventDetails();
+    }, [tickets, eventDetails]);
+
+    const now = new Date();
+
+    // Group tickets by event_id
+    const groupedEvents: GroupedEvent[] = useMemo(() => {
+        const map = new Map<string, TicketPurchase[]>();
+        tickets.forEach((ticket) => {
+            const key = ticket.event_id;
+            if (!map.has(key)) map.set(key, []);
+            map.get(key)!.push(ticket);
+        });
+        return Array.from(map.entries()).map(([event_id, eventTickets]) => {
+            const fetchedEvent = eventDetails[event_id];
+            const apiEvent = eventTickets[0].events;
+
+            // Merge details: fallback to fetchedEvent properties if apiEvent has blank/missing values
+            const mergedEvent = {
+                title: apiEvent?.title || fetchedEvent?.title || 'Unknown Event',
+                cover_image: apiEvent?.cover_image || fetchedEvent?.cover_image || fetchedEvent?.thumbnail_url || '',
+                start_time: apiEvent?.start_time || fetchedEvent?.start_time || fetchedEvent?.scheduled_for || '',
+                venue: apiEvent?.venue || fetchedEvent?.venue?.name || fetchedEvent?.location?.venue || fetchedEvent?.venue || '',
+                city: apiEvent?.city || fetchedEvent?.venue?.city || fetchedEvent?.location?.city || fetchedEvent?.city || '',
+                location_type: apiEvent?.location_type || fetchedEvent?.venue?.venue_type || fetchedEvent?.location?.type || 'physical',
+            };
+
+            return {
+                event_id,
+                tickets: eventTickets,
+                event: mergedEvent,
+                start_time: mergedEvent.start_time || undefined,
+            };
+        });
+    }, [tickets, eventDetails]);
+
+    const filteredGroups = groupedEvents
+        .filter((group) => {
+            const eventDate = group.start_time ? new Date(group.start_time) : null;
+            if (activeFilter === 'Upcoming') {
+                return !eventDate || eventDate >= now;
+            }
+            if (activeFilter === 'Past') {
+                return eventDate && eventDate < now;
+            }
+            return true;
+        })
+        .sort((a, b) => {
+            const dateA = a.start_time ? new Date(a.start_time).getTime() : 0;
+            const dateB = b.start_time ? new Date(b.start_time).getTime() : 0;
+            if (activeFilter === 'Past') return dateB - dateA;
+            return dateA - dateB;
+        });
+
+    const renderGroupedCard = useCallback(
+        (group: GroupedEvent, index: number) => {
+            const isPast = group.start_time ? new Date(group.start_time) < now : false;
+            const firstTicket = group.tickets[0];
+            const ticketCount = group.tickets.length;
+            const totalPaid = group.tickets.reduce((sum, t) => sum + (t.metadata?.price_paid || 0), 0);
+            const currency = firstTicket.metadata?.currency || 'NGN';
+
+            const iconColorClass = isPast ? 'text-gray-400' : 'text-red-500';
+            const accentTextClass = isPast ? 'text-gray-500' : 'text-black';
+            const cardBorderClasses = isPast
+                ? 'border-gray-200 hover:border-gray-300'
+                : 'border-black/10 hover:border-black/40';
+
+            const mobileHorizontalDashClass = isPast
+                ? 'bg-[repeating-linear-gradient(to_right,rgba(148,163,184,0.6),rgba(148,163,184,0.6)_8px,transparent_8px,transparent_16px)]'
+                : 'bg-[repeating-linear-gradient(to_right,rgba(0,0,0,0.65),rgba(0,0,0,0.65)_8px,transparent_8px,transparent_16px)]';
+            const mobileVerticalDashClass = isPast
+                ? 'bg-[repeating-linear-gradient(to_bottom,rgba(148,163,184,0.5),rgba(148,163,184,0.5)_8px,transparent_8px,transparent_16px)]'
+                : 'bg-[repeating-linear-gradient(to_bottom,rgba(0,0,0,0.55),rgba(0,0,0,0.55)_8px,transparent_8px,transparent_16px)]';
+            const desktopVerticalDashClass = mobileVerticalDashClass;
+            const desktopHorizontalDashClass = mobileHorizontalDashClass;
+
+            const isExpanded = expandedCard === group.event_id;
+
+            // Collect unique ticket tier names from the group
+            const tierNames = [...new Set(group.tickets.map((t) => {
+                const themeName = t.color_theme || 'silver';
+                return TICKET_THEMES[themeName]?.name || 'Silver';
+            }))];
+
+            return (
+                <motion.div
+                    key={group.event_id}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.06 }}
+                    className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-3 min-w-0 w-full"
+                >
+                    {/* Time connector column */}
+                    {!isPast && (
+                        <>
+                            {/* Mobile time and connector */}
+                            <div className="flex items-center gap-3 sm:hidden">
+                                <span className={`text-sm font-semibold ${accentTextClass}`}>
+                                    {formatTimeLabel(group.start_time)}
+                                </span>
+                                <div className="relative flex-1 h-6">
+                                    <div className={`absolute left-0 right-2 top-1/2 h-px -translate-y-1/2 ${mobileHorizontalDashClass}`} />
+                                    <div className={`absolute right-2 top-1/2 h-6 w-px ${mobileVerticalDashClass}`} />
+                                </div>
+                            </div>
+
+                            {/* Desktop time column */}
+                            <div className="hidden sm:flex sm:w-20 sm:flex-col sm:items-center sm:pt-1">
+                                <div className="text-center">
+                                    <span className={`text-sm font-semibold ${accentTextClass}`}>
+                                        {formatTimeLabel(group.start_time)}
+                                    </span>
+                                </div>
+                                <div className="relative mt-3 flex-1 w-full">
+                                    <div className={`absolute left-1/2 right-0 top-0 bottom-1/2 -translate-x-1/2 w-px ${desktopVerticalDashClass}`} />
+                                    <div className={`absolute left-1/2 right-[-0.75rem] top-1/2 h-px -translate-y-1/2 ${desktopHorizontalDashClass}`} />
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {/* The card itself */}
+                    <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => navigate(`/events/${group.event_id}`)}
+                        onKeyDown={(evt) => {
+                            if (evt.key === 'Enter' || evt.key === ' ') {
+                                evt.preventDefault();
+                                navigate(`/events/${group.event_id}`);
+                            }
+                        }}
+                        className={`relative w-full flex-1 overflow-hidden rounded-2xl border bg-gradient-to-br from-gray-100 via-orange-50/20 to-gray-100 text-sm shadow-sm shadow-[0_8px_20px_rgba(15,23,42,0.05)] backdrop-blur-lg transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2 focus:ring-offset-gray-100 sm:ml-0 ${cardBorderClasses}`}
+                    >
+                        <div className="relative z-10 flex flex-row gap-2.5 p-2.5 sm:items-start sm:gap-4 sm:p-5">
+                            {/* Left content */}
+                            <div className="flex-1 flex flex-col text-left min-w-0">
+                                {/* Date row */}
+                                <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-medium uppercase tracking-[0.12em] sm:tracking-[0.18em] text-gray-500">
+                                    <svg className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${iconColorClass}`} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
+                                    </svg>
+                                    <span>{formatDateLabel(group.start_time)}</span>
+                                </div>
+
+                                {/* Title */}
+                                <h3 className="mt-2.5 sm:mt-3 text-lg sm:text-2xl font-semibold text-gray-900 truncate" title={group.event?.title}>
+                                    {group.event?.title || 'Unknown Event'}
+                                </h3>
+
+                                {/* Location */}
+                                <p className="mt-1 text-xs sm:text-base font-medium text-gray-700">
+                                    {group.event?.location_type === 'online' ? 'Online' : group.event?.venue || group.event?.city || 'Venue TBA'}
+                                </p>
+
+                                {/* Ticket count + tiers + total paid */}
+                                <div className="mt-2.5 sm:mt-3.5 flex flex-wrap items-center gap-2">
+                                    {/* Ticket count badge */}
+                                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold ${isPast ? 'border border-black/10 bg-white/60 text-gray-800' : 'border border-black/10 bg-white text-gray-800'}`}>
+                                        <TicketIcon className="w-3 h-3 flex-shrink-0" />
+                                        <span>{ticketCount} {ticketCount === 1 ? 'Ticket' : 'Tickets'}</span>
+                                    </span>
+
+                                    {/* Tier badges */}
+                                    {tierNames.map((tierName) => {
+                                        const themeKey = Object.keys(TICKET_THEMES).find(k => TICKET_THEMES[k]?.name === tierName) || 'silver';
+                                        const theme = TICKET_THEMES[themeKey] || TICKET_THEMES['silver'];
+                                        return (
+                                            <span
+                                                key={tierName}
+                                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold ${isPast ? 'border border-black/10 bg-white/60 text-gray-800' : 'border border-blue-200 bg-blue-50 text-blue-800'}`}
+                                            >
+                                                <span className={`w-2 h-2 rounded-full ${theme.gradient} border border-black/10 flex-shrink-0`} />
+                                                <span>{tierName}</span>
+                                            </span>
+                                        );
+                                    })}
+
+                                    {/* Total paid */}
+                                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold ${isPast ? 'border border-black/10 bg-white/60 text-gray-700' : 'border border-blue-200 bg-blue-50 text-blue-700'}`}>
+                                        {formatCompactPrice(totalPaid, currency)}
+                                    </span>
+                                </div>
+
+                                {/* Attendee summary for single ticket */}
+                                {ticketCount === 1 && firstTicket.attendee_name && (
+                                    <div className="mt-2 sm:mt-3 flex flex-col gap-0.5">
+                                        <p className="text-[11px] sm:text-xs text-gray-500">
+                                            <span className="font-semibold text-gray-700">{firstTicket.attendee_name}</span>
+                                            {firstTicket.attendee_email && <span className="text-gray-400"> · {firstTicket.attendee_email}</span>}
+                                        </p>
+                                        <p className="text-[9px] sm:text-[10px] font-mono text-gray-400 tracking-wider">
+                                            #{firstTicket.ticket_code || firstTicket.id.slice(0, 10)}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Attendee summary for multiple tickets */}
+                                {ticketCount > 1 && (
+                                    <div className="mt-2 sm:mt-3">
+                                        <p className="text-[11px] sm:text-xs text-gray-500">
+                                            {group.tickets.filter(t => t.attendee_name).slice(0, 2).map(t => t.attendee_name).join(', ')}
+                                            {group.tickets.filter(t => t.attendee_name).length > 2 && (
+                                                <span className="text-gray-400"> +{group.tickets.filter(t => t.attendee_name).length - 2} more</span>
+                                            )}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Action buttons */}
+                                <div className="mt-auto w-full pt-3 sm:pt-6 text-left flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-black/10 bg-white px-3.5 py-1.5 sm:px-4 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] sm:tracking-[0.15em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            navigate(`/events/${group.event_id}`);
+                                        }}
+                                    >
+                                        <span>{isPast ? 'View Recap' : 'View Event'}</span>
+                                        <svg aria-hidden="true" className="h-3 w-3 sm:h-3.5 sm:w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path d="M13.44 9.25H4.5a.75.75 0 0 0 0 1.5h8.94l-2.22 2.22a.75.75 0 1 0 1.06 1.06l3.5-3.5a.75.75 0 0 0 0-1.06l-3.5-3.5a.75.75 0 1 0-1.06 1.06l2.22 2.22Z" />
+                                        </svg>
+                                    </button>
+
+                                    {ticketCount === 1 && (
+                                        <button
+                                            type="button"
+                                            className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                setViewingTicketCard({ group, ticket: firstTicket });
+                                            }}
+                                        >
+                                            <TicketIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                            <span>View Pass</span>
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            setExpandedCard(isExpanded ? null : group.event_id);
+                                            // Reset any individual QR expansion when toggling the card
+                                            setExpandedQR(null);
+                                        }}
+                                    >
+                                        <TicketIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                        <span>{ticketCount === 1 ? 'QR Code' : `${ticketCount} Passes`}</span>
+                                        {ticketCount > 1 && (
+                                            <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Cover image – right side */}
+                            <div className="flex-shrink-0 self-start sm:self-start">
+                                <div className="relative aspect-square w-16 sm:w-24 md:w-28 lg:w-40 xl:w-48 overflow-hidden rounded-xl">
+                                    {group.event?.cover_image && !failedImages.has(group.event_id) ? (
+                                        <img
+                                            src={group.event.cover_image}
+                                            alt={group.event.title}
+                                            className={`h-full w-full object-cover ${isPast ? 'grayscale' : ''}`}
+                                            loading="lazy"
+                                            onError={() =>
+                                                setFailedImages((prev) => {
+                                                    const next = new Set(prev);
+                                                    next.add(group.event_id);
+                                                    return next;
+                                                })
+                                            }
+                                        />
+                                    ) : (
+                                        <div
+                                            className={`flex h-full w-full items-center justify-center rounded-xl bg-gradient-to-br ${CARD_PLACEHOLDER_GRADIENTS[index % CARD_PLACEHOLDER_GRADIENTS.length]} ${isPast ? 'opacity-90' : ''}`}
+                                        >
+                                            <img src={amptiveLogo} alt="Amptive" className="h-10 w-auto opacity-85 drop-shadow-[0_4px_14px_rgba(15,23,42,0.35)]" />
+                                        </div>
+                                    )}
+
+                                    {/* Ticket count overlay badge (only when > 1) */}
+                                    {ticketCount > 1 && (
+                                        <div className="absolute top-1 right-1 bg-black/70 backdrop-blur-sm text-white text-[9px] sm:text-[10px] font-bold rounded-full w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center">
+                                            {ticketCount}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Expandable Tickets / QR Section */}
+                        <AnimatePresence>
+                            {isExpanded && (
+                                <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.25, ease: 'easeInOut' }}
+                                    className="overflow-hidden"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="border-t border-dashed border-black/10 mx-4 sm:mx-6" />
+
+                                    {/* Individual ticket passes */}
+                                    <div className="px-4 sm:px-6 py-4 sm:py-5 flex flex-col gap-3">
+                                        {group.tickets.map((ticket, ticketIdx) => {
+                                            const themeName = ticket.color_theme || 'silver';
+                                            const theme = TICKET_THEMES[themeName] || TICKET_THEMES['silver'];
+                                            const isThisQROpen = expandedQR === ticket.id;
+
+                                            return (
+                                                <div
+                                                    key={ticket.id}
+                                                    className="rounded-xl border border-black/5 bg-white/60 backdrop-blur-sm overflow-hidden"
+                                                >
+                                                    {/* Ticket row header */}
+                                                    <div className="flex items-center gap-3 px-3.5 py-3 sm:px-4 sm:py-3.5">
+                                                        {/* Number circle */}
+                                                        <div className={`flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-black/5 text-gray-700'}`}>
+                                                            {ticketIdx + 1}
+                                                        </div>
+
+                                                        {/* Attendee info */}
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate">
+                                                                {ticket.attendee_name || 'Attendee'}
+                                                            </p>
+                                                            <div className="flex items-center gap-2 mt-0.5">
+                                                                <span className="text-[9px] sm:text-[10px] font-mono text-gray-400 tracking-wider">
+                                                                    #{ticket.ticket_code || ticket.id.slice(0, 10)}
+                                                                </span>
+                                                                <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] sm:text-[9px] font-semibold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${theme.gradient} border border-black/10 flex-shrink-0`} />
+                                                                    {TICKET_THEMES[themeName]?.name || 'Silver'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* QR toggle & View Pass buttons */}
+                                                        <div className="flex-shrink-0 flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition ${isThisQROpen ? 'bg-black text-white' : 'bg-black/5 text-gray-600 hover:bg-black/10'}`}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setExpandedQR(isThisQROpen ? null : ticket.id);
+                                                                }}
+                                                            >
+                                                                <TicketIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                                                                QR
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition bg-black/5 text-gray-600 hover:bg-black hover:text-white"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setViewingTicketCard({ group, ticket });
+                                                                }}
+                                                            >
+                                                                Pass
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Expandable QR for this specific ticket */}
+                                                    <AnimatePresence>
+                                                        {isThisQROpen && (
+                                                            <motion.div
+                                                                initial={{ height: 0, opacity: 0 }}
+                                                                animate={{ height: 'auto', opacity: 1 }}
+                                                                exit={{ height: 0, opacity: 0 }}
+                                                                transition={{ duration: 0.2, ease: 'easeInOut' }}
+                                                                className="overflow-hidden"
+                                                            >
+                                                                <div className="border-t border-dashed border-black/5 mx-3.5" />
+                                                                <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-5 px-3.5 sm:px-4 py-4">
+                                                                    <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                                                                        <QRCodeSVG
+                                                                            value={ticket.qr_code_data || ticket.ticket_code || ''}
+                                                                            size={120}
+                                                                            level="M"
+                                                                            includeMargin={false}
+                                                                            fgColor="#000000"
+                                                                            bgColor="#ffffff"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="flex flex-col items-center sm:items-start gap-1 text-center sm:text-left">
+                                                                        <p className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-gray-500 font-semibold">
+                                                                            {ticket.ticket_code || ticket.id}
+                                                                        </p>
+                                                                        {ticket.attendee_email && (
+                                                                            <p className="text-[10px] sm:text-[11px] text-gray-400">{ticket.attendee_email}</p>
+                                                                        )}
+                                                                        <p className="text-[10px] text-gray-400 mt-0.5 leading-relaxed max-w-[200px]">
+                                                                            Present this QR code at the venue entrance.
+                                                                        </p>
+                                                                        <p className="text-[9px] text-gray-400 mt-0.5">
+                                                                            Purchased {safeDateFormat(ticket.purchase_date, 'MMM d, yyyy') || 'recently'}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </motion.div>
+            );
+        },
+        [navigate, expandedCard, expandedQR, failedImages]
+    );
 
     if (loading) {
         return (
@@ -109,130 +555,194 @@ const MyTickets = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 pt-24 pb-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-4xl mx-auto">
-                <h1 className="text-3xl font-bold text-gray-900 mb-8">My Tickets</h1>
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 pt-24 pb-16 px-6 sm:px-10 lg:px-14">
+            <div>
+                {/* Page Header */}
+                <header className="mb-4 md:mb-5 w-full flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight text-black mb-1 leading-tight">
+                            My Tickets
+                        </h1>
+                        <p className="hidden sm:block text-[15px] text-black/40 font-sans mt-1">
+                            Your event passes and check-in codes, all in one place.
+                        </p>
+                    </div>
+                </header>
 
+                {/* Filter Pills – exactly matching DashboardEvents */}
+                <div className="flex items-center mb-8 overflow-x-auto no-scrollbar">
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={() => setActiveFilter('Upcoming')}
+                            className={`flex items-center gap-2 px-5 py-3 rounded-full text-sm font-medium transition-all whitespace-nowrap ${activeFilter === 'Upcoming' ? 'bg-[#F2F2F2] text-black' : 'bg-transparent text-black/60 hover:bg-black/5'}`}
+                        >
+                            Upcoming
+                        </button>
+                        <button
+                            onClick={() => setActiveFilter('Past')}
+                            className={`flex items-center gap-2 px-5 py-3 rounded-full text-sm font-medium transition-all whitespace-nowrap ${activeFilter === 'Past' ? 'bg-[#F2F2F2] text-black' : 'bg-transparent text-black/60 hover:bg-black/5'}`}
+                        >
+                            Past
+                        </button>
+                    </div>
+                </div>
+
+                {/* Ticket Cards */}
                 {tickets.length === 0 ? (
-                    <div className="text-center py-12 bg-white rounded-2xl shadow-sm border border-gray-100">
-                        <TicketIcon className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No tickets found</h3>
-                        <p className="text-gray-500 mb-6">You haven't purchased any tickets yet.</p>
+                    <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-16 mb-8 mt-4 bg-white shadow-sm">
+                        <div className="mx-auto mb-4 text-5xl">🎟️</div>
+                        <h3 className="text-lg font-semibold text-gray-700">No tickets yet</h3>
+                        <p className="mt-2 text-sm text-gray-500">You haven't purchased any event tickets yet.</p>
                         <Link
                             to="/explore"
-                            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-black hover:bg-gray-800 transition-colors"
+                            className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-black rounded-full hover:bg-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
                         >
-                            Explore Events
+                            <span>Explore Events</span>
                         </Link>
                     </div>
+                ) : filteredGroups.length === 0 ? (
+                    <div className="text-center text-gray-500 border border-dashed border-gray-200 rounded-xl py-16 mb-8 mt-4 bg-white shadow-sm">
+                        <div className="mx-auto mb-4 text-5xl">😮</div>
+                        <h3 className="text-lg font-semibold text-gray-700">No {activeFilter.toLowerCase()} tickets</h3>
+                        <p className="mt-2 text-sm text-gray-500">
+                            {activeFilter === 'Upcoming'
+                                ? "You don't have any upcoming event tickets."
+                                : "You don't have any past event tickets."}
+                        </p>
+                    </div>
                 ) : (
-                    <div className="flex flex-wrap gap-8 justify-center">
-                        {tickets.map((ticket, index) => {
-                            const themeName = (ticket.color_theme || 'silver') as TicketTheme;
-                            const theme = TICKET_THEMES[themeName] || TICKET_THEMES['silver'];
-                            const price = ticket.metadata?.price_paid || 0;
-                            const currency = ticket.metadata?.currency || 'NGN';
-
-                            return (<motion.div
-                                key={ticket.id}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.1 }}
-                                className="group relative w-full max-w-[360px] sm:max-w-[420px] min-h-[15rem] [perspective:1600px]"
-                            >
-                                <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
-                                    {/* Front */}
-                                    <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 backdrop-blur-sm shadow-xl [backface-visibility:hidden]`}>
-                                        <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-white/50`} aria-hidden="true" />
-                                        <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
-                                        <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
-
-                                        <div className="relative z-10 flex items-start justify-between gap-3">
-                                            <div className="space-y-1.5 flex-1 min-w-0">
-                                                <p className={`text-xs uppercase tracking-[0.28em] ${theme.text} opacity-60`}>
-                                                    {ticket.events?.start_time ? format(new Date(ticket.events.start_time), 'MMM d, yyyy') : 'DATE TBA'}
-                                                </p>
-                                                <p className={`text-lg font-semibold ${theme.text} line-clamp-2 break-words`}>
-                                                    {ticket.events?.title || 'Unknown Event'}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="relative z-10 mt-6 flex items-baseline justify-between gap-2">
-                                            <span className={`text-3xl font-bold ${theme.text} truncate`}>
-                                                {formatCompactPrice(price, currency)}
-                                            </span>
-                                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
-                                                Per guest
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Back */}
-                                    <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 shadow-xl [backface-visibility:hidden] [transform:rotateY(180deg)]`}>
-                                        <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-white/50`} aria-hidden="true" />
-                                        <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
-                                        <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
-
-                                        <div className="relative z-10 space-y-4">
-                                            <div className="space-y-2">
-                                                <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Event Details</p>
-                                                <ul className={`space-y-2 text-sm ${theme.text} opacity-90 list-disc list-inside`}>
-                                                    <li className="leading-snug flex items-center gap-2">
-                                                        <MapPin className="w-4 h-4" />
-                                                        <span className="truncate">
-                                                            {ticket.events?.location_type === 'online' ? 'Online' : ticket.events?.city || 'Venue TBA'}
-                                                        </span>
-                                                    </li>
-                                                    <li className="leading-snug flex items-center gap-2">
-                                                        <Calendar className="w-4 h-4" />
-                                                        <span>
-                                                            {ticket.events?.start_time ? format(new Date(ticket.events.start_time), 'h:mm a') : 'Time TBA'}
-                                                        </span>
-                                                    </li>
-                                                </ul>
-                                            </div>
-
-                                            {ticket.attendee_name && (
-                                                <div className="space-y-1">
-                                                    <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Attendee</p>
-                                                    <p className={`text-sm font-semibold ${theme.text} opacity-90`}>{ticket.attendee_name}</p>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="relative z-10 mt-4 flex items-center justify-between">
-                                            <span className={`text-xl font-semibold ${theme.text}`}>
-                                                {formatCompactPrice(price, currency)}
-                                            </span>
-                                        </div>
-
-                                        {/* QR Code & Ticket ID - Bottom Right */}
-                                        <div className={`absolute bottom-4 right-4 z-20 flex flex-col items-end gap-1 ${theme.text}`}>
-                                            <QRCodeSVG
-                                                value={ticket.qr_code_data || ticket.ticket_code || ''}
-                                                size={72}
-                                                level="M"
-                                                includeMargin={false}
-                                                fgColor="currentColor"
-                                                bgColor="transparent"
-                                            />
-                                            <p className="text-[9px] font-mono opacity-60">{ticket.ticket_code || ticket.ticket_id}</p>
-                                            {ticket.attendee_name && (
-                                                <p className="text-[9px] opacity-60">{ticket.attendee_name}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                                <p className="hidden mt-6 text-xs text-gray-400 text-center w-full lg:block absolute -bottom-8">
-                                    Hover to flip
-                                </p>
-                            </motion.div>
-                            );
-                        })}
+                    <div className="flex flex-col gap-6 sm:gap-5">
+                        {filteredGroups.map((group, index) => renderGroupedCard(group, index))}
                     </div>
                 )}
             </div>
+
+            {/* Ticket Pass Modal Overlay */}
+            <AnimatePresence>
+                {viewingTicketCard && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" onClick={() => setViewingTicketCard(null)}>
+                        {/* Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+                        
+                        {/* Modal Container */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="group relative w-full max-w-[360px] sm:max-w-[420px] h-[15rem] sm:h-[18rem] [perspective:1600px] mx-auto"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {(() => {
+                                const ticket = viewingTicketCard.ticket;
+                                const group = viewingTicketCard.group;
+                                const themeName = ticket.color_theme || 'silver';
+                                const theme = TICKET_THEMES[themeName] || TICKET_THEMES['silver'];
+                                const price = ticket.metadata?.price_paid || 0;
+                                const currency = ticket.metadata?.currency || 'NGN';
+                                const event = group.event;
+
+                                return (
+                                    <>
+                                        {/* Close Button */}
+                                        <button 
+                                            onClick={() => setViewingTicketCard(null)}
+                                            className="absolute -top-12 right-0 p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-colors z-50 border border-white/20"
+                                        >
+                                            <X className="w-5 h-5 text-white" />
+                                        </button>
+
+                                        <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] cursor-pointer">
+                                            {/* Front */}
+                                            <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 backdrop-blur-sm shadow-xl [backface-visibility:hidden]`}>
+                                                <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-black/10`} aria-hidden="true" />
+                                                <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+                                                <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+
+                                                <div className="relative z-10 flex items-start justify-between gap-3">
+                                                    <div className="space-y-1.5 flex-1 min-w-0">
+                                                        <p className={`text-xs uppercase tracking-[0.28em] ${theme.text} opacity-60`}>
+                                                            {group.start_time ? format(new Date(group.start_time), 'MMM d, yyyy') : 'DATE TBA'}
+                                                        </p>
+                                                        <p className={`text-lg font-semibold ${theme.text} line-clamp-2 break-words`}>
+                                                            {event?.title || 'Unknown Event'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="relative z-10 mt-6 flex items-baseline justify-between gap-2">
+                                                    <span className={`text-3xl font-bold ${theme.text} truncate`}>
+                                                        {formatCompactPrice(price, currency)}
+                                                    </span>
+                                                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
+                                                        Per guest
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Back */}
+                                            <div className={`absolute inset-0 flex flex-col justify-between overflow-visible rounded-[2rem] border ${theme.border} ${theme.gradient} px-6 py-6 shadow-xl [backface-visibility:hidden] [transform:rotateY(180deg)]`}>
+                                                <span className={`pointer-events-none absolute inset-y-6 -right-3 z-0 h-10 w-10 rounded-full border ${theme.border} bg-black/10`} aria-hidden="true" />
+                                                <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+                                                <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
+
+                                                <div className="relative z-10 space-y-4">
+                                                    <div className="space-y-2">
+                                                        <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Event Details</p>
+                                                        <ul className={`space-y-2 text-sm ${theme.text} opacity-90 list-disc list-inside`}>
+                                                            <li className="leading-snug flex items-center gap-2">
+                                                                <MapPin className="w-4 h-4" />
+                                                                <span className="truncate">
+                                                                    {event?.location_type === 'online' ? 'Online' : event?.venue || event?.city || 'Venue TBA'}
+                                                                </span>
+                                                            </li>
+                                                        </ul>
+                                                    </div>
+
+                                                    {ticket.attendee_name && (
+                                                        <div className="space-y-1">
+                                                            <p className={`text-xs uppercase tracking-[0.32em] ${theme.text} opacity-60`}>Attendee</p>
+                                                            <p className={`text-sm font-semibold ${theme.text} opacity-90`}>{ticket.attendee_name}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="relative z-10 mt-4 flex items-center justify-between">
+                                                    <span className={`text-xl font-semibold ${theme.text}`}>
+                                                        {formatCompactPrice(price, currency)}
+                                                    </span>
+                                                </div>
+
+                                                {/* QR Code & Ticket ID - Bottom Right */}
+                                                <div className={`absolute bottom-4 right-4 z-20 flex flex-col items-end gap-1 ${theme.text}`}>
+                                                    <QRCodeSVG
+                                                        value={ticket.qr_code_data || ticket.ticket_code || ''}
+                                                        size={72}
+                                                        level="M"
+                                                        includeMargin={false}
+                                                        fgColor="currentColor"
+                                                        bgColor="transparent"
+                                                    />
+                                                    <p className="text-[9px] font-mono opacity-60 mt-1">{ticket.ticket_code || ticket.id.slice(0, 10)}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <p className="mt-6 text-xs text-white/70 text-center w-full absolute -bottom-8">
+                                            Hover to flip
+                                        </p>
+                                    </>
+                                );
+                            })()}
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

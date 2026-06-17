@@ -606,8 +606,14 @@ const Homepage: React.FC = () => {
           let finalPrice: number | any[] = 0;
           
           if (tickets.length > 0) {
-            // Filter out sold out tickets so the "From X" price reflects what's actually available
-            const availableTickets = tickets.filter((t: any) => t.quantity_remaining === undefined || t.quantity_remaining === null || t.quantity_remaining > 0);
+            const availableTickets = tickets.filter((t: any) => {
+              const isSoldOut = (t.is_active === false) ||
+                (t.quantity_remaining !== undefined && t.quantity_remaining !== null && t.quantity_remaining <= 0) ||
+                (t.quantity !== undefined && t.quantity !== null && t.quantity <= 0) ||
+                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_sold !== undefined && t.quantity_sold !== null && t.quantity_sold >= t.quantity_total) ||
+                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_total <= 0);
+              return !isSoldOut;
+            });
             
             // If all tickets are sold out, we can just pass tickets since the card will override and display 'Sold Out'
             finalPrice = availableTickets.length > 0 ? availableTickets : tickets;
@@ -618,7 +624,13 @@ const Homepage: React.FC = () => {
 
           let isSoldOut = false;
           if (tickets.length > 0) {
-            isSoldOut = tickets.every((t: any) => t.quantity_remaining !== undefined && t.quantity_remaining !== null && t.quantity_remaining <= 0);
+            isSoldOut = tickets.every((t: any) => {
+              return (t.is_active === false) ||
+                (t.quantity_remaining !== undefined && t.quantity_remaining !== null && t.quantity_remaining <= 0) ||
+                (t.quantity !== undefined && t.quantity !== null && t.quantity <= 0) ||
+                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_sold !== undefined && t.quantity_sold !== null && t.quantity_sold >= t.quantity_total) ||
+                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_total <= 0);
+            });
           } else {
             isSoldOut = event.is_sold_out;
           }
@@ -1036,6 +1048,8 @@ const Homepage: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [progressBars, setProgressBars] = useState<number[]>(Array(SLIDES.length).fill(0));
   const sliderRef = useRef<HTMLDivElement>(null);
+  const upcomingEventsScrollRef = useRef<HTMLDivElement>(null);
+  const upcomingMobileEventsScrollRef = useRef<HTMLDivElement>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const resumeTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -1067,6 +1081,18 @@ const Homepage: React.FC = () => {
   // Go to previous slide
   const prevSlide = () => {
     goToSlide((currentSlide - 1 + SLIDES.length) % SLIDES.length);
+  };
+
+  const scrollUpcomingEvents = (direction: 'left' | 'right') => {
+    const container = window.innerWidth < 640
+      ? upcomingMobileEventsScrollRef.current
+      : upcomingEventsScrollRef.current;
+    if (!container) return;
+
+    container.scrollBy({
+      left: direction === 'left' ? -360 : 360,
+      behavior: 'smooth',
+    });
   };
 
   const cardsContainerRef = useRef<HTMLDivElement>(null);
@@ -1389,10 +1415,35 @@ const Homepage: React.FC = () => {
       </div>
 
       {/* Upcoming Events Section */}
-      <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-xl md:text-2xl font-bold text-black">Upcoming Events</h2>
-          <div className="relative" ref={filterRef}>
+      <div className="w-[95vw] mx-auto mt-8 mb-4 bg-white px-4 py-6 sm:mt-12 sm:mb-6 sm:px-6 sm:py-8">
+        <div className="flex justify-between items-center mb-5 sm:mb-8">
+          <button
+            type="button"
+            onClick={() => navigate('/events')}
+            className="group inline-flex items-center gap-2 text-xl md:text-2xl font-bold text-black"
+          >
+            Upcoming Events
+            <ChevronRight className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-0.5" />
+          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              aria-label="Previous events"
+              onClick={() => scrollUpcomingEvents('left')}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600 sm:h-11 sm:w-11"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next events"
+              onClick={() => scrollUpcomingEvents('right')}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-black transition-colors hover:bg-gray-200 sm:h-11 sm:w-11"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="hidden" ref={filterRef}>
             <button
               onClick={toggleFilter}
               className="flex items-center space-x-1 text-gray-600 hover:text-gray-800 transition-colors"
@@ -1615,11 +1666,11 @@ const Homepage: React.FC = () => {
           <div className="hidden sm:block">
             <div className="relative">
               {/* Left padding gradient */}
-              <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
+              <div className="absolute left-0 top-0 bottom-0 w-3 bg-gradient-to-r from-white/70 to-transparent z-10 pointer-events-none"></div>
 
               {/* Scrollable content */}
-              <div className="overflow-x-auto pb-6">
-                <div className="flex space-x-6 w-max min-w-full pl-4 pr-4">
+              <div ref={upcomingEventsScrollRef} className="hide-scrollbar overflow-x-auto pb-6">
+                <div className="flex space-x-6 w-max min-w-full pr-4">
                   {loadingEvents ? (
                     Array.from({ length: 4 }).map((_, i) => (
                       <div key={`desktop-skeleton-${i}`} className="w-72 flex-shrink-0">
@@ -1667,23 +1718,12 @@ const Homepage: React.FC = () => {
               <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
             </div>
 
-            {/* Show More Button for Desktop */}
-            {filteredEvents.length > 5 && (
-              <div className="mt-10 w-full px-6">
-                <button 
-                  onClick={() => navigate('/events')}
-                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200"
-                >
-                  View more events
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Mobile Layout */}
           <div className="sm:hidden">
             {loadingEvents ? (
-              <div className="-mx-2 px-4 overflow-x-auto pb-4">
+              <div className="-mx-2 hide-scrollbar overflow-x-auto px-4 pb-4">
                 <div className="flex space-x-3 w-max">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <div key={`mob-skeleton-${i}`} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
@@ -1695,7 +1735,7 @@ const Homepage: React.FC = () => {
             ) : filteredEvents.length > 0 ? (
               <>
                 {/* Horizontal Scrollable Cards */}
-                <div className="-mx-2 px-4 overflow-x-auto pb-4">
+                <div ref={upcomingMobileEventsScrollRef} className="-mx-4 hide-scrollbar overflow-x-auto px-4 pb-2">
                   <div className="flex space-x-3 w-max">
                     {filteredEvents.slice(0, 5).map((event, index) => (
                       <div
@@ -1716,17 +1756,6 @@ const Homepage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Show More Button for Mobile */}
-                {filteredEvents.length > 5 && (
-                  <div className="mt-2 w-full px-4">
-                    <button 
-                      onClick={() => navigate('/events')}
-                      className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200"
-                    >
-                      View more events
-                    </button>
-                  </div>
-                )}
               </>
             ) : (
               <div className="p-6 text-center">
@@ -1750,211 +1779,208 @@ const Homepage: React.FC = () => {
       </div>
 
       {/* Top Events Section */}
-      <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl px-6 py-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl md:text-2xl font-bold text-black">Top Events</h2>
-          {/* Filter button and modal removed as per user request */}
-        </div>
-
-        {/* Desktop Table Layout */}
-        <div className="hidden sm:block overflow-x-auto">
-          <div className="min-w-full">
-            {/* Table Header */}
-            <div className="grid grid-cols-[40px,minmax(300px,2fr),minmax(180px,1.5fr),minmax(100px,1fr),minmax(120px,1fr),minmax(100px,1fr)] gap-8 text-sm font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-              <div className="w-8 text-center">#</div>
-              <div>Event</div>
-              <div>Location</div>
-              <div>Price</div>
-              <div>Status</div>
-              <div>Date</div>
-            </div>
-
-            {/* Table Rows */}
-            <div className="space-y-3">
-              {loadingEvents ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TopEventRowSkeleton key={`top-event-skeleton-${i}`} />
-                ))
-              ) : filteredEvents.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  No upcoming events found
-                </div>
-              ) : (
-                filteredEvents.slice(0, showAllTopEvents ? filteredEvents.length : 6).map((event, index) => (
-                  <div
-                    key={event.id}
-                    onClick={() => navigate(`/events/${event.id}`)}
-                    className="grid grid-cols-[40px,minmax(300px,2fr),minmax(180px,1.5fr),minmax(100px,1fr),minmax(120px,1fr),minmax(100px,1fr)] gap-8 items-center px-4 py-4 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
-                  >
-                    <div className="w-8 text-center text-gray-500 font-medium">{index + 1}</div>
-                    <div className="flex items-center space-x-3">
-                      {event.media && (event.media.type === 'image' || event.media.type === 'gif') && (
-                        <img
-                          src={event.media.src}
-                          alt={event.media.alt || event.title}
-                          className="w-10 h-10 rounded-md object-cover"
-                        />
-                      )}
-                      <span className="font-medium text-gray-900 truncate">{event.title}</span>
-                    </div>
-                    <div className="text-gray-600 truncate" title={event.location}>{event.location}</div>
-                    <div className="font-medium text-gray-900">
-                      {Array.isArray(event.price) && event.price.length > 0
-                        ? (event.price.length === 1
-                            ? (event.price[0].price > 0 ? `₦${event.price[0].price.toLocaleString()}` : 'Free')
-                            : `₦${Math.min(...event.price.map((t: any) => t.price)).toLocaleString()}+`
-                          )
-                        : (event.price && (event.price as number) > 0 ? `₦${Number(event.price).toLocaleString()}` : 'Free')}
-                    </div>
-                    <div>
-                      <div className="inline-block">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${event.ticket_status === 'Sold Out' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800'
-                          }`}>
-                          {event.ticket_status === 'Sold Out' ? 'Sold out' : 'Ticket on sale'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {new Date(event.date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Show More Button */}
-            {!loadingEvents && filteredEvents.length > 6 && (
-              <div className="mt-10 w-full hidden sm:block">
-                <button
-                  onClick={() => setShowAllTopEvents(!showAllTopEvents)}
-                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200"
-                  style={{ paddingLeft: '2rem', paddingRight: '2rem' }}
-                >
-                  {showAllTopEvents ? 'Show less' : 'View more events'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Mobile Layout */}
-        <div className="sm:hidden">
-          <div className="-mx-2 px-4 overflow-x-auto pb-2">
-            <div className="flex space-x-3 w-max">
-              {loadingEvents ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <div key={`mob-top-skeleton-${i}`} className="w-[calc(50vw-1.5rem)] flex-shrink-0">
-                    <EventCardSkeleton />
-                  </div>
-                ))
-              ) : filteredEvents.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  No upcoming events found
-                </div>
-              ) : (
-                filteredEvents
-                  .slice(0, showAllTopEvents ? filteredEvents.length : 6)
-                  .map((event) => (
-                    <div
-                      key={event.id}
-                      onClick={() => navigate(`/events/${event.id}`)}
-                      className="w-[calc(50vw-1.5rem)] flex-shrink-0 cursor-pointer"
-                    >
-                      <EventCard
-                        title={event.title}
-                        location={event.location}
-                        status={event.ticket_status}
-                        price={event.price}
-                        date={event.date}
-                        media={event.media}
-                      />
-                    </div>
-                  ))
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 w-full px-4">
-            <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200">
-              View more events
+      <div className="w-[95vw] mx-auto mt-4 mb-12 bg-white px-6 py-8">
+        <div className="mb-7 flex items-center justify-between gap-4">
+          <button
+            type="button"
+            onClick={() => navigate('/events')}
+            className="group inline-flex items-center gap-2 text-[22px] font-bold text-black md:text-[24px]"
+          >
+            Popular this Week
+            <ChevronRight className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-0.5" />
+          </button>
+          <div className="hidden items-center gap-3 sm:flex">
+            <button
+              type="button"
+              aria-label="Previous events"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-50 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next events"
+              onClick={() => navigate('/events')}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-black transition-colors hover:bg-gray-200"
+            >
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
         </div>
+
+        {loadingEvents ? (
+          <div className="grid gap-x-14 gap-y-6 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={`popular-skeleton-${i}`} className="flex items-center gap-4 animate-pulse">
+                <div className="h-16 w-16 rounded-xl bg-gray-100" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-4 w-2/3 rounded bg-gray-100" />
+                  <div className="h-3 w-full rounded bg-gray-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredEvents.length === 0 ? (
+          <div className="py-12 text-sm font-medium text-gray-500">
+            No upcoming events found
+          </div>
+        ) : (
+          <>
+          <div className="grid gap-x-14 gap-y-6 md:hidden">
+            {filteredEvents.slice(0, 4).map((event) => {
+              const priceLabel = Array.isArray(event.price) && event.price.length > 0
+                ? (event.price.length === 1
+                    ? (event.price[0].price > 0 ? `₦${event.price[0].price.toLocaleString()}` : 'Free')
+                    : `From ₦${Math.min(...event.price.map((t: any) => t.price)).toLocaleString()}`
+                  )
+                : (event.price && (event.price as number) > 0 ? `₦${Number(event.price).toLocaleString()}` : 'Free');
+              const dateLabel = event.date
+                ? new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                : 'Date TBA';
+
+              return (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => navigate(`/events/${event.id}`)}
+                  className="group flex min-w-0 items-center gap-4 text-left"
+                >
+                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                    {event.media?.src ? (
+                      <img
+                        src={event.media.src}
+                        alt={event.media.alt || event.title}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-gray-300">
+                        <Calendar className="h-6 w-6" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-[17px] font-bold leading-tight text-black group-hover:underline">
+                      {event.title}
+                    </h3>
+                    <p className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-gray-500">
+                      {event.location} · {priceLabel} · {dateLabel}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="hidden gap-x-14 gap-y-6 md:grid md:grid-cols-2 xl:grid-cols-3">
+            {filteredEvents.slice(0, 9).map((event) => {
+              const priceLabel = Array.isArray(event.price) && event.price.length > 0
+                ? (event.price.length === 1
+                    ? (event.price[0].price > 0 ? `₦${event.price[0].price.toLocaleString()}` : 'Free')
+                    : `From ₦${Math.min(...event.price.map((t: any) => t.price)).toLocaleString()}`
+                  )
+                : (event.price && (event.price as number) > 0 ? `₦${Number(event.price).toLocaleString()}` : 'Free');
+              const dateLabel = event.date
+                ? new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                : 'Date TBA';
+
+              return (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => navigate(`/events/${event.id}`)}
+                  className="group flex min-w-0 items-center gap-4 text-left"
+                >
+                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                    {event.media?.src ? (
+                      <img
+                        src={event.media.src}
+                        alt={event.media.alt || event.title}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-gray-300">
+                        <Calendar className="h-6 w-6" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-[17px] font-bold leading-tight text-black group-hover:underline">
+                      {event.title}
+                    </h3>
+                    <p className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-gray-500">
+                      {event.location} · {priceLabel} · {dateLabel}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          </>
+        )}
       </div>
 
 
 
-      {/* Browse by Community Section */}
-      <div className={`w-[95vw] mx-auto my-12 border rounded-2xl px-6 py-8 min-h-[400px] flex flex-col justify-center relative transition-colors duration-500 ${cardColors[activeCardIndex]}`}>
-        <div className="flex flex-col lg:flex-row gap-8">
-          {/* Title Section */}
-          <div className="w-full lg:w-1/5 flex flex-col items-start gap-4 px-4">
-            <h2 className="text-[28px] lg:text-[32px] font-bold text-black leading-tight">
-              Browse by<br />
-              Communities
-            </h2>
-            <button className="px-6 py-2 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
-              Explore Communities
+      {/* Explore Topics Section */}
+      <div className="w-[95vw] mx-auto mt-2 mb-10 bg-white px-4 py-6 sm:mt-4 sm:mb-12 sm:px-6 sm:py-8">
+        <div className="mb-5 flex items-center justify-between gap-4 sm:mb-7">
+          <h2 className="text-xl font-bold leading-tight text-black md:text-2xl">Explore Communities</h2>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              aria-label="Previous communities"
+              onClick={() => scrollCards('left')}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600 sm:h-11 sm:w-11"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next communities"
+              onClick={() => scrollCards('right')}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-black transition-colors hover:bg-gray-200 sm:h-11 sm:w-11"
+            >
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
-
-          {/* Community Cards */}
-          <div className="flex-1 w-full overflow-hidden relative lg:pr-4">
-            {/* Left Fade Effect */}
-            <div className={`absolute left-0 top-0 bottom-0 w-12 md:w-20 bg-gradient-to-r ${cardColors[activeCardIndex].replace('bg-', 'from-')} to-transparent z-10 pointer-events-none transition-all duration-300 ${showLeftArrow ? 'opacity-100' : 'opacity-0'}`}></div>
-
-            {/* Navigation Arrows */}
-            {showLeftArrow && (
+        </div>
+        <div className="overflow-hidden">
+          <div
+            ref={cardsContainerRef}
+            className="hide-scrollbar flex gap-4 overflow-x-auto pb-2"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {(loadingCommunities ? [
+              { name: "Music", image: communityMusicImage },
+              { name: "Food & Drink", image: communityFoodImage },
+              { name: "Art & Culture", image: communityArtImage },
+              { name: "Technology", image: communityTechImage },
+              { name: "Sports", image: communitySportsImage },
+              { name: "Fashion", image: communityFashionImage },
+              { name: "Gaming", image: communityGamingImage },
+              { name: "Health & Wellness", image: communityHealthImage },
+              { name: "Education", image: communityEducationImage },
+              { name: "Travel", image: communityTravelImage }
+            ] : communities).slice(0, 10).map((community: any, index: number) => (
               <button
-                className="absolute left-0 md:left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-gray-100 transition-all duration-300"
-                onClick={() => scrollCards('left')}
+                key={community.community_id || index}
+                type="button"
+                onClick={() => {
+                  if (community.community_id) {
+                    navigate(`/community/${community.community_id}`);
+                    return;
+                  }
+                  navigate('/community');
+                }}
+                className="community-card h-[172px] w-[240px] flex-shrink-0 overflow-hidden rounded-xl bg-white text-left transition-transform duration-200 ease-out hover:-translate-y-0.5 sm:h-[200px] sm:w-[280px]"
+                data-index={index}
               >
-                <ChevronLeft className="w-6 h-6" />
+                <img
+                  src={community.image || communityMusicImage}
+                  alt={community.name}
+                  className="h-full w-full rounded-xl object-cover"
+                />
               </button>
-            )}
-            {showRightArrow && (
-              <button
-                className="absolute right-0 md:right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center hover:bg-gray-100 transition-all duration-300"
-                onClick={() => scrollCards('right')}
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
-
-            {/* Right Fade Effect */}
-            <div className={`absolute right-0 top-0 bottom-0 w-12 md:w-20 bg-gradient-to-l ${cardColors[activeCardIndex].replace('bg-', 'from-')} to-transparent z-10 pointer-events-none transition-all duration-300 ${showRightArrow ? 'opacity-100' : 'opacity-0'}`}></div>
-
-            {/* Cards Container */}
-            <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 hide-scrollbar px-4" ref={cardsContainerRef} style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              {(loadingCommunities ? [
-                { name: "Music", image: communityMusicImage },
-                { name: "Food & Drink", image: communityFoodImage },
-                { name: "Art & Culture", image: communityArtImage },
-                { name: "Technology", image: communityTechImage },
-                { name: "Sports", image: communitySportsImage },
-                { name: "Fashion", image: communityFashionImage },
-                { name: "Gaming", image: communityGamingImage },
-                { name: "Health & Wellness", image: communityHealthImage },
-                { name: "Education", image: communityEducationImage },
-                { name: "Travel", image: communityTravelImage }
-              ] : communities).map((community: any, index: number) => (
-                <div
-                  key={community.community_id || index}
-                  className="community-card flex-shrink-0 w-[280px] h-[200px] bg-white rounded-xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                  data-index={index}
-                >
-                  <img
-                    src={community.image || communityMusicImage}
-                    alt={community.name}
-                    className="w-full h-full object-cover rounded-xl"
-                  />
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -2167,7 +2193,7 @@ const Homepage: React.FC = () => {
         </div>
 
         {/* View More Button */}
-        <div className="mt-8">
+        <div className="mt-8 hidden sm:block">
           <button className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg transition-colors duration-200" style={{ paddingLeft: '2rem', paddingRight: '2rem' }}>
             View more events
           </button>

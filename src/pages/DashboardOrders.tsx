@@ -1,10 +1,10 @@
 import { motion, AnimatePresence } from "framer-motion";
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye, X, XCircle, Clock, CheckCircle2, Ban, UserCheck, CircleSlash, Check } from 'lucide-react';
-import { getPurchasesByEvent } from '@/lib/api/purchases';
+import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye, X, XCircle, Clock, CheckCircle2, Ban, UserCheck, CircleSlash, Check, Scan } from 'lucide-react';
 import { getEventsByUser } from '@/lib/api/events';
-import { getCurrentUser } from '@/lib/api/auth';
+import { getEventOwnerPurchases } from '@/lib/api/finance';
+import { getTicketsForEvent } from '@/lib/api/tickets';
 
 const BillIcon = ({ className, fill }: { className?: string, fill?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
@@ -30,21 +30,6 @@ const RefundedIcon = ({ className }: { className?: string, fill?: string }) => (
         <path d="M3 3v5h5"></path>
     </svg>
 );
-
-const DUMMY_ORDERS = [
-    { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', created_at: '2025-02-28T14:30:00Z', total_amount: 25000, status: 'completed', event_title: 'Lagos Tech Summit 2025', profiles: { display_name: 'Adaeze Okafor', email: 'adaeze@mail.com' }, tickets: [{ id: 't1', total_amount: 25000, ticket_status: 'valid', created_at: '2025-02-28T14:30:00Z', event_tickets: { label: 'General Admission', price: 25000, color_theme: 'silver' } }] },
-    { id: 'b2c3d4e5-f6a7-8901-bcde-f12345678901', created_at: '2025-02-27T10:15:00Z', total_amount: 15000, status: 'completed', event_title: 'Afrobeats Night Live', profiles: { display_name: 'Chukwuma Eze', email: 'chukwuma@mail.com' }, tickets: [{ id: 't2', total_amount: 15000, ticket_status: 'valid', created_at: '2025-02-27T10:15:00Z', event_tickets: { label: 'Regular', price: 15000, color_theme: 'bronze' } }] },
-    { id: 'c3d4e5f6-a7b8-9012-cdef-123456789012', created_at: '2025-02-26T18:45:00Z', total_amount: 50000, status: 'completed', event_title: 'Creative Design Workshop', profiles: { display_name: 'Fatima Bello', email: 'fatima.b@mail.com' }, tickets: [{ id: 't3a', total_amount: 25000, ticket_status: 'valid', created_at: '2025-02-26T18:45:00Z', event_tickets: { label: 'VIP', price: 25000, color_theme: 'gold' } }, { id: 't3b', total_amount: 25000, ticket_status: 'valid', created_at: '2025-02-26T18:45:00Z', event_tickets: { label: 'VIP', price: 25000, color_theme: 'gold' } }] },
-    { id: 'd4e5f6a7-b8c9-0123-defa-234567890123', created_at: '2025-02-25T09:00:00Z', total_amount: 7500, status: 'completed', event_title: 'Morning Yoga & Wellness', profiles: { display_name: 'Joseph Achilonu', email: 'joseph@mail.com' }, tickets: [{ id: 't4', total_amount: 7500, ticket_status: 'valid', created_at: '2025-02-25T09:00:00Z', event_tickets: { label: 'Early Bird', price: 7500, color_theme: 'silver' } }] },
-    { id: 'e5f6a7b8-c9d0-1234-efab-345678901234', created_at: '2025-02-24T16:20:00Z', total_amount: 32000, status: 'cancelled', event_title: 'Startup Pitch Night', profiles: { display_name: 'Grace Nwosu', email: 'grace.n@mail.com' }, tickets: [{ id: 't5', total_amount: 32000, ticket_status: 'cancelled', created_at: '2025-02-24T16:20:00Z', event_tickets: { label: 'Platinum', price: 32000, color_theme: 'platinum' } }] },
-    { id: 'f6a7b8c9-d0e1-2345-fabc-456789012345', created_at: '2025-02-23T12:00:00Z', total_amount: 18500, status: 'completed', event_title: 'Food & Culture Festival', profiles: { display_name: 'Emeka Obi', email: 'emeka.obi@mail.com' }, tickets: [{ id: 't6', total_amount: 18500, ticket_status: 'valid', created_at: '2025-02-23T12:00:00Z', event_tickets: { label: 'Regular', price: 18500, color_theme: 'bronze' } }] },
-    { id: 'a7b8c9d0-e1f2-3456-abcd-567890123456', created_at: '2025-02-22T08:30:00Z', total_amount: 42000, status: 'processing', event_title: 'AI & Machine Learning Conf', profiles: { display_name: 'Blessing Adekunle', email: 'blessing@mail.com' }, tickets: [{ id: 't7a', total_amount: 21000, ticket_status: 'valid', created_at: '2025-02-22T08:30:00Z', event_tickets: { label: 'Gold Pass', price: 21000, color_theme: 'gold' } }, { id: 't7b', total_amount: 21000, ticket_status: 'valid', created_at: '2025-02-22T08:30:00Z', event_tickets: { label: 'Gold Pass', price: 21000, color_theme: 'gold' } }] },
-    { id: 'b8c9d0e1-f2a3-4567-bcde-678901234567', created_at: '2025-02-21T20:10:00Z', total_amount: 10000, status: 'completed', event_title: 'Stand-Up Comedy Night', profiles: { display_name: 'Tunde Bakare', email: 'tunde.b@mail.com' }, tickets: [{ id: 't8', total_amount: 10000, ticket_status: 'valid', created_at: '2025-02-21T20:10:00Z', event_tickets: { label: 'General Admission', price: 10000, color_theme: 'silver' } }] },
-    { id: 'c9d0e1f2-a3b4-5678-cdef-789012345678', created_at: '2025-02-20T15:45:00Z', total_amount: 65000, status: 'refunded', event_title: 'Exclusive Gala Dinner', profiles: { display_name: 'Amina Yusuf', email: 'amina.y@mail.com' }, tickets: [{ id: 't9', total_amount: 65000, ticket_status: 'refunded', created_at: '2025-02-20T15:45:00Z', event_tickets: { label: 'Obsidian VIP', price: 65000, color_theme: 'obsidian' } }] },
-    { id: 'd0e1f2a3-b4c5-6789-defa-890123456789', created_at: '2025-02-19T11:30:00Z', total_amount: 22000, status: 'completed', event_title: 'Photography Masterclass', profiles: { display_name: 'Oluwaseun Martins', email: 'seun@mail.com' }, tickets: [{ id: 't10', total_amount: 22000, ticket_status: 'valid', created_at: '2025-02-19T11:30:00Z', event_tickets: { label: 'Workshop Pass', price: 22000, color_theme: 'silver' } }] },
-    { id: 'e1f2a3b4-c5d6-7890-efab-901234567890', created_at: '2025-02-18T07:00:00Z', total_amount: 35000, status: 'completed', event_title: 'Business Networking Brunch', profiles: { display_name: 'Chidinma Agu', email: 'chidinma@mail.com' }, tickets: [{ id: 't11', total_amount: 35000, ticket_status: 'valid', created_at: '2025-02-18T07:00:00Z', event_tickets: { label: 'Premium', price: 35000, color_theme: 'gold' } }] },
-    { id: 'f2a3b4c5-d6e7-8901-fabc-012345678901', created_at: '2025-02-17T19:25:00Z', total_amount: 8000, status: 'completed', event_title: 'Open Mic Poetry Night', profiles: { display_name: 'Ibrahim Musa', email: 'ibrahim.m@mail.com' }, tickets: [{ id: 't12', total_amount: 8000, ticket_status: 'valid', created_at: '2025-02-17T19:25:00Z', event_tickets: { label: 'General Admission', price: 8000, color_theme: 'silver' } }] },
-];
 
 export default function DashboardOrders() {
     const [orders, setOrders] = useState<any[]>([]);
@@ -111,27 +96,154 @@ export default function DashboardOrders() {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchingOrders, setIsSearchingOrders] = useState(false);
 
+    const getRawStatus = (order: any) => String(
+        order?.ticket_status ||
+        order?.status ||
+        order?.payment_status ||
+        'paid'
+    ).toLowerCase();
+
+    const normalizeStatus = (order: any) => {
+        const status = getRawStatus(order);
+        if (['valid', 'completed', 'success', 'paid'].includes(status)) return 'paid';
+        if (['used', 'scanned', 'attended'].includes(status)) return 'attended';
+        if (['cancelled', 'canceled'].includes(status)) return 'cancelled';
+        if (status === 'refunded') return 'refunded';
+        if (status === 'pending' || status === 'processing') return 'pending';
+        return status || 'paid';
+    };
+
+    const getOrderAmount = (order: any) => Number(
+        order?.total_amount ??
+        order?.total_price ??
+        order?.amount ??
+        order?.price_paid ??
+        order?.ticket_price ??
+        order?.event_tickets?.price ??
+        0
+    ) || 0;
+
+    const getTicketSoldCount = (ticket: any) => Math.max(0, Number(
+        ticket?.quantity_sold ??
+        ticket?.sold ??
+        ticket?.sold_quantity ??
+        ticket?.tickets_sold ??
+        ticket?.purchased_count ??
+        ticket?.purchase_count ??
+        0
+    ) || 0);
+
+    const getTicketPrice = (ticket: any) => Math.max(0, Number(
+        ticket?.price ??
+        ticket?.ticket_price ??
+        ticket?.amount ??
+        ticket?.event_tickets?.price ??
+        0
+    ) || 0);
+
+    const getOrderUnitCount = (order: any) => Math.max(1, Number(order?.order_count || order?.quantity || 1) || 1);
+
+    const normalizeOrder = (order: any) => {
+        const status = normalizeStatus(order);
+        const amount = getOrderAmount(order);
+        const buyerName = order.buyer_name || order.attendee_name || order.profiles?.display_name || order.profile?.display_name || 'Guest';
+        const buyerEmail = order.buyer_email || order.attendee_email || order.profiles?.email || order.profile?.email || '';
+        const ticketStatus = order.ticket_status || order.status || status;
+        const tickets = Array.isArray(order.tickets) && order.tickets.length > 0
+            ? order.tickets
+            : [{
+                id: order.ticket_id || order.id,
+                total_amount: amount,
+                ticket_status: ticketStatus,
+                created_at: order.created_at || order.purchase_date || order.purchased_at,
+                event_tickets: {
+                    label: order.ticket_label || order.label || 'General Admission',
+                    price: order.ticket_price || amount,
+                    color_theme: order.color_theme || 'silver',
+                },
+            }];
+
+        return {
+            ...order,
+            id: order.id || order.purchase_id || order.ticket_id,
+            created_at: order.created_at || order.purchase_date || order.purchased_at || new Date().toISOString(),
+            total_amount: amount,
+            status,
+            ticket_status: ticketStatus,
+            event_title: order.event_title || order.events?.title || order.event?.title || 'Untitled event',
+            buyer_name: buyerName,
+            buyer_email: buyerEmail,
+            profiles: {
+                ...(order.profiles || {}),
+                display_name: buyerName,
+                email: buyerEmail,
+                avatar_url: order.profiles?.avatar_url || order.profile?.avatar_url || order.buyer_avatar_url,
+            },
+            tickets,
+        };
+    };
+
+    const isCompletedOrder = (order: any) => ['paid', 'completed', 'valid', 'attended', 'used'].includes(String(order.status || '').toLowerCase());
+
+    const buildTicketFallbackOrders = async () => {
+        const events = await getEventsByUser();
+        const rows = await Promise.all(events.map(async (event: any) => {
+            const embeddedTickets = Array.isArray(event.event_tickets) && event.event_tickets.length > 0
+                ? event.event_tickets
+                : Array.isArray(event.ticket_types) && event.ticket_types.length > 0
+                    ? event.ticket_types
+                    : await getTicketsForEvent(event.event_id).catch(() => []);
+
+            return (embeddedTickets || [])
+                .map((ticket: any) => {
+                    const sold = getTicketSoldCount(ticket);
+                    if (sold <= 0) return null;
+                    const price = getTicketPrice(ticket);
+                    const amount = sold * price;
+                    return normalizeOrder({
+                        id: ticket.id,
+                        event_id: event.event_id,
+                        event_title: event.title,
+                        created_at: ticket.updated_at || ticket.created_at || event.updated_at || event.created_at,
+                        total_amount: amount,
+                        status: 'paid',
+                        ticket_status: 'valid',
+                        buyer_name: 'Ticket sales',
+                        buyer_email: `${sold} sold`,
+                        order_count: sold,
+                        tickets: [{
+                            id: ticket.id,
+                            total_amount: amount,
+                            ticket_status: 'valid',
+                            created_at: ticket.updated_at || ticket.created_at,
+                            event_tickets: {
+                                label: ticket.label || 'General Admission',
+                                price,
+                                color_theme: ticket.color_theme || 'silver',
+                            },
+                        }],
+                    });
+                })
+                .filter(Boolean);
+        }));
+
+        return rows.flat();
+    };
+
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const user = await getCurrentUser();
-                if (!user) {
-                    setOrders(DUMMY_ORDERS);
-                    return;
+                const data = await getEventOwnerPurchases();
+                const mappedData = (data || [])
+                    .map(normalizeOrder)
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+                if (mappedData.length > 0) {
+                    setOrders(mappedData);
+                } else {
+                    const fallbackOrders = await buildTicketFallbackOrders();
+                    setOrders(fallbackOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
                 }
-                
-                const data = await getPurchasesByEvent(user.id);
-
-                const mappedData = (data || []).map(order => ({
-                    ...order,
-                    status: order.ticket_status,
-                    profiles: {
-                        display_name: order.buyer_name,
-                        email: order.buyer_email
-                    }
-                }));
-
-                setOrders(mappedData.length > 0 ? mappedData : DUMMY_ORDERS);
             } catch (error) {
                 console.error('Error fetching orders:', error);
                 setOrders([]);
@@ -260,7 +372,8 @@ export default function DashboardOrders() {
         return (
             order.id?.toLowerCase().includes(search) ||
             order.profiles?.display_name?.toLowerCase().includes(search) ||
-            order.profiles?.email?.toLowerCase().includes(search)
+            order.profiles?.email?.toLowerCase().includes(search) ||
+            order.event_title?.toLowerCase().includes(search)
         );
     });
 
@@ -269,6 +382,12 @@ export default function DashboardOrders() {
     const startIndex = (currentPage - 1) * ordersPerPage;
     const endIndex = Math.min(startIndex + ordersPerPage, filteredOrders.length);
     const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
+    const totalOrderCount = orders.reduce((sum, order) => sum + getOrderUnitCount(order), 0);
+    const completedOrderCount = orders.filter(isCompletedOrder).reduce((sum, order) => sum + getOrderUnitCount(order), 0);
+    const pendingOrderCount = orders
+        .filter(order => String(order.status || '').toLowerCase() === 'pending')
+        .reduce((sum, order) => sum + getOrderUnitCount(order), 0);
+    const revenueTotal = orders.reduce((acc, order) => acc + getOrderAmount(order), 0);
 
     return (
         <div className="px-4 md:px-8 py-8 w-full">
@@ -294,20 +413,20 @@ export default function DashboardOrders() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 <div className="bg-white border border-black/5 p-5 rounded-2xl shadow-sm">
                     <h3 className="text-black/40 text-xs font-sans uppercase tracking-widest mb-1">Total Orders</h3>
-                    <p className="text-2xl font-bold tracking-tight text-black">{orders.length}</p>
+                    <p className="text-2xl font-bold tracking-tight text-black">{totalOrderCount}</p>
                 </div>
                 <div className="bg-white border border-black/5 p-5 rounded-2xl shadow-sm">
                     <h3 className="text-black/40 text-xs font-sans uppercase tracking-widest mb-1">Completed</h3>
-                    <p className="text-2xl font-bold tracking-tight text-green-600">{orders.filter(o => o.status?.toLowerCase() === 'completed').length}</p>
+                    <p className="text-2xl font-bold tracking-tight text-green-600">{completedOrderCount}</p>
                 </div>
                 <div className="bg-white border border-black/5 p-5 rounded-2xl shadow-sm">
                     <h3 className="text-black/40 text-xs font-sans uppercase tracking-widest mb-1">Pending</h3>
-                    <p className="text-2xl font-bold tracking-tight text-yellow-600">{orders.filter(o => o.status?.toLowerCase() === 'pending').length}</p>
+                    <p className="text-2xl font-bold tracking-tight text-yellow-600">{pendingOrderCount}</p>
                 </div>
                 <div className="bg-white border border-black/5 p-5 rounded-2xl shadow-sm">
                     <h3 className="text-black/40 text-xs font-sans uppercase tracking-widest mb-1">Revenue</h3>
                     <p className="text-2xl font-bold tracking-tight text-black">
-                        {formatCurrency(orders.reduce((acc, o) => acc + (Number(o.total_amount) || 0), 0))}
+                        {formatCurrency(revenueTotal)}
                     </p>
                 </div>
             </div>
@@ -327,7 +446,11 @@ export default function DashboardOrders() {
                 <div className="relative">
                     <div className="hidden md:block relative min-w-[160px]">
                         <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-black/40" />
-                        <select className="w-full pl-10 pr-10 py-3 border border-black/10 focus:outline-none focus:border-black transition-colors appearance-none bg-white text-sm">
+                        <select
+                            value={activeFilter}
+                            onChange={(event) => setActiveFilter(event.target.value)}
+                            className="w-full pl-10 pr-10 py-3 border border-black/10 focus:outline-none focus:border-black transition-colors appearance-none bg-white text-sm"
+                        >
                             <option value="All">All Orders</option>
                             <option value="completed">Completed</option>
                             <option value="pending">Pending</option>

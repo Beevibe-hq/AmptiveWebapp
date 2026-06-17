@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Minus, Plus, X, CheckCircle2, Ticket } from 'lucide-react';
-import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
+import { checkoutTicket, getTicketEarlyBirdRemaining, getTicketLineTotal, getTicketRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 type EventTicket = {
@@ -9,7 +9,16 @@ type EventTicket = {
     price: number;
     currency?: string | null;
     quantity?: number | null;
+    quantity_total?: number | null;
+    quantity_sold?: number;
+    quantity_remaining?: number | null;
     color_theme?: string | null;
+    is_active?: boolean;
+    active?: boolean;
+    status?: string | null;
+    availability?: string | null;
+    sold_out?: boolean;
+    is_sold_out?: boolean;
 };
 
 type CheckoutModalProps = {
@@ -55,22 +64,49 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
         let total = 0;
         tickets.forEach(ticket => {
             const qty = selection[ticket.id] || 0;
-            total += (ticket.price || 0) * qty;
+            total += getTicketLineTotal(ticket, qty);
         });
         setTotalAmount(total);
     }, [selection, tickets]);
 
+    useEffect(() => {
+        setSelection(prev => {
+            let changed = false;
+            const nextSelection: TicketSelection = {};
+
+            Object.entries(prev).forEach(([ticketId, qty]) => {
+                const ticket = tickets.find(t => t.id === ticketId);
+                const remaining = ticket ? getTicketRemaining(ticket) : null;
+
+                if (!ticket || isTicketSoldOut(ticket) || qty <= 0) {
+                    changed = true;
+                    return;
+                }
+
+                const cappedQty = remaining !== null ? Math.min(qty, remaining) : qty;
+                if (cappedQty !== qty) changed = true;
+                if (cappedQty > 0) nextSelection[ticketId] = cappedQty;
+            });
+
+            return changed ? nextSelection : prev;
+        });
+    }, [tickets]);
+
     const updateQuantity = (ticketId: string, delta: number) => {
+        const ticket = tickets.find(t => t.id === ticketId);
+        const remaining = ticket ? getTicketRemaining(ticket) : null;
+        if (!ticket || (delta > 0 && isTicketSoldOut(ticket))) return;
         if (delta < 0 && (!selection[ticketId] || selection[ticketId] <= 0)) return;
 
         setSelection(prev => {
             const current = prev[ticketId] || 0;
             const next = current + delta;
-            if (next <= 0) {
+            const cappedNext = remaining !== null ? Math.min(next, remaining) : next;
+            if (cappedNext <= 0) {
                 const { [ticketId]: _, ...rest } = prev;
                 return rest;
             }
-            return { ...prev, [ticketId]: next };
+            return { ...prev, [ticketId]: cappedNext };
         });
     };
 
@@ -91,10 +127,36 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
         setError(null);
 
         try {
+            const latestTickets = await getTicketsForEvent(event.id);
+            const unavailableSelection = Object.entries(selection).find(([ticketId, qty]) => {
+                const latestTicket = latestTickets.find(t => t.id === ticketId);
+                const remaining = latestTicket ? getTicketRemaining(latestTicket) : null;
+                return !latestTicket || isTicketSoldOut(latestTicket) || (remaining !== null && qty > remaining);
+            });
+
+            if (unavailableSelection) {
+                const [ticketId] = unavailableSelection;
+                const latestTicket = latestTickets.find(t => t.id === ticketId);
+                setError(`${latestTicket?.label || 'This ticket'} is sold out or no longer has enough tickets available.`);
+                setStep('selection');
+                return;
+            }
+
             const items: CheckoutItem[] = Object.entries(selection).map(([ticketId, qty]) => ({
                 ticket_type_id: ticketId,
                 quantity: qty,
             }));
+            const ticketPricing = Object.entries(selection).map(([ticketId, qty]) => {
+                const latestTicket = latestTickets.find(t => t.id === ticketId);
+                return {
+                    ticket_type_id: ticketId,
+                    quantity: qty,
+                    unit_price: latestTicket ? getTicketUnitPrice(latestTicket) : 0,
+                    line_total: latestTicket ? getTicketLineTotal(latestTicket, qty) : 0,
+                    base_price: latestTicket?.price || 0,
+                    early_bird_applied: latestTicket ? getTicketEarlyBirdRemaining(latestTicket) > 0 && getTicketUnitPrice(latestTicket) < (latestTicket.price || 0) : false,
+                };
+            });
 
             const attendeesList: Attendee[] = [];
             Object.entries(selection).forEach(([ticketId, qty]) => {
@@ -112,7 +174,9 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                 items,
                 attendees: attendeesList,
                 wants_physical_delivery: false,
-                metadata: {},
+                metadata: {
+                    ticket_pricing: ticketPricing,
+                },
             };
 
             if (isGuest) {
@@ -140,7 +204,7 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                         event_title: event.title,
                         tickets: Object.entries(selection).map(([ticketId, qty]) => {
                             const t = tickets.find(tk => tk.id === ticketId);
-                            return { label: t?.label || 'Ticket', quantity: qty, price: t?.price || 0 };
+                            return { label: t?.label || 'Ticket', quantity: qty, price: t ? getTicketLineTotal(t, qty) : 0 };
                         }),
                         total_amount: totalAmount,
                     }));
@@ -227,46 +291,84 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                         <>
                             {/* Selection Step */}
                             <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 -mr-2">
-                                {tickets.map(ticket => (
-                                    <div key={ticket.id} className="flex items-center justify-between rounded-2xl border border-gray-100 p-4 hover:border-gray-200 hover:bg-gray-50/50 transition-colors">
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h3 className="font-bold text-gray-900">{ticket.label}</h3>
-                                                {ticket.quantity && ticket.quantity < 20 && (
-                                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                                                        Only {ticket.quantity} left
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-lg text-gray-500">
-                                                {ticket.price === 0 ? 'Free' : new Intl.NumberFormat(undefined, {
-                                                    style: 'currency',
-                                                    currency: ticket.currency || 'NGN'
-                                                }).format(ticket.price)}
-                                            </p>
-                                        </div>
+                                {tickets.map(ticket => {
+                                    const isSoldOut = isTicketSoldOut(ticket);
+                                    const remainingCount = getTicketRemaining(ticket);
+                                    const earlyBirdRemaining = getTicketEarlyBirdRemaining(ticket);
+                                    const unitPrice = getTicketUnitPrice(ticket);
+                                    const hasEarlyBirdPrice = earlyBirdRemaining > 0 && unitPrice < (ticket.price || 0);
 
-                                        <div className="flex items-center gap-4 bg-white rounded-full border border-gray-200 p-1 shadow-sm">
-                                            <button
-                                                onClick={() => updateQuantity(ticket.id, -1)}
-                                                disabled={!selection[ticket.id]}
-                                                className="h-8 w-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                                            >
-                                                <Minus className="h-4 w-4" />
-                                            </button>
-                                            <span className="w-4 text-center font-bold text-gray-900 tabular-nums">
-                                                {selection[ticket.id] || 0}
-                                            </span>
-                                            <button
-                                                onClick={() => updateQuantity(ticket.id, 1)}
-                                                // disabled={ticket.quantity && (selection[ticket.id] || 0) >= ticket.quantity} // TODO: Add logic
-                                                className="h-8 w-8 flex items-center justify-center rounded-full text-black hover:bg-gray-100 transition-colors"
-                                            >
-                                                <Plus className="h-4 w-4" />
-                                            </button>
+                                    return (
+                                        <div 
+                                            key={ticket.id} 
+                                            className={`flex items-center justify-between rounded-2xl border p-4 transition-colors ${isSoldOut ? 'bg-gray-50/50 border-gray-100 opacity-60 cursor-not-allowed select-none' : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'}`}
+                                        >
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h3 className="font-bold text-gray-900">{ticket.label}</h3>
+                                                    {isSoldOut ? (
+                                                        <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-[11px] font-semibold text-rose-600 ring-1 ring-rose-100">
+                                                            Sold out
+                                                        </span>
+                                                    ) : (
+                                                        remainingCount !== null && remainingCount < 20 && (
+                                                            <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                                                                Only {remainingCount} left
+                                                            </span>
+                                                        )
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="text-lg text-gray-500">
+                                                        {unitPrice === 0 ? 'Free' : new Intl.NumberFormat(undefined, {
+                                                            style: 'currency',
+                                                            currency: ticket.currency || 'NGN'
+                                                        }).format(unitPrice)}
+                                                    </p>
+                                                    {hasEarlyBirdPrice && (
+                                                        <>
+                                                            <span className="text-sm font-medium text-gray-300 line-through">
+                                                                {new Intl.NumberFormat(undefined, {
+                                                                    style: 'currency',
+                                                                    currency: ticket.currency || 'NGN'
+                                                                }).format(ticket.price)}
+                                                            </span>
+                                                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-100">
+                                                                Early bird
+                                                            </span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {isSoldOut ? (
+                                                <span className="pr-2 text-[13px] font-semibold text-rose-600">
+                                                    Sold out
+                                                </span>
+                                            ) : (
+                                                <div className="flex items-center gap-4 bg-white rounded-full border border-gray-200 p-1 shadow-sm">
+                                                    <button
+                                                        onClick={() => updateQuantity(ticket.id, -1)}
+                                                        disabled={!selection[ticket.id]}
+                                                        className="h-8 w-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                                                    >
+                                                        <Minus className="h-4 w-4" />
+                                                    </button>
+                                                    <span className="w-4 text-center font-bold text-gray-900 tabular-nums">
+                                                        {selection[ticket.id] || 0}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => updateQuantity(ticket.id, 1)}
+                                                        disabled={remainingCount !== null && (selection[ticket.id] || 0) >= remainingCount}
+                                                        className="h-8 w-8 flex items-center justify-center rounded-full text-black hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                                                    >
+                                                        <Plus className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             {isGuest && (

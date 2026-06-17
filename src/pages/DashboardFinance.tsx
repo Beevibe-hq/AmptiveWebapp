@@ -1,10 +1,44 @@
 import React, { useEffect, useState } from 'react';
-import { DollarSign, Settings as SettingsIcon, FileText, ArrowUpRight, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2 } from 'lucide-react';
+import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSession } from '@/lib/api/auth';
 import { getEventOwnerPurchases, getBuyerProfiles } from '@/lib/api/finance';
+import { getEventsByUser } from '@/lib/api/events';
+import { getTicketsForEvent } from '@/lib/api/tickets';
 
 export default function DashboardFinance() {
+    const savedBankDetails = (() => {
+        try {
+            const stored = localStorage.getItem('amptive_payout_bank_details');
+            return stored ? JSON.parse(stored) : null;
+        } catch {
+            return null;
+        }
+    })();
+const savedWithdrawals = (() => {
+        try {
+            const stored = localStorage.getItem('amptive_withdrawal_requests');
+            return stored ? JSON.parse(stored) : [];
+        } catch {
+            return [];
+        }
+    })();
+
+    const WithdrawalIcon = () => (
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1.23584" y="1.24219" width="31.5273" height="31.5273" rx="15.7636" fill="#307FE2" />
+            <path d="M17.1182 22.6632V11.0938" stroke="white" strokeWidth="2.2037" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M11.3335 16.8785L17.1182 11.0938L22.9029 16.8785" stroke="white" strokeWidth="2.2037" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+
+    const PaidEventIcon = () => (
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1.23584" y="1.24219" width="31.5273" height="31.5273" rx="15.7636" fill="#F91880" />
+            <path d="M22.1666 11.8359C22.5561 11.8359 22.89 11.9744 23.1676 12.252C23.4448 12.5291 23.5836 12.8633 23.5836 13.2529V21.7529C23.5835 22.1424 23.4447 22.4763 23.1676 22.7539C22.89 23.031 22.5561 23.1689 22.1666 23.1689H10.8336C10.444 23.1689 10.1098 23.0311 9.83264 22.7539C9.55507 22.4763 9.4167 22.1424 9.41663 21.7529V18.9189C10.1989 18.9189 10.8334 18.2852 10.8336 17.5029C10.8336 16.7205 10.199 16.0859 9.41663 16.0859V13.2529C9.41663 12.8633 9.55498 12.5291 9.83264 12.252C10.1098 11.9743 10.444 11.8359 10.8336 11.8359H22.1666ZM16.4996 16.7939C16.2991 16.794 16.1312 16.8626 15.9957 16.998C15.8599 17.134 15.7916 17.3023 15.7916 17.5029V20.3359C15.7916 20.5366 15.8598 20.7043 15.9957 20.8398C16.1312 20.9758 16.2991 21.0439 16.4996 21.0439H20.7496C20.9503 21.0439 21.119 20.9758 21.2545 20.8398C21.3903 20.7044 21.4586 20.5365 21.4586 20.3359V17.5029C21.4586 17.3024 21.3903 17.134 21.2545 16.998C21.119 16.8625 20.9503 16.7939 20.7496 16.7939H16.4996Z" fill="white" />
+        </svg>
+    );
+
     const [activeTab, setActiveTab] = useState<'payout' | 'settings' | 'receipt'>('payout');
     const [activeSettingsTab, setActiveSettingsTab] = useState<'payout-methods' | 'billing' | 'tax'>('payout-methods');
     const [showBalances, setShowBalances] = useState(true);
@@ -16,18 +50,20 @@ export default function DashboardFinance() {
     const [isSearchingHistory, setIsSearchingHistory] = useState(false);
     const [historyDateFilter, setHistoryDateFilter] = useState('All');
     const [showFilterChips, setShowFilterChips] = useState(false);
-    const [isDefaultAccount, setIsDefaultAccount] = useState(true);
-    const [showAccountMenu, setShowAccountMenu] = useState(false);
-    
     // Bank Details State
     const [bankDetails, setBankDetails] = useState({
-        bankName: 'GTBank',
-        accountNumber: '0123456789',
-        accountHolder: 'John Doe'
+        bankName: savedBankDetails?.bankName || '',
+        accountNumber: savedBankDetails?.accountNumber || '',
+        accountHolder: savedBankDetails?.accountHolder || ''
     });
     const [isEditingBank, setIsEditingBank] = useState(false);
     const [tempBankDetails, setTempBankDetails] = useState({ ...bankDetails });
     const [isCheckingAccount, setIsCheckingAccount] = useState(false);
+    const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+    const [withdrawalAmount, setWithdrawalAmount] = useState('');
+    const [withdrawalError, setWithdrawalError] = useState('');
+    const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
+    const [withdrawals, setWithdrawals] = useState<any[]>(Array.isArray(savedWithdrawals) ? savedWithdrawals : []);
 
     // Paystack API Key
     const PAYSTACK_SECRET_KEY = import.meta.env.VITE_PAYSTACK_SECRET_KEY || '';
@@ -60,6 +96,13 @@ export default function DashboardFinance() {
         { name: 'Zenith Bank', code: '057' }
     ]);
     const [isLoadingBanks, setIsLoadingBanks] = useState(false);
+    const hasBankAccount = Boolean(bankDetails.bankName && bankDetails.accountNumber);
+
+    const saveBankDetails = () => {
+        setBankDetails(tempBankDetails);
+        localStorage.setItem('amptive_payout_bank_details', JSON.stringify(tempBankDetails));
+        setIsEditingBank(false);
+    };
 
     // Fetch Paystack Banks
     useEffect(() => {
@@ -136,10 +179,13 @@ export default function DashboardFinance() {
 
             // 1. Fetch ticket purchases for events owned by this user
             const purchasesData = await getEventOwnerPurchases();
-            setPurchases(purchasesData || []);
+            const financeRows = (purchasesData || []).length > 0
+                ? purchasesData || []
+                : await buildTicketSalesFallback();
+            setPurchases(financeRows);
 
             // 2. Fetch buyer profiles for avatars
-            const buyerIds = [...new Set((purchasesData || [])
+            const buyerIds = [...new Set((financeRows || [])
                 .map(p => p.buyer_id)
                 .filter(id => !!id))];
 
@@ -178,13 +224,207 @@ export default function DashboardFinance() {
         return () => clearTimeout(timer);
     }, [historySearchQuery]);
 
+    const toNumber = (value: unknown) => {
+        if (value === null || value === undefined || value === '') return 0;
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : 0;
+    };
+
+    const getTicketSoldCount = (ticket: any) => toNumber(
+        ticket.quantity_sold ??
+        ticket.sold ??
+        ticket.sold_quantity ??
+        ticket.tickets_sold ??
+        ticket.purchased_count ??
+        ticket.purchase_count
+    );
+
+    const getTicketPrice = (ticket: any) => toNumber(ticket.price ?? ticket.amount ?? ticket.ticket_price);
+
+    const getOrderAmount = (item: any) => toNumber(
+        item.total_amount ??
+        item.amount ??
+        item.event_tickets?.price ??
+        item.ticket_price
+    );
+
+    const getOrderStatus = (item: any) => String(
+        item.ticket_status ??
+        item.status ??
+        item.payment_status ??
+        ''
+    ).trim().toLowerCase();
+
+    const isPaidOrder = (item: any) => {
+        if (item.source === 'ticket_summary') return true;
+        const status = getOrderStatus(item);
+        return ['valid', 'used', 'paid', 'completed', 'success', 'successful'].includes(status);
+    };
+
+    const getEventTitle = (item: any) => (
+        item.events?.title ||
+        item.event?.title ||
+        item.event_title ||
+        'Event'
+    );
+
+    const getBuyerName = (item: any, profile?: any) => {
+        if (item.source === 'ticket_summary') return item.ticket_label || 'Ticket sales';
+        return profile?.full_name || item.buyer_name || item.customer_name || 'Guest';
+    };
+
+    const getItemDate = (item: any) => item.created_at || item.updated_at || new Date().toISOString();
+
+    const getWithdrawalArrivalDate = (createdAt: string) => {
+        const date = new Date(createdAt);
+        date.setDate(date.getDate() + 2);
+        return date;
+    };
+
+    const formatArrivalTime = (createdAt: string) => {
+        return getWithdrawalArrivalDate(createdAt).toLocaleDateString('en-GB', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+        });
+    };
+
+    const buildTicketSalesFallback = async () => {
+        try {
+            const events = await getEventsByUser();
+            const rows = await Promise.all((events || []).map(async (event: any) => {
+                const eventId = event.event_id || event.id;
+                if (!eventId) return [];
+
+                let tickets = Array.isArray(event.ticket_types)
+                    ? event.ticket_types
+                    : Array.isArray(event.event_tickets)
+                        ? event.event_tickets
+                        : [];
+
+                if (tickets.length === 0) {
+                    try {
+                        tickets = await getTicketsForEvent(eventId);
+                    } catch {
+                        tickets = [];
+                    }
+                }
+
+                return tickets
+                    .map((ticket: any) => {
+                        const soldCount = getTicketSoldCount(ticket);
+                        const price = getTicketPrice(ticket);
+                        if (soldCount <= 0 || price <= 0) return null;
+
+                        return {
+                            id: `ticket-summary-${eventId}-${ticket.id || ticket.ticket_type_id || ticket.label}`,
+                            source: 'ticket_summary',
+                            event_id: eventId,
+                            ticket_id: ticket.id || ticket.ticket_type_id,
+                            ticket_label: ticket.label || ticket.name || 'Ticket',
+                            ticket_count: soldCount,
+                            total_amount: soldCount * price,
+                            ticket_price: price,
+                            ticket_status: 'paid',
+                            created_at: ticket.updated_at || ticket.created_at || event.updated_at || event.created_at || new Date().toISOString(),
+                            events: { title: event.title || 'Event' },
+                        };
+                    })
+                    .filter(Boolean);
+            }));
+
+            return rows.flat();
+        } catch (error) {
+            console.error('Error building finance fallback data:', error);
+            return [];
+        }
+    };
+
     const totalBalance = purchases.reduce((acc, p) => {
-        const status = p.ticket_status?.toLowerCase();
-        if (status === 'valid' || status === 'used' || status === 'paid' || status === 'completed' || status === 'success') {
-            return acc + (Number(p.total_amount) || Number(p.event_tickets?.price) || 0);
+        if (isPaidOrder(p)) {
+            return acc + getOrderAmount(p);
         }
         return acc;
     }, 0);
+    const pendingWithdrawalTotal = withdrawals
+        .filter((item) => item.status === 'pending' || item.status === 'processing')
+        .reduce((acc, item) => acc + toNumber(item.amount), 0);
+    const availableBalance = Math.max(totalBalance - pendingWithdrawalTotal, 0);
+
+    const openWithdrawDrawer = () => {
+        setWithdrawalError('');
+        setWithdrawalSuccess(false);
+        setWithdrawalAmount('');
+        setIsWithdrawOpen(true);
+    };
+
+    const formatAmountInput = (value: string) => {
+        const digits = value.replace(/\D/g, '');
+        if (!digits) return '';
+        return Number(digits).toLocaleString('en-NG');
+    };
+
+    const handleWithdrawalAmountChange = (value: string) => {
+        const formattedAmount = formatAmountInput(value);
+        const amount = toNumber(formattedAmount.replace(/,/g, ''));
+        setWithdrawalAmount(formattedAmount);
+
+        if (amount > availableBalance) {
+            setWithdrawalError('Amount is higher than your available balance.');
+            return;
+        }
+
+        setWithdrawalError('');
+    };
+
+    const submitWithdrawal = () => {
+        const amount = toNumber(withdrawalAmount.replace(/,/g, ''));
+
+        if (!hasBankAccount) {
+            setWithdrawalError('Add a payout bank account before withdrawing.');
+            return;
+        }
+
+        if (amount <= 0) {
+            setWithdrawalError('Enter a valid withdrawal amount.');
+            return;
+        }
+
+        if (amount > availableBalance) {
+            setWithdrawalError('Amount is higher than your available balance.');
+            return;
+        }
+
+        const request = {
+            id: `wd-${Date.now()}`,
+            type: 'withdrawal',
+            amount,
+            bankName: bankDetails.bankName,
+            accountNumber: bankDetails.accountNumber,
+            accountHolder: bankDetails.accountHolder,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+        };
+        const nextWithdrawals = [request, ...withdrawals];
+        setWithdrawals(nextWithdrawals);
+        localStorage.setItem('amptive_withdrawal_requests', JSON.stringify(nextWithdrawals));
+        setWithdrawalSuccess(true);
+        setWithdrawalError('');
+        setWithdrawalAmount('');
+    };
+
+    const activityItems = [
+        ...withdrawals.map((item) => ({
+            ...item,
+            type: 'withdrawal',
+            created_at: item.created_at || new Date().toISOString(),
+        })),
+        ...purchases.map((item) => ({
+            ...item,
+            type: item.type || 'purchase',
+            created_at: getItemDate(item),
+        })),
+    ].sort((a, b) => new Date(getItemDate(b)).getTime() - new Date(getItemDate(a)).getTime());
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount);
@@ -288,15 +528,23 @@ export default function DashboardFinance() {
                                     {loading ? (
                                         <div className="h-8 w-32 bg-black/5 animate-pulse rounded-lg" />
                                     ) : (
-                                        showBalances ? formatCurrency(totalBalance) : '••••••••'
+                                        showBalances ? formatCurrency(availableBalance) : '••••••••'
                                     )}
                                 </div>
+                                {pendingWithdrawalTotal > 0 && !loading && (
+                                    <p className="mt-2 text-[12px] font-medium text-black/40">
+                                        {formatCurrency(pendingWithdrawalTotal)} pending withdrawal
+                                    </p>
+                                )}
                                 <div className="flex flex-row md:flex-col min-[1285px]:flex-row items-center md:items-stretch min-[1285px]:items-center gap-3 mt-6">
                                     <button className="flex-1 flex items-center justify-center gap-2 py-3 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
                                         <Plus className="w-4 h-4" />
                                         Fund Wallet
                                     </button>
-                                    <button className="flex-1 flex items-center justify-center gap-2 py-3 bg-black/5 text-black rounded-full text-sm font-medium hover:bg-black/10 transition-colors">
+                                    <button
+                                        onClick={openWithdrawDrawer}
+                                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-black/5 text-black rounded-full text-sm font-medium hover:bg-black/10 transition-colors"
+                                    >
                                         <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
                                             <path d="M7.3335 11.6181V3.0625" stroke="currentColor" strokeWidth="1.83333" strokeLinecap="round" strokeLinejoin="round"/>
                                             <path d="M3.05566 7.34028L7.33344 3.0625L11.6112 7.34028" stroke="currentColor" strokeWidth="1.83333" strokeLinecap="round" strokeLinejoin="round"/>
@@ -329,35 +577,51 @@ export default function DashboardFinance() {
                                                 <div className="h-4 w-16 bg-black/5 rounded" />
                                             </div>
                                         ))
-                                    ) : purchases.length > 0 ? (
-                                        purchases.slice(0, 4).map((item) => {
+                                    ) : activityItems.length > 0 ? (
+                                        activityItems.slice(0, 4).map((item) => {
                                             const profile = profileMap[item.buyer_id];
-                                            const buyerName = profile?.full_name || item.buyer_name || 'Guest';
-                                            const amount = Number(item.total_amount) || Number(item.event_tickets?.price) || 0;
-                                            const time = new Date(item.created_at).toLocaleDateString() === new Date().toLocaleDateString()
+                                            const buyerName = getBuyerName(item, profile);
+                                            const amount = getOrderAmount(item);
+                                            const eventTitle = getEventTitle(item);
+                                            const isWithdrawal = item.type === 'withdrawal';
+                                            const time = new Date(getItemDate(item)).toLocaleDateString() === new Date().toLocaleDateString()
                                                 ? 'Today'
-                                                : new Date(item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                                                : new Date(getItemDate(item)).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
                                             return (
                                                 <div key={item.id} className="flex items-center justify-between p-4 rounded-xl hover:bg-black/5 transition-colors border border-black/5">
                                                     <div className="flex items-center gap-4">
-                                                        {profile?.avatar_url ? (
-                                                            <img src={profile.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                                                        {isWithdrawal ? (
+                                                            <div className="w-10 h-10 flex items-center justify-center shrink-0">
+                                                                <WithdrawalIcon />
+                                                            </div>
                                                         ) : (
-                                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold text-xs ${getAvatarColor(item.id)}`}>
-                                                                {getInitials(buyerName)}
+                                                            <div className="w-10 h-10 flex items-center justify-center shrink-0">
+                                                                <PaidEventIcon />
                                                             </div>
                                                         )}
                                                         <div>
                                                             <p className="font-medium text-black text-[13px]">
-                                                                {buyerName} <span className="text-black/60 font-normal">purchased a ticket for {item.events?.title}</span>
+                                                                {isWithdrawal ? (
+                                                                    <>
+                                                                        Withdrawal <span className="text-black/60 font-normal">to {item.bankName} arrives {formatArrivalTime(getItemDate(item))}</span>
+                                                                    </>
+                                                                ) : item.source === 'ticket_summary' ? (
+                                                                    <>
+                                                                        {buyerName} <span className="text-black/60 font-normal">sold for {eventTitle}</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        {buyerName} <span className="text-black/60 font-normal">purchased a ticket for {eventTitle}</span>
+                                                                    </>
+                                                                )}
                                                             </p>
                                                             <p className="text-xs text-black/40 mt-0.5">{time}</p>
                                                         </div>
                                                     </div>
                                                     <div className="text-right">
                                                         <p className="font-bold text-black text-sm">
-                                                            {showBalances ? `+₦${amount.toLocaleString()}` : '••••'}
+                                                            {showBalances ? `${isWithdrawal ? '-' : '+'}₦${amount.toLocaleString()}` : '••••'}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -413,6 +677,10 @@ export default function DashboardFinance() {
                                                 <h2 className="text-lg font-bold text-black">Bank Accounts</h2>
                                             </div>
                                             <button 
+                                                onClick={() => {
+                                                    setTempBankDetails(hasBankAccount ? { ...bankDetails } : { bankName: '', accountNumber: '', accountHolder: '' });
+                                                    setIsEditingBank(true);
+                                                }}
                                                 className="p-1 -mr-1 text-black/40 hover:text-black transition-colors"
                                                 title="Add Account"
                                             >
@@ -420,73 +688,61 @@ export default function DashboardFinance() {
                                             </button>
                                         </div>
 
-                                        {/* Bank Account as a Card */}
-                                        <div className="px-6 py-6 border-b border-black/5 last:border-0">
-                                            <div className="w-full max-w-[340px] bg-white rounded-2xl border border-black/5 shadow-sm p-5 flex flex-col transition-all duration-300">
-                                                {/* Top row */}
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div className="w-10 h-10 bg-gray-50 flex items-center justify-center rounded-xl border border-black/5 shrink-0 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
-                                                        <span className="text-xl">🏦</span>
-                                                    </div>
-                                                    <div className="relative">
-                                                        <button 
-                                                            onClick={(e) => { e.stopPropagation(); setShowAccountMenu(!showAccountMenu); }}
-                                                            className={`text-black/40 hover:text-black transition-colors rounded-full p-1 -mr-1 ${showAccountMenu ? 'bg-black/5 text-black' : 'hover:bg-black/5'}`}
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-                                                        </button>
-                                                        
-                                                        <AnimatePresence>
-                                                            {showAccountMenu && (
-                                                                <motion.div
-                                                                    initial={{ opacity: 0, scale: 0.95, y: -5 }}
-                                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                                    exit={{ opacity: 0, scale: 0.95, y: -5 }}
-                                                                    transition={{ duration: 0.15, ease: "easeOut" }}
-                                                                    className="absolute right-0 top-full mt-2 w-40 bg-red-50 border border-red-100/50 shadow-xl rounded-xl overflow-hidden z-[100] py-1"
-                                                                >
-                                                                    <button 
-                                                                        onClick={(e) => { e.stopPropagation(); setShowAccountMenu(false); /* Add delete logic here */ }}
-                                                                        className="w-full text-left px-3 py-2 text-[13px] font-semibold text-red-600 hover:bg-red-100/50 flex items-center gap-2 transition-colors"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                                                        Remove Account
-                                                                    </button>
-                                                                </motion.div>
-                                                            )}
-                                                        </AnimatePresence>
-                                                    </div>
-                                                </div>
-                                                
-                                                {/* Title & Desc */}
-                                                <div className="mb-6">
-                                                    <h3 className="text-black font-semibold text-[15px] mb-1.5">{bankDetails.bankName}</h3>
-                                                    <p className="text-black/50 text-[13px] leading-relaxed pr-4">
-                                                        Account ending in •••• {bankDetails.accountNumber.slice(-4)} for {bankDetails.accountHolder}. Set as default for automatic payouts.
-                                                    </p>
-                                                </div>
-
-                                                {/* Bottom row */}
-                                                <div className="border-t border-black/5 pt-4 flex items-center justify-between mt-auto">
-                                                    <div className="flex items-center gap-2">
-                                                        <button 
-                                                            onClick={() => { setTempBankDetails({ ...bankDetails }); setIsEditingBank(true); }}
+                                        <div className="px-6 py-6 border-t border-black/5">
+                                            {hasBankAccount ? (
+                                                <div className="w-full max-w-[340px] bg-white rounded-2xl border border-black/5 shadow-sm p-5 flex flex-col transition-all duration-300">
+                                                    <div className="flex justify-between items-start mb-4">
+                                                        <div className="w-10 h-10 bg-gray-50 flex items-center justify-center rounded-xl border border-black/5 shrink-0 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
+                                                            <Building2 className="w-5 h-5 text-black/30" />
+                                                        </div>
+                                                        <button
+                                                            onClick={() => {
+                                                                setTempBankDetails({ ...bankDetails });
+                                                                setIsEditingBank(true);
+                                                            }}
                                                             className="w-9 h-9 rounded-xl border border-black/5 flex items-center justify-center text-black/60 hover:bg-black/5 hover:text-black transition-colors shrink-0"
+                                                            title="Edit Account"
                                                         >
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                                                         </button>
-                                                        <button className="px-3 h-9 flex items-center rounded-xl border border-black/5 text-[13px] font-medium text-black/80 hover:bg-black/5 transition-colors">
-                                                            Details
-                                                        </button>
                                                     </div>
-                                                    <button 
-                                                        onClick={() => setIsDefaultAccount(!isDefaultAccount)}
-                                                        className={`w-11 h-6 rounded-full cursor-pointer relative flex items-center transition-colors shadow-inner drop-shadow-sm border border-transparent ${isDefaultAccount ? 'bg-[#2563EB]' : 'bg-gray-300'}`}
+
+                                                    <div className="mb-6">
+                                                        <h3 className="text-black font-semibold text-[15px] mb-1.5">{bankDetails.bankName}</h3>
+                                                        <p className="text-black/50 text-[13px] leading-relaxed pr-4">
+                                                            Account ending in •••• {bankDetails.accountNumber.slice(-4)}
+                                                            {bankDetails.accountHolder ? ` for ${bankDetails.accountHolder}` : ''}.
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="border-t border-black/5 pt-4 flex items-center justify-between mt-auto">
+                                                        <span className="text-[12px] font-medium text-black/40">Default payout account</span>
+                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                                            Active
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="py-8 flex flex-col items-center justify-center text-center">
+                                                    <div className="w-14 h-14 rounded-2xl bg-gray-50 border border-black/5 flex items-center justify-center mb-5">
+                                                        <Building2 className="w-7 h-7 text-black/20" />
+                                                    </div>
+                                                    <h3 className="text-black font-semibold text-[15px] mb-1.5">No bank account added</h3>
+                                                    <p className="text-black/45 text-[13px] leading-relaxed max-w-[300px]">
+                                                        Add a payout account when you are ready to receive withdrawals.
+                                                    </p>
+                                                    <button
+                                                        onClick={() => {
+                                                            setTempBankDetails({ bankName: '', accountNumber: '', accountHolder: '' });
+                                                            setIsEditingBank(true);
+                                                        }}
+                                                        className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-black px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
                                                     >
-                                                        <div className={`w-5 h-5 bg-white rounded-full absolute left-[1px] shadow-sm transition-transform border border-black/5 ${isDefaultAccount ? 'translate-x-[18px]' : 'translate-x-[2px]'}`}></div>
+                                                        <Plus className="w-4 h-4" />
+                                                        Add Account
                                                     </button>
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -548,14 +804,13 @@ export default function DashboardFinance() {
                                             ))
                                         ) : purchases.length > 0 ? (
                                             purchases.map((item, i) => {
-                                                const amount = Number(item.total_amount) || Number(item.event_tickets?.price) || 0;
-                                                const date = new Date(item.created_at).toLocaleDateString('en-GB', {
+                                                const amount = getOrderAmount(item);
+                                                const date = new Date(getItemDate(item)).toLocaleDateString('en-GB', {
                                                     day: '2-digit',
                                                     month: 'short',
                                                     year: 'numeric'
                                                 });
-                                                const status = item.ticket_status?.toLowerCase();
-                                                const isPaid = status === 'valid' || status === 'used' || status === 'paid' || status === 'completed' || status === 'success';
+                                                const isPaid = isPaidOrder(item);
 
                                                 return (
                                                     <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
@@ -590,6 +845,150 @@ export default function DashboardFinance() {
                 )}
 
             </div>
+
+            {/* Withdrawal Drawer */}
+            <AnimatePresence>
+                {isWithdrawOpen && (
+                    <div className="fixed inset-0 z-[180] flex justify-end overflow-hidden">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.25 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            onClick={() => setIsWithdrawOpen(false)}
+                        />
+                        <motion.div
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+                            className="relative h-full w-full md:w-[420px] md:h-[95vh] bg-white flex flex-col overflow-y-auto no-scrollbar md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-10px_0_25px_rgba(0,0,0,0.15)] z-10"
+                        >
+                            <div className="px-6 py-4 border-b border-black/5 flex items-center justify-between bg-white sticky top-0 z-10">
+                                <div>
+                                    <p className="text-sm font-semibold text-black tracking-tighter">Withdraw Funds</p>
+                                </div>
+                                <button
+                                    onClick={() => setIsWithdrawOpen(false)}
+                                    className="p-2 hover:bg-black/5 rounded-full transition-colors group"
+                                    title="Close"
+                                >
+                                    <X className="w-5 h-5 text-black/40 group-hover:text-black transition-colors" />
+                                </button>
+                            </div>
+
+                            <div className="p-6 flex-1">
+                                {withdrawalSuccess ? (
+                                    <div className="min-h-[420px] flex flex-col items-center justify-center text-center">
+                                        <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-5">
+                                            <DollarSign className="w-8 h-8 text-emerald-600" />
+                                        </div>
+                                        <h3 className="text-[18px] font-semibold text-black tracking-tight">Withdrawal requested</h3>
+                                        <p className="mt-2 text-[13px] leading-relaxed text-black/45 max-w-[300px]">
+                                            Your withdrawal has been marked as pending. Once the backend payout endpoint is connected, this will move money to your bank account.
+                                        </p>
+                                        <button
+                                            onClick={() => setIsWithdrawOpen(false)}
+                                            className="mt-7 rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        <div className="rounded-2xl border border-black/5 bg-gray-50/70 p-5">
+                                            <p className="text-[12px] font-medium text-black/40">Available to withdraw</p>
+                                            <p className="mt-1 text-[32px] font-bold tracking-tight text-black">
+                                                {showBalances ? formatCurrency(availableBalance) : '••••••••'}
+                                            </p>
+                                            {pendingWithdrawalTotal > 0 && (
+                                                <p className="mt-1 text-[12px] font-medium text-black/40">
+                                                    {formatCurrency(pendingWithdrawalTotal)} is already pending.
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="block text-[13px] font-medium text-gray-700 ml-1">Amount</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-semibold text-black/35">₦</span>
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={withdrawalAmount}
+                                                    onChange={(e) => handleWithdrawalAmountChange(e.target.value)}
+                                                    className="block w-full rounded-2xl pl-8 pr-3.5 py-3 text-base font-semibold text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <p className="text-[13px] font-medium text-gray-700 ml-1">Payout account</p>
+                                            {hasBankAccount ? (
+                                                <div className="rounded-2xl border border-black/5 p-4 flex items-start gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-gray-50 border border-black/5 flex items-center justify-center shrink-0">
+                                                        <Building2 className="w-5 h-5 text-black/25" />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-[14px] font-semibold text-black truncate">{bankDetails.bankName}</p>
+                                                        <p className="mt-1 text-[12px] font-medium text-black/45 truncate">
+                                                            •••• {bankDetails.accountNumber.slice(-4)}
+                                                            {bankDetails.accountHolder ? ` · ${bankDetails.accountHolder}` : ''}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="rounded-2xl border border-dashed border-black/10 p-5 text-center">
+                                                    <p className="text-[14px] font-semibold text-black">No payout account</p>
+                                                    <p className="mt-1 text-[12px] text-black/45">Add a bank account before requesting a withdrawal.</p>
+                                                    <button
+                                                        onClick={() => {
+                                                            setIsWithdrawOpen(false);
+                                                            setActiveTab('settings');
+                                                            setActiveSettingsTab('payout-methods');
+                                                            setTempBankDetails({ bankName: '', accountNumber: '', accountHolder: '' });
+                                                            setIsEditingBank(true);
+                                                        }}
+                                                        className="mt-4 inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
+                                                    >
+                                                        Add Account
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {withdrawalError && (
+                                            <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
+                                                {withdrawalError}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {!withdrawalSuccess && (
+                                <div className="px-6 py-5 border-t border-black/5 bg-gray-50/50 sticky bottom-0 flex items-center justify-end gap-3 mt-auto">
+                                    <button
+                                        onClick={() => setIsWithdrawOpen(false)}
+                                        className="px-5 py-2.5 rounded-xl text-sm font-semibold text-black/60 hover:text-black hover:bg-black/5 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={submitWithdrawal}
+                                        disabled={!hasBankAccount || availableBalance <= 0}
+                                        className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
+                                    >
+                                        Request Withdrawal
+                                    </button>
+                                </div>
+                            )}
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* Activity History Modal */}
             <AnimatePresence>
@@ -701,24 +1100,29 @@ export default function DashboardFinance() {
                                             ))}
                                         </div>
                                     ) : (() => {
-                                        const filteredPurchases = purchases.filter(item => {
+                                        const filteredPurchases = activityItems.filter(item => {
                                             const query = historySearchQuery.toLowerCase();
                                             const profile = profileMap[item.buyer_id];
-                                            const buyerName = (profile?.full_name || item.buyer_name || '').toLowerCase();
-                                            const buyerEmail = (item.buyer_email || '').toLowerCase();
+                                            const buyerName = getBuyerName(item, profile).toLowerCase();
+                                            const buyerEmail = (item.buyer_email || item.customer_email || '').toLowerCase();
                                             const transId = (item.id || '').toLowerCase();
-                                            const eventTitle = (item.events?.title || '').toLowerCase();
+                                            const eventTitle = getEventTitle(item).toLowerCase();
+                                            const ticketLabel = (item.ticket_label || '').toLowerCase();
+                                            const bankName = (item.bankName || '').toLowerCase();
 
                                             const matchesSearch = buyerName.includes(query) || 
                                                                   buyerEmail.includes(query) || 
                                                                   transId.includes(query) ||
-                                                                  eventTitle.includes(query);
+                                                                  eventTitle.includes(query) ||
+                                                                  ticketLabel.includes(query) ||
+                                                                  bankName.includes(query) ||
+                                                                  (item.type === 'withdrawal' && 'withdrawal'.includes(query));
 
                                             if (!matchesSearch) return false;
 
                                             if (historyDateFilter === 'All') return true;
 
-                                            const purchaseDate = new Date(item.created_at);
+                                            const purchaseDate = new Date(getItemDate(item));
                                             const now = new Date();
 
                                             if (historyDateFilter === 'Today') {
@@ -747,10 +1151,12 @@ export default function DashboardFinance() {
                                             let lastDateHeader = '';
                                             return filteredPurchases.map((item) => {
                                                 const profile = profileMap[item.buyer_id];
-                                                const buyerName = profile?.full_name || item.buyer_name || 'Guest';
-                                                const amount = Number(item.total_amount) || Number(item.event_tickets?.price) || 0;
+                                                const buyerName = getBuyerName(item, profile);
+                                                const amount = getOrderAmount(item);
+                                                const eventTitle = getEventTitle(item);
+                                                const isWithdrawal = item.type === 'withdrawal';
                                                 
-                                                const dateObj = new Date(item.created_at);
+                                                const dateObj = new Date(getItemDate(item));
                                                 const currentDateHeader = dateObj.toLocaleDateString('en-GB', {
                                                     day: 'numeric',
                                                     month: 'long',
@@ -775,27 +1181,47 @@ export default function DashboardFinance() {
                                                             className="flex items-center gap-4 py-4 px-6 hover:bg-black/[0.02] transition-colors border-b border-black/5 last:border-0 -mx-6"
                                                         >
                                                             <div className="shrink-0 relative">
-                                                                {profile?.avatar_url ? (
-                                                                    <img src={profile.avatar_url} alt="" className="w-11 h-11 rounded-full object-cover" />
+                                                                {isWithdrawal ? (
+                                                                    <div className="w-11 h-11 flex items-center justify-center">
+                                                                        <WithdrawalIcon />
+                                                                    </div>
                                                                 ) : (
-                                                                    <div className={`w-11 h-11 rounded-full flex items-center justify-center font-black text-xs ${getAvatarColor(item.id)}`}>
-                                                                        {getInitials(buyerName)}
+                                                                    <div className="w-11 h-11 flex items-center justify-center">
+                                                                        <PaidEventIcon />
                                                                     </div>
                                                                 )}
                                                             </div>
                                                             <div className="flex-1 min-w-0">
                                                                 <p className="text-black text-[13.5px] leading-snug line-clamp-2">
-                                                                    <span className="font-bold">{buyerName}</span>
-                                                                    <span className="text-black/40"> purchased a ticket for </span>
-                                                                    <span className="font-semibold text-black/80">{item.events?.title}</span>
+                                                                    {isWithdrawal ? (
+                                                                        <>
+                                                                            <span className="font-bold">Withdrawal requested</span>
+                                                                            <span className="text-black/40"> to </span>
+                                                                            <span className="font-semibold text-black/80">{item.bankName}</span>
+                                                                        </>
+                                                                    ) : item.source === 'ticket_summary' ? (
+                                                                        <>
+                                                                            <span className="font-bold">{buyerName}</span>
+                                                                            <span className="text-black/40"> sold for </span>
+                                                                            <span className="font-semibold text-black/80">{eventTitle}</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span className="font-bold">{buyerName}</span>
+                                                                            <span className="text-black/40"> purchased a ticket for </span>
+                                                                            <span className="font-semibold text-black/80">{eventTitle}</span>
+                                                                        </>
+                                                                    )}
                                                                 </p>
                                                                 <div className="mt-1.5">
-                                                                    <span className="text-[11px] font-medium text-black/30 uppercase tracking-tight">{timeStr}</span>
+                                                                    <span className="text-[11px] font-medium text-black/30 uppercase tracking-tight">
+                                                                        {isWithdrawal ? `Arrives ${formatArrivalTime(getItemDate(item))}` : timeStr}
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                             <div className="text-right shrink-0">
                                                                 <p className="font-bold text-black text-[15px] tracking-tight">
-                                                                    +₦{amount.toLocaleString()}
+                                                                    {isWithdrawal ? '-' : '+'}₦{amount.toLocaleString()}
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -941,8 +1367,9 @@ export default function DashboardFinance() {
                                     Cancel
                                 </button>
                                 <button 
-                                    onClick={() => { setBankDetails(tempBankDetails); setIsEditingBank(false); }}
-                                    className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98]"
+                                    onClick={saveBankDetails}
+                                    disabled={!tempBankDetails.bankName || tempBankDetails.accountNumber.length !== 10}
+                                    className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
                                 >
                                     Save Changes
                                 </button>

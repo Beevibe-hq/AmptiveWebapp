@@ -57,33 +57,36 @@ export async function getPurchasesByUser(): Promise<TicketPurchase[]> {
     const response = await $tickets.getMine();
     const tickets = response?.tickets || [];
 
-    const mapped: TicketPurchase[] = tickets.map((ticket: any) => ({
-      id: ticket.id || '',
-      ticket_id: ticket.id || '',
-      event_id: ticket.event_id || '',
-      ticket_type_id: ticket.ticket_type_id || '',
-      status: ticket.status || 'valid',
-      purchase_date: ticket.created_at || ticket.purchase_date || '',
-      qr_code_data: ticket.qr_code_data || '',
-      ticket_code: ticket.ticket_code || '',
-      purchase_id: ticket.purchase_id,
-      color_theme: ticket.color_theme || 'silver',
-      attendee_name: ticket.attendee_name || '',
-      attendee_email: ticket.attendee_email || '',
-      events: {
-        title: ticket.event_title || 'Unknown Event',
-        cover_image: ticket.event_thumbnail_url || '',
-        start_time: ticket.scheduled_for || '',
-        venue: '',
-        city: '',
-        location_type: 'physical',
-      },
-      metadata: {
-        price_paid: ticket.price_paid || 0,
-        currency: ticket.currency || 'NGN',
-        physical_delivery: ticket.is_physical || false,
-      },
-    }));
+    const mapped: TicketPurchase[] = tickets.map((ticket: any) => {
+      const rawEvent = ticket.events || ticket.event || ticket.event_details || {};
+      return {
+        id: ticket.id || '',
+        ticket_id: ticket.id || '',
+        event_id: ticket.event_id || '',
+        ticket_type_id: ticket.ticket_type_id || '',
+        status: ticket.status || 'valid',
+        purchase_date: ticket.created_at || ticket.purchase_date || '',
+        qr_code_data: ticket.qr_code_data || '',
+        ticket_code: ticket.ticket_code || '',
+        purchase_id: ticket.purchase_id,
+        color_theme: ticket.color_theme || 'silver',
+        attendee_name: ticket.attendee_name || '',
+        attendee_email: ticket.attendee_email || '',
+        events: {
+          title: ticket.event_title || rawEvent.title || 'Unknown Event',
+          cover_image: ticket.event_thumbnail_url || rawEvent.cover_image || rawEvent.thumbnail_url || '',
+          start_time: ticket.scheduled_for || rawEvent.start_time || rawEvent.scheduled_for || '',
+          venue: ticket.event_venue || ticket.venue || rawEvent.venue || rawEvent.location?.venue || '',
+          city: ticket.event_city || ticket.city || rawEvent.city || rawEvent.location?.city || '',
+          location_type: ticket.event_location_type || ticket.location_type || rawEvent.location_type || rawEvent.location?.type || 'physical',
+        },
+        metadata: {
+          price_paid: ticket.price_paid || 0,
+          currency: ticket.currency || 'NGN',
+          physical_delivery: ticket.is_physical || false,
+        },
+      };
+    });
 
     return mapped;
   } catch (error) {
