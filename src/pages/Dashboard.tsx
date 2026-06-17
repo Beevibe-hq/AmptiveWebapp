@@ -16,16 +16,20 @@ import {
     Copy,
     Ticket,
     Share2,
+    ScanLine,
     Download} from 'lucide-react';
 import { getSession } from '@/lib/api/auth';
 import { getEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { getTicketsForEvent } from '@/lib/api/tickets';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
 import DashboardOrders from './DashboardOrders';
 import DashboardVenues from './DashboardVenues';
+import DashboardCheckIn from './DashboardCheckIn';
 import CreateEvent from './CreateEvent';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
+import { getEventOwnerPurchases } from '@/lib/api/finance';
 
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
@@ -102,6 +106,177 @@ const SalesCircularProgress = ({ sold, total }: { sold: number; total: number })
     );
 };
 
+const getOrderTickets = (order: any) => Array.isArray(order?.tickets) && order.tickets.length > 0 ? order.tickets : [order];
+
+const getSoldTicketCount = (order: any) => {
+    const tickets = getOrderTickets(order);
+    if (tickets.length > 1) return tickets.length;
+    const quantity = Number(order?.quantity ?? order?.ticket_quantity ?? order?.count ?? 1);
+    return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+};
+
+const getOrderDate = (order: any) => order?.created_at || order?.purchase_date || order?.purchased_at || order?.updated_at || new Date().toISOString();
+
+const getOrderAmount = (order: any) => {
+    const directAmount = Number(
+        order?.total_amount ??
+        order?.total_price ??
+        order?.amount ??
+        order?.price_paid ??
+        order?.ticket_price ??
+        order?.event_tickets?.price ??
+        0
+    );
+    if (Number.isFinite(directAmount) && directAmount > 0) return directAmount;
+
+    return getOrderTickets(order).reduce((sum: number, ticket: any) => {
+        const ticketAmount = Number(ticket?.total_amount ?? ticket?.price_paid ?? ticket?.event_tickets?.price ?? ticket?.price);
+        return sum + (Number.isFinite(ticketAmount) ? ticketAmount : 0);
+    }, 0);
+};
+
+const isPaidOrder = (order: any) => {
+    const statuses = [
+        order?.status,
+        order?.payment_status,
+        order?.ticket_status,
+        order?.transaction_status,
+        order?.payment?.status,
+        ...getOrderTickets(order).map((ticket: any) => ticket?.ticket_status || ticket?.status),
+    ].map(value => String(value || '').toLowerCase()).filter(Boolean);
+
+    if (statuses.some(status => ['cancelled', 'canceled', 'refunded', 'failed', 'void'].includes(status))) return false;
+    if (statuses.length === 0) return true;
+    return statuses.some(status => ['valid', 'used', 'completed', 'paid', 'success', 'attended', 'scanned'].includes(status));
+};
+
+const getBuyerName = (order: any, ticket?: any) => (
+    ticket?.attendee_name ||
+    order?.attendee_name ||
+    order?.buyer_name ||
+    order?.profiles?.display_name ||
+    order?.profiles?.full_name ||
+    'Guest'
+);
+
+const getBuyerEmail = (order: any, ticket?: any) => (
+    ticket?.attendee_email ||
+    order?.attendee_email ||
+    order?.buyer_email ||
+    order?.profiles?.email ||
+    ''
+);
+
+const getEventTitleFromOrder = (order: any, fallback = 'this event') => (
+    order?.event_title ||
+    order?.events?.title ||
+    order?.event?.title ||
+    fallback
+);
+
+const getEventCapacity = (event: StandaloneEvent) => {
+    const tickets = getEventTicketTypes(event);
+    return tickets.reduce((sum: number, ticket: any) => {
+        const quantity = Number(
+            ticket?.quantity_total ??
+            ticket?.quantity ??
+            ticket?.total_quantity ??
+            ticket?.capacity ??
+            0
+        );
+        return sum + (Number.isFinite(quantity) ? quantity : 0);
+    }, 0);
+};
+
+const getEventId = (event: StandaloneEvent) => event.event_id || (event as any).id || '';
+
+const getEventTicketTypes = (event: StandaloneEvent) => {
+    if (Array.isArray(event.event_tickets) && event.event_tickets.length > 0) return event.event_tickets;
+    if (Array.isArray(event.ticket_types) && event.ticket_types.length > 0) return event.ticket_types;
+    if (Array.isArray((event as any).tickets) && (event as any).tickets.length > 0) return (event as any).tickets;
+    return [];
+};
+
+const getEventLocationLabel = (event: StandaloneEvent) => {
+    const parts = [
+        event.location?.venue,
+        event.venue?.name,
+        event.location?.city,
+        event.venue?.city,
+        event.venue?.state,
+        event.venue?.country,
+    ].filter(Boolean);
+
+    return [...new Set(parts)].slice(0, 2).join(', ') || 'TBA';
+};
+
+const toNumber = (value: unknown) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getTicketSoldCount = (ticket: any) => Math.max(0, toNumber(
+    ticket?.quantity_sold ??
+    ticket?.sold ??
+    ticket?.sold_quantity ??
+    ticket?.tickets_sold ??
+    ticket?.purchased_count ??
+    ticket?.purchase_count
+));
+
+const getTicketPrice = (ticket: any) => Math.max(0, toNumber(
+    ticket?.price ??
+    ticket?.ticket_price ??
+    ticket?.amount ??
+    ticket?.event_tickets?.price
+));
+
+const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const diffMs = Date.now() - date.getTime();
+    const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+    if (diffMinutes < 1) return 'just now';
+    if (diffMinutes < 60) return `${diffMinutes}min ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+const formatPercentChange = (current: number, previous: number) => {
+    if (previous <= 0) return current > 0 ? '+100%' : '0%';
+    const change = ((current - previous) / previous) * 100;
+    const rounded = Math.round(change);
+    return `${rounded > 0 ? '+' : ''}${rounded}%`;
+};
+
+const isInRange = (dateString: string, start: Date, end: Date) => {
+    const date = new Date(dateString);
+    return date >= start && date < end;
+};
+
+const getEventStatusDisplay = (status?: string | null) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (['published', 'scheduled', 'live'].includes(normalized)) {
+        return {
+            label: normalized === 'live' ? 'Live' : 'Published',
+            className: 'bg-green-50 text-green-700 border border-green-100',
+        };
+    }
+
+    return {
+        label: status || 'Draft',
+        className: 'bg-gray-50 text-gray-400 border border-gray-100',
+    };
+};
+
+const getChangePillClass = (change: string) => {
+    if (change.startsWith('-')) return 'text-red-700 bg-red-50/80 border border-red-200/60';
+    if (change === '0%') return 'text-black/45 bg-black/[0.03] border border-black/5';
+    return 'text-green-700 bg-green-50/80 border border-green-200/60';
+};
+
 function DashboardHome({ displayName }: { displayName: string }) {
     const getCurrentMonthLabel = () => {
         const now = new Date();
@@ -127,6 +302,14 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const [totalSales, setTotalSales] = useState(0);
     const [orderCount, setOrderCount] = useState(0);
     const [attendeeCount, setAttendeeCount] = useState(0);
+    const [recentActivity, setRecentActivity] = useState<any[]>([]);
+    const [eventSales, setEventSales] = useState<Record<string, { sold: number; total: number }>>({});
+    const [metricChanges, setMetricChanges] = useState({
+        sales: '0%',
+        orders: '0%',
+        events: '0%',
+        attendees: '0%',
+    });
 
     const upcomingEvents = realEvents.filter(event =>
         new Date(event.scheduled_for ?? event.created_at!) >= new Date()
@@ -149,7 +332,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                         : totalSales,
             prefix: "₦",
             suffix: totalSales >= 1000000000 ? "b" : totalSales >= 1000000 ? "m" : totalSales >= 1000 ? "k" : "",
-            change: "+12%",
+            change: metricChanges.sales,
             icon: Wallet,
             bgColor: "bg-blue-50",
             textColor: "text-blue-600"
@@ -158,7 +341,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             title: "Orders",
             subtitle: "Purchases",
             value: orderCount,
-            change: "+8%",
+            change: metricChanges.orders,
             icon: ShoppingCart,
             bgColor: "bg-purple-50",
             textColor: "text-purple-600"
@@ -167,7 +350,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             title: "Upcoming Events",
             subtitle: "Upcoming",
             value: upcomingCount,
-            change: "+5%",
+            change: metricChanges.events,
             icon: Calendar,
             bgColor: "bg-red-50",
             textColor: "text-red-600"
@@ -176,7 +359,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             title: "Attendees",
             subtitle: "Total Attendees",
             value: attendeeCount,
-            change: "+18%",
+            change: metricChanges.attendees,
             icon: Users,
             bgColor: "bg-green-50",
             textColor: "text-green-600"
@@ -227,16 +410,12 @@ function DashboardHome({ displayName }: { displayName: string }) {
         }
     };
 
-    const handleRefresh = () => {
+    const handleRefresh = async () => {
         setIsRefreshing(true);
         setEventsLoading(true);
         setRefreshCount(prev => prev + 1);
-        fetchRealEvents();
-        // Mock a data fetch delay for counters
-        setTimeout(() => {
-            setEventsLoading(false);
-            setIsRefreshing(false);
-        }, 1500);
+        await fetchRealEvents();
+        setIsRefreshing(false);
     };
 
     const fetchRealEvents = async () => {
@@ -245,90 +424,182 @@ function DashboardHome({ displayName }: { displayName: string }) {
             if (!session || !session.user) return;
 
             const data = await getEventsByUser();
-            setRealEvents(data || []);
+            const events = data || [];
+            setRealEvents(events);
 
-            // Fetch Ticket Purchases for Stats
-            const { data: purchases, error: purchaseError } = await supabase
-                .from('ticket_purchases')
-                .select('*, event_tickets(price)')
-                .order('created_at', { ascending: false });
+            const ticketsByEvent = await Promise.all(
+                events.map(async (event) => {
+                    const eventId = getEventId(event);
+                    const embeddedTickets = getEventTicketTypes(event);
+                    const tickets = embeddedTickets.length > 0
+                        ? embeddedTickets
+                        : await getTicketsForEvent(eventId).catch(() => []);
+                    return { event, tickets: tickets || [] };
+                })
+            );
 
-            if (purchaseError) {
-                console.error('Error fetching dashboard purchases:', purchaseError);
-            } else if (purchases && purchases.length > 0) {
-                const validPurchases = purchases.filter(p => {
-                    const s = p.ticket_status?.toLowerCase();
-                    return s === 'valid' || s === 'used' || s === 'completed' || s === 'paid' || s === 'success' || s === 'attended';
+            const ownerPurchases = await getEventOwnerPurchases();
+            const eventTitleMap = new Map(events.map(event => [getEventId(event), event.title]));
+            const allOrders = (ownerPurchases || []).map((order: any) => ({
+                ...order,
+                __eventId: order.event_id,
+                __eventTitle: eventTitleMap.get(order.event_id) || order.event_title || order.events?.title || 'this event',
+            }));
+            const validOrders = allOrders.filter(isPaidOrder);
+            const ticketSoldCount = ticketsByEvent.reduce((sum, item) => {
+                return sum + item.tickets.reduce((ticketSum: number, ticket: any) => ticketSum + getTicketSoldCount(ticket), 0);
+            }, 0);
+            const ticketRevenue = ticketsByEvent.reduce((sum, item) => {
+                return sum + item.tickets.reduce((ticketSum: number, ticket: any) => {
+                    return ticketSum + (getTicketSoldCount(ticket) * getTicketPrice(ticket));
+                }, 0);
+            }, 0);
+
+            const salesByEvent: Record<string, { sold: number; total: number }> = {};
+            events.forEach((event) => {
+                const eventId = getEventId(event);
+                const eventOrders = validOrders.filter((order: any) => order.event_id === eventId || order.__eventId === eventId);
+                const eventTickets = ticketsByEvent.find(item => getEventId(item.event) === eventId)?.tickets || [];
+                const ticketSold = eventTickets.reduce((sum: number, ticket: any) => sum + getTicketSoldCount(ticket), 0);
+                const sold = Math.max(ticketSold, eventOrders.reduce((sum, order) => sum + getSoldTicketCount(order), 0));
+                const capacity = eventTickets.reduce((sum: number, ticket: any) => {
+                    const quantity = Number(
+                        ticket?.quantity_total ??
+                        ticket?.quantity ??
+                        ticket?.total_quantity ??
+                        ticket?.capacity ??
+                        0
+                    );
+                    return sum + (Number.isFinite(quantity) ? quantity : 0);
+                }, 0);
+                salesByEvent[eventId] = {
+                    sold,
+                    total: Math.max(capacity, sold),
+                };
+            });
+            setEventSales(salesByEvent);
+
+            const orderRevenue = validOrders.reduce((acc, order) => acc + getOrderAmount(order), 0);
+            const total = Math.max(orderRevenue, ticketRevenue);
+            const attendees = new Set<string>();
+            validOrders.forEach(order => {
+                getOrderTickets(order).forEach((ticket: any) => {
+                    attendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id);
                 });
+            });
 
-                if (validPurchases.length > 0) {
-                    const total = validPurchases.reduce((acc, p) => acc + (Number(p.total_amount) || Number(p.event_tickets?.price) || 0), 0);
-                    const uniqueAttendees = new Set(validPurchases.map(p => p.buyer_email)).size;
+            setTotalSales(total);
+            setOrderCount(Math.max(validOrders.length, ticketSoldCount));
+            setAttendeeCount(Math.max(attendees.size, ticketSoldCount));
 
-                    setTotalSales(total);
-                    setOrderCount(validPurchases.length);
-                    setAttendeeCount(uniqueAttendees);
+            const monthStart = new Date();
+            monthStart.setDate(1);
+            monthStart.setHours(0, 0, 0, 0);
+            const nextMonthStart = new Date(monthStart);
+            nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+            const previousMonthStart = new Date(monthStart);
+            previousMonthStart.setMonth(previousMonthStart.getMonth() - 1);
 
-                    // Aggregation for Chart
-                    const aggregated: Record<string, { rawTotal: number; weeks: number[] }> = {};
-                    
-                    // Pre-populate last 4 months to keep UI rich (Dec, Jan, Feb, Mar)
-                    const monthIter = new Date();
-                    for(let i=0; i<4; i++) {
-                        const mLabel = monthIter.toLocaleString('default', { month: 'short' }) + " '" + monthIter.getFullYear().toString().slice(-2);
-                        aggregated[mLabel] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
-                        monthIter.setMonth(monthIter.getMonth() - 1);
-                    }
-                    
-                    validPurchases.forEach(p => {
-                        const date = new Date(p.created_at);
-                        const monthLabel = date.toLocaleString('default', { month: 'short' }) + " '" + date.getFullYear().toString().slice(-2);
-                        const day = date.getDate();
-                        const weekIdx = day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3;
-                        const amount = Number(p.total_amount) || Number(p.event_tickets?.price) || 0;
+            const currentMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), monthStart, nextMonthStart));
+            const previousMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), previousMonthStart, monthStart));
+            const currentMonthTicketFallback = validOrders.length === 0 ? ticketSoldCount : 0;
+            const currentMonthRevenue = currentMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0) + (validOrders.length === 0 ? ticketRevenue : 0);
+            const previousMonthRevenue = previousMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
+            const currentMonthAttendees = new Set<string>();
+            const previousMonthAttendees = new Set<string>();
+            currentMonthOrders.forEach(order => {
+                getOrderTickets(order).forEach((ticket: any) => currentMonthAttendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id));
+            });
+            previousMonthOrders.forEach(order => {
+                getOrderTickets(order).forEach((ticket: any) => previousMonthAttendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id));
+            });
 
-                        if (!aggregated[monthLabel]) {
-                            aggregated[monthLabel] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
-                        }
-                        aggregated[monthLabel].rawTotal += amount;
-                        aggregated[monthLabel].weeks[weekIdx] += amount;
-                    });
+            const currentMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', monthStart, nextMonthStart)).length;
+            const previousMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', previousMonthStart, monthStart)).length;
 
-                    const finalMonthlyData: typeof monthlyData = {};
-                    Object.entries(aggregated).forEach(([month, data]) => {
-                        finalMonthlyData[month] = {
-                            total: formatCondensed(data.rawTotal),
-                            points: data.weeks.map((val, i) => ({
-                                cx: i * 133.33,
-                                cy: 0,
-                                label: `Wk ${i + 1}`,
-                                amount: formatCondensed(val),
-                                val: val / 1000
-                            }))
-                        };
-                    });
+            setMetricChanges({
+                sales: formatPercentChange(currentMonthRevenue, previousMonthRevenue),
+                orders: formatPercentChange(currentMonthOrders.length + currentMonthTicketFallback, previousMonthOrders.length),
+                events: formatPercentChange(currentMonthEvents, previousMonthEvents),
+                attendees: formatPercentChange(currentMonthAttendees.size + currentMonthTicketFallback, previousMonthAttendees.size),
+            });
 
-                    setMonthlyData(finalMonthlyData);
-                    
-                    // Set active month to current month if exists, otherwise most recent
-                    const currentMonth = getCurrentMonthLabel();
-                    if (finalMonthlyData[currentMonth]) {
-                        setActiveMonth(currentMonth);
-                    } else {
-                        const sortedMonths = Object.keys(finalMonthlyData).sort((a, b) => {
-                            const dateA = new Date(a.replace(/'/, ' 20'));
-                            const dateB = new Date(b.replace(/'/, ' 20'));
-                            return dateB.getTime() - dateA.getTime();
-                        });
-                        if (sortedMonths.length > 0) setActiveMonth(sortedMonths[0]);
-                    }
+            const activity = validOrders
+                .flatMap(order => getOrderTickets(order).map((ticket: any) => {
+                    const status = String(ticket?.ticket_status || ticket?.status || order?.ticket_status || order?.status || '').toLowerCase();
+                    const date = getOrderDate(ticket) || getOrderDate(order);
+                    const action = ['used', 'attended', 'scanned'].includes(status) ? 'checked into' : 'purchased a ticket for';
+                    return {
+                        subject: getBuyerName(order, ticket),
+                        action,
+                        target: getEventTitleFromOrder(order, order.__eventTitle),
+                        date,
+                        time: formatTimeAgo(date),
+                    };
+                }))
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .slice(0, 6);
+            setRecentActivity(activity);
 
-                } else {
-                    setTotalSales(0);
-                    setOrderCount(0);
-                    setAttendeeCount(0);
-                    setMonthlyData({});
+            const aggregated: Record<string, { rawTotal: number; weeks: number[] }> = {};
+            const monthIter = new Date();
+            for (let i = 0; i < 4; i++) {
+                const mLabel = monthIter.toLocaleString('default', { month: 'short' }) + " '" + monthIter.getFullYear().toString().slice(-2);
+                aggregated[mLabel] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
+                monthIter.setMonth(monthIter.getMonth() - 1);
+            }
+
+            validOrders.forEach(order => {
+                const date = new Date(getOrderDate(order));
+                const monthLabel = date.toLocaleString('default', { month: 'short' }) + " '" + date.getFullYear().toString().slice(-2);
+                const day = date.getDate();
+                const weekIdx = day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3;
+                const amount = getOrderAmount(order);
+
+                if (!aggregated[monthLabel]) {
+                    aggregated[monthLabel] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
                 }
+                aggregated[monthLabel].rawTotal += amount;
+                aggregated[monthLabel].weeks[weekIdx] += amount;
+            });
+
+            if (validOrders.length === 0 && ticketRevenue > 0) {
+                const currentMonth = getCurrentMonthLabel();
+                const currentDay = new Date().getDate();
+                const currentWeek = currentDay <= 7 ? 0 : currentDay <= 14 ? 1 : currentDay <= 21 ? 2 : 3;
+                if (!aggregated[currentMonth]) {
+                    aggregated[currentMonth] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
+                }
+                aggregated[currentMonth].rawTotal += ticketRevenue;
+                aggregated[currentMonth].weeks[currentWeek] += ticketRevenue;
+            }
+
+            const finalMonthlyData: typeof monthlyData = {};
+            Object.entries(aggregated).forEach(([month, data]) => {
+                finalMonthlyData[month] = {
+                    total: formatCondensed(data.rawTotal),
+                    points: data.weeks.map((val, i) => ({
+                        cx: i * 133.33,
+                        cy: 0,
+                        label: `Wk ${i + 1}`,
+                        amount: formatCondensed(val),
+                        val: val / 1000
+                    }))
+                };
+            });
+
+            setMonthlyData(finalMonthlyData);
+
+            const currentMonth = getCurrentMonthLabel();
+            if (finalMonthlyData[currentMonth]) {
+                setActiveMonth(currentMonth);
+            } else {
+                const sortedMonths = Object.keys(finalMonthlyData).sort((a, b) => {
+                    const dateA = new Date(a.replace(/'/, ' 20'));
+                    const dateB = new Date(b.replace(/'/, ' 20'));
+                    return dateB.getTime() - dateA.getTime();
+                });
+                if (sortedMonths.length > 0) setActiveMonth(sortedMonths[0]);
             }
         } catch (error) {
             console.error('Error fetching dashboard events:', error);
@@ -446,7 +717,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                             <stat.icon className="w-5 h-5" />
                                         </div>
                                     </div>
-                                    <span className="text-xs font-semibold text-green-700 bg-green-50/80 border border-green-200/60 px-2.5 py-1 rounded-full">
+                                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getChangePillClass(String(stat.change))}`}>
                                         {stat.change}
                                     </span>
                                 </div>
@@ -477,7 +748,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                     <stat.icon className="w-5 h-5" />
                                                 </div>
                                             </div>
-                                            <span className="text-xs font-semibold text-green-700 bg-green-50/80 border border-green-200/60 px-2.5 py-1 rounded-full">
+                                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getChangePillClass(String(stat.change))}`}>
                                                 {stat.change}
                                             </span>
                                         </div>
@@ -754,55 +1025,18 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                             {idx !== arr.length - 1 && <div className="h-px bg-black/5 my-2.5"></div>}
                                         </React.Fragment>
                                     ))
+                                ) : recentActivity.length === 0 ? (
+                                    <div className="py-10 text-center text-sm font-medium text-black/40">
+                                        No recent ticket activity yet.
+                                    </div>
                                 ) : (
-                                    [
-                                        {
-                                            subject: 'Adaeze Okafor',
-                                            action: 'purchased a ticket for',
-                                            target: 'Summer Music Festival',
-                                            time: '2min ago',
-                                            icon: <img src="https://i.pravatar.cc/150?u=adaeze" alt="Adaeze" className="w-5 h-5 rounded-full object-cover" />
-                                        },
-                                        {
-                                            subject: 'Emeka Nwosu',
-                                            action: 'purchased a ticket for',
-                                            target: 'Tech Innovation Summit',
-                                            time: '1h ago',
-                                            icon: <img src="https://i.pravatar.cc/150?u=emeka" alt="Emeka" className="w-5 h-5 rounded-full object-cover" />
-                                        },
-                                        {
-                                            subject: 'Funke Balogun',
-                                            action: 'checked into',
-                                            target: 'Local Art Exhibition',
-                                            time: '3h ago',
-                                            icon: <img src="https://i.pravatar.cc/150?u=funke" alt="Funke" className="w-5 h-5 rounded-full object-cover" />
-                                        },
-                                        {
-                                            subject: 'Chidera Eze',
-                                            action: 'purchased a ticket for',
-                                            target: 'Summer Music Festival',
-                                            time: '5h ago',
-                                            icon: <img src="https://i.pravatar.cc/150?u=chidera" alt="Chidera" className="w-5 h-5 rounded-full object-cover" />
-                                        },
-                                        {
-                                            subject: 'Folake Abiola',
-                                            action: 'registered for',
-                                            target: 'Local Art Exhibition',
-                                            time: '6h ago',
-                                            icon: <img src="https://i.pravatar.cc/150?u=folake" alt="Folake" className="w-5 h-5 rounded-full object-cover" />
-                                        },
-                                        {
-                                            subject: 'Babatunde Aliyu',
-                                            action: 'purchased a VIP ticket for',
-                                            target: 'Tech Innovation Summit',
-                                            time: '12h ago',
-                                            icon: <img src="https://i.pravatar.cc/150?u=babatunde" alt="Babatunde" className="w-5 h-5 rounded-full object-cover" />
-                                        }
-                                    ].map((feed, i, arr) => (
+                                    recentActivity.map((feed, i, arr) => (
                                         <React.Fragment key={i}>
                                             <div className="flex items-center gap-2 py-1.5 text-[13px] text-black/60 tracking-tight">
                                                 <div className="flex shrink-0 items-center justify-center mr-[1px]">
-                                                    {feed.icon}
+                                                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-black/5 text-[9px] font-bold uppercase text-black/50">
+                                                        {String(feed.subject || 'G').charAt(0)}
+                                                    </div>
                                                 </div>
                                                 <span>
                                                     <span className="font-semibold text-black">{feed.subject}</span> {feed.action} <span className="font-semibold text-black">{feed.target}</span> · {feed.time}
@@ -862,10 +1096,10 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                         const month = startDate.toLocaleString('default', { month: 'short' });
                                         const day = startDate.getDate().toString().padStart(2, '0');
                                         const time = startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                        const totalCapacity = event.event_tickets?.reduce((acc: number, t: any) => acc + (t.quantity || 0), 0) || 0;
-                                        // For demo purposes, we'll mock sold as a percentage of total capacity until real sales are linked
-                                        const sold = Math.floor(totalCapacity * 0.35);
-                                        const total = totalCapacity;
+                                        const sales = eventSales[getEventId(event)] || { sold: 0, total: getEventCapacity(event) };
+                                        const sold = sales.sold;
+                                        const total = sales.total;
+                                        const statusDisplay = getEventStatusDisplay(event.status);
 
                                         return (
                                             <div key={event.event_id} className="flex items-center justify-between p-4 border border-black/5 rounded-xl hover:border-black/10 transition-colors group/card">
@@ -880,8 +1114,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                     <div className="min-w-0 flex-1 pr-4">
                                                         <div className="flex items-center gap-2 mb-1.5">
                                                             <h4 className="font-bold text-[15px] text-black truncate">{event.title}</h4>
-                                                            <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${event.status?.toLowerCase() === 'published' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
-                                                                {event.status || 'Draft'}
+                                                            <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${statusDisplay.className}`}>
+                                                                {statusDisplay.label}
                                                             </span>
                                                         </div>
                                                         <div className="flex items-center gap-3 text-black/40">
@@ -891,7 +1125,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                             </div>
                                                             <div className="flex items-center gap-1 text-[11px] font-medium truncate">
                                                                 <MapPin className="w-3.5 h-3.5 shrink-0" />
-                                                                <span className="truncate">{event.location?.venue || event.location?.city || 'TBA'}</span>
+                                                                <span className="truncate">{getEventLocationLabel(event)}</span>
                                                             </div>
                                                         </div>
 
@@ -900,7 +1134,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                             <div className="flex-1 h-1 bg-black/5 rounded-full overflow-hidden">
                                                                 <div
                                                                     className="h-full bg-green-500 rounded-full transition-all duration-1000"
-                                                                    style={{ width: `${Math.min((sold / total) * 100, 100)}%` }}
+                                                                    style={{ width: `${total > 0 ? Math.min((sold / total) * 100, 100) : 0}%` }}
                                                                 />
                                                             </div>
                                                             <span className="text-[10px] font-bold text-black/40 whitespace-nowrap">
@@ -990,6 +1224,7 @@ export default function Dashboard() {
         { name: 'Events', path: '/dashboard/events', icon: null as any, customIcon: 'events' },
         { name: 'Venues', path: '/dashboard/venues', icon: null as any, customIcon: 'venues' },
         { name: 'Orders', path: '/dashboard/orders', icon: null as any, customIcon: 'orders' },
+        { name: 'Check-in', path: '/dashboard/check-in', icon: ScanLine, customIcon: null },
         { name: 'Finance', path: '/dashboard/finance', icon: null as any, customIcon: 'finance' },
         { name: 'Help Center', path: '/help', icon: null as any, customIcon: 'help' },
     ];
@@ -1148,6 +1383,7 @@ export default function Dashboard() {
                     <Route path="/venues" element={<DashboardVenues />} />
                     <Route path="/finance" element={<DashboardFinance />} />
                     <Route path="/orders" element={<DashboardOrders />} />
+                    <Route path="/check-in" element={<DashboardCheckIn />} />
                 </Routes>
             </main>
         </div>

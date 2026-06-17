@@ -7,6 +7,7 @@ import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } fr
 import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme } from '@/lib/api/tickets';
 import { createVenue, type VenueCreateRequest } from '@/lib/api/venues';
 import { getCurrentUser, refreshSession } from '@/lib/api/auth';
+import { getMyCommunities, listCommunities, type Community } from '@/lib/api/communities';
 import RichTextEditor from '@/components/RichTextEditor';
 import VenueSelector from '@/components/VenueSelector';
 import { QRCodeSVG } from 'qrcode.react';
@@ -89,6 +90,7 @@ type FormState = {
   price: number;
   handRaising: boolean;
   allowWhispers: boolean;
+  communityId: string | null;
 };
 
 const GALLERY_IMAGES = [
@@ -137,6 +139,7 @@ const buildInitialFormState = (): FormState => {
     price: 0,
     handRaising: false,
     allowWhispers: false,
+    communityId: null,
   };
 };
 
@@ -217,6 +220,14 @@ const deriveTicketBenefits = (ticket: EventTicket): string[] => {
 };
 
 const deriveAvailabilityStatus = (ticket: EventTicket, index: number): AvailabilityStatus => {
+  const total = ticket.quantity_total;
+  const sold = ticket.quantity_sold ?? 0;
+  const remaining = ticket.quantity_remaining ?? (ticket.quantity !== undefined ? ticket.quantity : null);
+  
+  if (remaining !== null && remaining <= 0) return 'Sold Out';
+  if (total !== null && total <= 0) return 'Sold Out';
+  if (total !== null && sold >= total) return 'Sold Out';
+
   const label = ticket.label?.toLowerCase() ?? '';
   if (label.includes('sold out')) return 'Sold Out';
   if (ticket.price === 0 || label.includes('free') || label.includes('general') || label.includes('standard') || label.includes('regular')) {
@@ -255,6 +266,8 @@ const CreateEvent = () => {
   const [activeTheme, setActiveTheme] = useState(0);
   const [requireApproval, setRequireApproval] = useState(false);
   const [visibleGalleryImages, setVisibleGalleryImages] = useState<string[]>([]);
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [loadingCommunities, setLoadingCommunities] = useState(false);
   const { dominantColor, setDominantColor } = useTheme();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const filePreviewUrlRef = useRef<string | null>(null);
@@ -284,6 +297,45 @@ const CreateEvent = () => {
     benefits: '',
     color_theme: 'silver',
   });
+
+  const normalizeTicketEarlyBird = (ticket: EventTicket): EventTicket => {
+    const rawTicket = ticket as EventTicket & Record<string, any>;
+    const earlyBirdUnits = rawTicket.early_bird_units ?? rawTicket.early_bird_quantity ?? rawTicket.earlyBirdUnits ?? rawTicket.earlyBirdQuantity;
+    const earlyBirdDiscount = rawTicket.early_bird_discount_percentage ?? rawTicket.early_bird_discount ?? rawTicket.earlyBirdDiscountPercentage ?? rawTicket.earlyBirdDiscount;
+    const hasEarlyBird = Boolean(
+      rawTicket.has_early_bird ??
+      rawTicket.early_bird_enabled ??
+      rawTicket.earlyBirdEnabled ??
+      (earlyBirdUnits !== undefined && earlyBirdUnits !== null && Number(earlyBirdUnits) > 0 && earlyBirdDiscount !== undefined && earlyBirdDiscount !== null && Number(earlyBirdDiscount) > 0)
+    );
+
+    return {
+      ...ticket,
+      has_early_bird: hasEarlyBird,
+      early_bird_units: earlyBirdUnits !== undefined && earlyBirdUnits !== null ? Number(earlyBirdUnits) : undefined,
+      early_bird_discount_percentage: earlyBirdDiscount !== undefined && earlyBirdDiscount !== null ? Number(earlyBirdDiscount) : undefined,
+    };
+  };
+
+  const buildTicketPayload = (ticket: EventTicket, options: { includePhysical?: boolean } = {}) => {
+    const earlyBirdUnits = ticket.has_early_bird ? ticket.early_bird_units : undefined;
+    const earlyBirdDiscount = ticket.has_early_bird ? ticket.early_bird_discount_percentage : undefined;
+    const quantityTotal = ticket.quantity && ticket.quantity > 0 ? ticket.quantity : null;
+
+    const payload = {
+      label: ticket.label || ticket.title,
+      price: ticket.price,
+      currency: ticket.currency,
+      quantity_total: quantityTotal,
+      benefits: ticket.benefits,
+      color_theme: ticket.color_theme,
+      has_early_bird: Boolean(ticket.has_early_bird),
+      early_bird_units: earlyBirdUnits,
+      early_bird_discount_percentage: earlyBirdDiscount,
+    };
+
+    return options.includePhysical ? { ...payload, is_physical: false } : payload;
+  };
 
   // Ticket handlers
   const handleAddTicket = () => {
@@ -318,8 +370,8 @@ const CreateEvent = () => {
       toastError('Ticket price must be greater than 0');
       return;
     }
-    // Parse quantity - undefined means unlimited
-    const quantity = ticketForm.quantity ? parseInt(ticketForm.quantity) : undefined;
+    // Empty quantity means the ticket starts sold out.
+    const quantity = ticketForm.quantity ? parseInt(ticketForm.quantity) : 0;
     const benefits = ticketForm.benefits
       .split('\n')
       .map(b => b.trim())
@@ -351,9 +403,9 @@ const CreateEvent = () => {
         color_theme: ticketForm.color_theme,
         quantity,
         event_id: '',
-        quantity_total: null,
+        quantity_total: quantity,
         quantity_sold: 0,
-        quantity_remaining: 0,
+        quantity_remaining: quantity,
         reserved_quantity: 0,
         is_active: false,
         has_early_bird: false
@@ -454,6 +506,31 @@ const CreateEvent = () => {
   }, [navigate]);
 
   useEffect(() => {
+    if (!ready) return;
+
+    let cancelled = false;
+    const loadCommunities = async () => {
+      setLoadingCommunities(true);
+      try {
+        const ownedCommunities = await getMyCommunities().catch(() => []);
+        const communityData = ownedCommunities.length > 0
+          ? ownedCommunities
+          : await listCommunities({ page_size: 100 }).catch(() => []);
+        if (!cancelled) {
+          setCommunities(communityData || []);
+        }
+      } finally {
+        if (!cancelled) setLoadingCommunities(false);
+      }
+    };
+
+    loadCommunities();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready]);
+
+  useEffect(() => {
     if (!ready || !id || !userId) return;
 
     const fetchEventData = async () => {
@@ -493,8 +570,12 @@ const CreateEvent = () => {
           endDateTime: safeFormat(event.ended_at),
           coverImage: event.thumbnail_url || '',
           price: deriveEventPrice(tickets || []),
-          tickets: tickets,
+          tickets: (tickets || []).map(t => normalizeTicketEarlyBird({
+            ...t,
+            quantity: t.quantity_total !== null && t.quantity_total !== undefined ? t.quantity_total : undefined
+          })),
           handRaising: event.hand_raising!,
+          communityId: event.community?.community_id || null,
           showType: event.show_type!,
           venueId: event.venue?.venue_id || null,
           venueType: event.venue?.venue_type || null,
@@ -697,6 +778,7 @@ const CreateEvent = () => {
         ended_at: endTimeIso,
         hand_raising: form.handRaising,
         allow_whispers: form.allowWhispers,
+        community_id: form.communityId || undefined,
         venue_id: resolvedVenueId || null,
       };
 
@@ -739,18 +821,7 @@ const CreateEvent = () => {
         // Insert new tickets (one at a time - no bulk)
         if (newTickets.length > 0) {
           for (const ticket of newTickets) {
-            const ticketPayload = {
-              label: ticket.label || ticket.title,
-              price: ticket.price,
-              currency: ticket.currency,
-              quantity_total: ticket.quantity ?? null,
-              benefits: ticket.benefits,
-              color_theme: ticket.color_theme,
-              is_physical: false,
-              has_early_bird: ticket.has_early_bird,
-              early_bird_units: ticket.early_bird_units,
-              early_bird_discount_percentage: ticket.early_bird_discount_percentage,
-            };
+            const ticketPayload = buildTicketPayload(ticket, { includePhysical: true });
 
             await createNewTicket(ticketPayload, eventId);
           }
@@ -759,17 +830,7 @@ const CreateEvent = () => {
         // Update existing tickets
         if (existingTickets.length > 0) {
           for (const ticket of existingTickets) {
-            await updateTicket(ticket.id, {
-              label: ticket.label || ticket.title,
-              price: ticket.price,
-              currency: ticket.currency,
-              quantity_total: ticket.quantity ?? null,
-              benefits: ticket.benefits,
-              color_theme: ticket.color_theme,
-              has_early_bird: ticket.has_early_bird,
-              early_bird_units: ticket.early_bird_units,
-              early_bird_discount_percentage: ticket.early_bird_discount_percentage,
-            });
+            await updateTicket(ticket.id, buildTicketPayload(ticket));
           }
         }
       }
@@ -875,6 +936,25 @@ const CreateEvent = () => {
                         onChange={(value) => setForm(prev => ({ ...prev, description: value }))}
                         placeholder="Description"
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Community</label>
+                      <select
+                        value={form.communityId || ''}
+                        onChange={(event) => setForm(prev => ({ ...prev, communityId: event.target.value || null }))}
+                        className="block w-full rounded-2xl px-3.5 py-3 text-sm font-medium text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={loadingCommunities}
+                      >
+                        <option value="">
+                          {loadingCommunities ? 'Loading communities...' : 'No community'}
+                        </option>
+                        {communities.map((community) => (
+                          <option key={community.community_id} value={community.community_id}>
+                            {community.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </section>
@@ -1529,14 +1609,14 @@ const CreateEvent = () => {
 
                     <div className="w-full sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Quantity Available (Optional)
+                        Quantity Available
                       </label>
                       <input
                         type="number"
                         value={ticketForm.quantity}
                         onChange={(e) => setTicketForm(prev => ({ ...prev, quantity: e.target.value }))}
-                        placeholder="Leave empty for unlimited"
-                        min="1"
+                        placeholder="Leave empty for sold out"
+                        min="0"
                         step="1"
                         className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                       />
@@ -1553,7 +1633,7 @@ const CreateEvent = () => {
                         ))}
                       </div>
                       <p className="mt-2 text-xs text-gray-500">
-                        Leave empty for unlimited tickets, or click a quick number above
+                        Leave empty to mark this ticket as sold out, or click a quick number above
                       </p>
                     </div>
                   </div>

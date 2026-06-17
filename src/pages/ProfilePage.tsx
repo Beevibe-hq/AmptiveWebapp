@@ -5,6 +5,7 @@ import { extractDominantColors } from '@/utils/colorExtractor';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { getTicketsForEvent } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -181,8 +182,23 @@ const ProfilePage = () => {
       const upcomingData = (events ?? []).filter(e => e.scheduled_for && e.scheduled_for >= nowIso);
       const pastData = (events ?? []).filter(e => e.scheduled_for && e.scheduled_for < nowIso);
       
-      const allEventIds = events?.map(e => e.event_id).filter(Boolean) as string[] || [];
       const ticketMap: Record<string, EventTicket[]> = {};
+      const allEventIds = events?.map(e => e.event_id).filter(Boolean) as string[] || [];
+
+      await Promise.all(allEventIds.map(async (eventId) => {
+        try {
+          const tickets = await getTicketsForEvent(eventId);
+          ticketMap[eventId] = (tickets || []).map(ticket => ({
+            id: ticket.id,
+            eventId: ticket.event_id || eventId,
+            label: ticket.label,
+            price: Number(ticket.price) || 0,
+            currency: ticket.currency,
+          }));
+        } catch {
+          ticketMap[eventId] = [];
+        }
+      }));
 
       const now = new Date();
       const upcomingMapped = mapStandaloneEvents(upcomingData, ticketMap, now);
@@ -994,10 +1010,10 @@ const ProfilePage = () => {
             )}
           </div>
 
-          <h1 className="w-full font-bold text-black text-center break-words px-4 mt-3 md:mt-1 text-3xl md:text-[92px]" style={{ fontWeight: 700, color: '#000000' }}>
+          <h1 className="w-full font-bold text-black text-center break-words px-4 mt-3 md:mt-1 text-3xl md:text-[92px] leading-tight" style={{ fontWeight: 700, color: '#000000' }}>
             {profile?.name || (urlUserId === user?.user_id || !urlUserId ? user?.name : undefined) || hostData?.full_name || urlUserId || 'User'}
           </h1>
-          <p className="mt-1 text-gray-600 text-center">@{profile?.username || (urlUserId === user?.user_id || !urlUserId ? user?.username : undefined) || hostData?.username || urlUserId || 'user'}</p>
+          <p className="mt-2 sm:mt-3 text-gray-600 text-center">@{profile?.username || (urlUserId === user?.user_id || !urlUserId ? user?.username : undefined) || hostData?.username || urlUserId || 'user'}</p>
           <div className="mt-7 flex flex-row flex-wrap items-center justify-center gap-3">
             {user?.id && profile?.user_id && user.id === profile.user_id && (
               <>

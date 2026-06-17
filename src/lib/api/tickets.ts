@@ -21,6 +21,154 @@ export interface EventTicket {
   has_early_bird?: boolean;
   early_bird_units?: number;
   early_bird_discount_percentage?: number;
+  status?: string | null;
+  availability?: string | null;
+  sold_out?: boolean;
+  is_sold_out?: boolean;
+  active?: boolean;
+  remaining?: number | string | null;
+  remaining_quantity?: number | string | null;
+  available?: number | string | null;
+  available_quantity?: number | string | null;
+  capacity?: number | string | null;
+  total_quantity?: number | string | null;
+  sold?: number | string | null;
+  sold_quantity?: number | string | null;
+  tickets_sold?: number | string | null;
+  stock?: number | string | null;
+  inventory?: number | string | null;
+  available_count?: number | string | null;
+  remaining_count?: number | string | null;
+  purchased_count?: number | string | null;
+  purchase_count?: number | string | null;
+}
+
+type TicketAvailabilityData = {
+  is_active?: boolean;
+  active?: boolean;
+  sold_out?: boolean;
+  is_sold_out?: boolean;
+  status?: unknown;
+  availability?: unknown;
+  quantity_remaining?: unknown;
+  remaining_quantity?: unknown;
+  remaining?: unknown;
+  available_quantity?: unknown;
+  available?: unknown;
+  available_count?: unknown;
+  quantity_total?: unknown;
+  quantity?: unknown;
+  capacity?: unknown;
+  total_quantity?: unknown;
+  stock?: unknown;
+  inventory?: unknown;
+  quantity_sold?: unknown;
+  sold?: unknown;
+  sold_quantity?: unknown;
+  tickets_sold?: unknown;
+  purchased_count?: unknown;
+  purchase_count?: unknown;
+  reserved_quantity?: unknown;
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+export function getTicketRemaining(ticket: TicketAvailabilityData): number | null {
+  const directRemaining = toFiniteNumber(
+    ticket.quantity_remaining ??
+    ticket.remaining_quantity ??
+    ticket.remaining ??
+    ticket.remaining_count ??
+    ticket.available_quantity ??
+    ticket.available ??
+    ticket.available_count
+  );
+
+  if (directRemaining !== null) {
+    return directRemaining;
+  }
+
+  const total = toFiniteNumber(
+    ticket.quantity_total ??
+    ticket.quantity ??
+    ticket.capacity ??
+    ticket.total_quantity ??
+    ticket.stock ??
+    ticket.inventory
+  );
+  const sold = toFiniteNumber(
+    ticket.quantity_sold ??
+    ticket.sold ??
+    ticket.sold_quantity ??
+    ticket.tickets_sold ??
+    ticket.purchased_count ??
+    ticket.purchase_count
+  ) ?? 0;
+  const reserved = toFiniteNumber(ticket.reserved_quantity) ?? 0;
+
+  if (total === null) {
+    return 0;
+  }
+
+  return Math.max(total - sold - reserved, 0);
+}
+
+export function isTicketSoldOut(ticket: TicketAvailabilityData): boolean {
+  const status = String(ticket.status ?? ticket.availability ?? '').trim().toLowerCase();
+
+  if (ticket.is_active === false || ticket.active === false) return true;
+  if (ticket.sold_out === true || ticket.is_sold_out === true) return true;
+  if (['sold_out', 'sold out', 'sold-out', 'soldout', 'unavailable', 'inactive', 'closed', 'ended', 'disabled'].includes(status)) return true;
+
+  const remaining = getTicketRemaining(ticket);
+  return remaining !== null && remaining <= 0;
+}
+
+export function getTicketUnitPrice(ticket: Partial<EventTicket>, selectedQuantity = 1): number {
+  const basePrice = toFiniteNumber(ticket.price) ?? 0;
+  const discount = toFiniteNumber(ticket.early_bird_discount_percentage) ?? 0;
+  const earlyBirdUnits = toFiniteNumber(ticket.early_bird_units) ?? 0;
+  const sold = toFiniteNumber(ticket.quantity_sold) ?? 0;
+
+  if (!ticket.has_early_bird || discount <= 0 || earlyBirdUnits <= 0 || selectedQuantity <= 0) {
+    return basePrice;
+  }
+
+  const remainingEarlyBirdUnits = Math.max(earlyBirdUnits - sold, 0);
+  if (remainingEarlyBirdUnits <= 0) {
+    return basePrice;
+  }
+
+  return Math.max(basePrice - (basePrice * discount / 100), 0);
+}
+
+export function getTicketLineTotal(ticket: Partial<EventTicket>, quantity: number): number {
+  const basePrice = toFiniteNumber(ticket.price) ?? 0;
+  const discount = toFiniteNumber(ticket.early_bird_discount_percentage) ?? 0;
+  const earlyBirdUnits = toFiniteNumber(ticket.early_bird_units) ?? 0;
+  const sold = toFiniteNumber(ticket.quantity_sold) ?? 0;
+
+  if (!ticket.has_early_bird || discount <= 0 || earlyBirdUnits <= 0 || quantity <= 0) {
+    return basePrice * quantity;
+  }
+
+  const remainingEarlyBirdUnits = Math.max(earlyBirdUnits - sold, 0);
+  const discountedQuantity = Math.min(quantity, remainingEarlyBirdUnits);
+  const regularQuantity = Math.max(quantity - discountedQuantity, 0);
+  const discountedPrice = Math.max(basePrice - (basePrice * discount / 100), 0);
+
+  return (discountedPrice * discountedQuantity) + (basePrice * regularQuantity);
+}
+
+export function getTicketEarlyBirdRemaining(ticket: Partial<EventTicket>): number {
+  if (!ticket.has_early_bird) return 0;
+  const earlyBirdUnits = toFiniteNumber(ticket.early_bird_units) ?? 0;
+  const sold = toFiniteNumber(ticket.quantity_sold) ?? 0;
+  return Math.max(earlyBirdUnits - sold, 0);
 }
 
 export interface CheckoutItem {

@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import {
   X,
   Compass,
@@ -57,18 +58,18 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     ...(shouldShowAcceptTips ? [{
       name: 'Accept Tip$',
       path: '/profile/support-setup',
-      icon: <Heart className="w-5 h-5 mr-3" />
+      icon: <Heart className="w-7 h-7 mr-4" />
     } as MenuLink] : []),
     // First group (top items)
     {
       name: 'Explore',
       path: '/explore',
-      icon: <Compass className="w-5 h-5 mr-3" />
+      icon: <Compass className="w-7 h-7 mr-4" />
     },
     {
       name: 'Create Event',
       path: '/login?redirect=/events/create',
-      icon: <PlusSquare className="w-5 h-5 mr-3" />
+      icon: <PlusSquare className="w-7 h-7 mr-4" />
     },
 
     // Divider after first 2 items
@@ -78,22 +79,22 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     {
       name: 'My Dashboard',
       path: '/dashboard',
-      icon: <LayoutDashboard className="w-5 h-5 mr-3" />
+      icon: <LayoutDashboard className="w-7 h-7 mr-4" />
     },
     {
       name: 'My Tickets',
       path: '/my-tickets',
-      icon: <Ticket className="w-5 h-5 mr-3" />
+      icon: <Ticket className="w-7 h-7 mr-4" />
     },
     {
       name: 'View Profile',
       path: '/profile',
-      icon: <User className="w-5 h-5 mr-3" />
+      icon: <User className="w-7 h-7 mr-4" />
     },
     {
       name: 'Settings',
       path: '/settings',
-      icon: <Settings className="w-5 h-5 mr-3" />
+      icon: <Settings className="w-7 h-7 mr-4" />
     },
 
     // Divider item (hidden, only used for visual separation)
@@ -103,17 +104,17 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     {
       name: 'Community Task',
       path: '/community',
-      icon: <Users className="w-5 h-5 mr-3" />
+      icon: <Users className="w-7 h-7 mr-4" />
     },
     {
       name: 'Help Center',
       path: '/help',
-      icon: <HelpCircle className="w-5 h-5 mr-3" />
+      icon: <HelpCircle className="w-7 h-7 mr-4" />
     },
     {
       name: 'Sign Out',
       path: '#',
-      icon: <LogOut className="w-5 h-5 mr-3" />,
+      icon: <LogOut className="w-7 h-7 mr-4" />,
       onClick: async () => {
         await contextLogout();
         navigate('/');
@@ -126,37 +127,37 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     {
       name: 'Accept Tip$',
       path: '/profile/support-setup',
-      icon: <Heart className="w-5 h-5 mr-3" />
+      icon: <Heart className="w-7 h-7 mr-4" />
     },
     {
       name: 'Explore',
       path: '/explore',
-      icon: <Compass className="w-5 h-5 mr-3" />
+      icon: <Compass className="w-7 h-7 mr-4" />
     },
     {
       name: 'Create Event',
       path: '/events',
-      icon: <PlusSquare className="w-5 h-5 mr-3" />
+      icon: <PlusSquare className="w-7 h-7 mr-4" />
     },
     {
       name: 'Store',
       path: '/store',
-      icon: <ShoppingBag className="w-5 h-5 mr-3" />
+      icon: <ShoppingBag className="w-7 h-7 mr-4" />
     },
     {
       name: 'Community Task',
       path: '/community',
-      icon: <Users className="w-5 h-5 mr-3" />
+      icon: <Users className="w-7 h-7 mr-4" />
     },
     {
       name: 'Help Center',
       path: '/help',
-      icon: <HelpCircle className="w-5 h-5 mr-3" />
+      icon: <HelpCircle className="w-7 h-7 mr-4" />
     },
     {
       name: 'Sign In',
       path: '/login',
-      icon: <LogIn className="w-5 h-5 mr-3" />
+      icon: <LogIn className="w-7 h-7 mr-4" />
     }
   ];
 
@@ -173,7 +174,7 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     }
   };
 
-  return (
+  const menu = (
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50 overflow-hidden">
@@ -249,7 +250,7 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
             </div>
 
             {/* Menu Items */}
-            <div className="flex-1 overflow-y-auto pr-4">
+            <div className="flex-1 overflow-y-auto pr-4 pt-4">
               {links.map((link, index) => {
                 if (link.name === 'divider') {
                   return <div key="divider" className="h-6"></div>; // Larger space between main groups
@@ -318,7 +319,7 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
                                 className="flex items-center px-6 py-3 text-sm text-gray-600 hover:bg-gray-100"
                                 onClick={onClose}
                               >
-                                {item.icon || <span className="w-5 h-5 mr-3"></span>}
+                                {item.icon || <span className="w-7 h-7 mr-4"></span>}
                                 {item.name}
                               </Link>
                             ))}
@@ -363,6 +364,12 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
       )}
     </AnimatePresence>
   );
+
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  return createPortal(menu, document.body);
 };
 
 export default MobileMenu;

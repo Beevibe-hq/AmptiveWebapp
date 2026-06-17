@@ -7,6 +7,8 @@ import { uploadImage } from '@/lib/api/storage';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { checkUsernameAvailability, updateProfile } from '@/lib/api/profiles';
+import { motion, AnimatePresence } from 'framer-motion';
+import amptiveLogo from '@/assets/amptivelogo.svg';
 
 const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
 
@@ -47,6 +49,15 @@ export default function CompleteProfilePage() {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ width: number; height: number; x: number; y: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+
+  const passwordRequirements = useMemo(() => [
+    { id: 'length', label: 'At least 8 characters', met: password.length >= 8 },
+    { id: 'uppercase', label: 'At least one uppercase letter (A-Z)', met: /[A-Z]/.test(password) },
+    { id: 'lowercase', label: 'At least one lowercase letter (a-z)', met: /[a-z]/.test(password) },
+    { id: 'number', label: 'At least one number (0-9)', met: /[0-9]/.test(password) },
+    { id: 'special', label: 'At least one special character (e.g. !@#$%)', met: /[^A-Za-z0-9]/.test(password) }
+  ], [password]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [usernameFocused, setUsernameFocused] = useState(false);
@@ -389,9 +400,9 @@ export default function CompleteProfilePage() {
 
       sessionStorage.removeItem(SIGNUP_KEYS.email);
       await refreshUser();
-      toastSuccess('Account created! Welcome to Amptive.');
+      setShowSuccessAnimation(true);
       const redirectTo = location.state?.from || '/';
-      setTimeout(() => navigate(redirectTo), 500);
+      setTimeout(() => navigate(redirectTo), 3200);
     } catch (e: any) {
       console.error('Registration Error:', e);
       toastError(e.message || 'Something went wrong. Please try again.');
@@ -611,9 +622,32 @@ export default function CompleteProfilePage() {
                   )}
                 </button>
               </div>
-              <p className={`text-xs ${password && password.length < 8 ? 'text-red-600' : 'text-gray-500'}`}>
-                {password && password.length < 8 ? 'Password must be at least 8 characters' : 'At least 8 characters'}
-              </p>
+              <div className="mt-3 space-y-1.5 text-left bg-gray-50/50 p-3.5 rounded-xl border border-black/5">
+                {passwordRequirements.map((req) => (
+                  <div key={req.id} className="flex items-center gap-2 text-xs">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full transition-colors duration-200 ${
+                        password
+                          ? req.met
+                            ? 'bg-green-500 shadow-sm shadow-green-500/20'
+                            : 'bg-red-500 shadow-sm shadow-red-500/20'
+                          : 'bg-gray-300'
+                      }`}
+                    />
+                    <span
+                      className={`font-medium transition-colors duration-200 ${
+                        password
+                          ? req.met
+                            ? 'text-green-700'
+                            : 'text-red-600'
+                          : 'text-gray-500'
+                      }`}
+                    >
+                      {req.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {step === 3 && (
@@ -899,6 +933,65 @@ export default function CompleteProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Success Intro Animation Overlay */}
+      <AnimatePresence>
+        {showSuccessAnimation && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0A0A0C] text-white"
+          >
+            {/* Glowing gradient background blur blobs */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[600px] sm:h-[600px] bg-purple-500/10 rounded-full blur-[100px] sm:blur-[130px]" />
+              <div className="absolute top-1/4 left-1/3 w-[250px] h-[250px] bg-amber-500/5 rounded-full blur-[80px] sm:blur-[110px]" />
+            </div>
+
+            <div className="relative z-10 flex flex-col items-center">
+              {/* Outer spinning ring */}
+              <div className="relative flex items-center justify-center">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 8, ease: "linear" }}
+                  className="absolute w-36 h-36 sm:w-44 sm:h-44 rounded-full border border-dashed border-purple-500/20"
+                />
+                <motion.div
+                  animate={{ scale: [1, 1.12, 1], opacity: [0.15, 0.4, 0.15] }}
+                  transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+                  className="absolute w-28 h-28 sm:w-36 sm:h-36 rounded-full border border-purple-500/30"
+                />
+                
+                {/* Logo with spring scale entry */}
+                <motion.div
+                  initial={{ scale: 0.3, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.1, type: "spring", stiffness: 120, damping: 12 }}
+                  className="relative z-20 flex items-center justify-center bg-[#111115] w-24 h-24 sm:w-32 sm:h-32 rounded-full border border-purple-500/40 shadow-[0_0_50px_rgba(168,85,247,0.35)]"
+                >
+                  <img src={amptiveLogo} alt="Amptive Logo" className="w-12 h-12 sm:w-16 sm:h-16" />
+                </motion.div>
+              </div>
+
+              {/* Text elements fading up sequentially */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5, duration: 0.7, ease: "easeOut" }}
+                className="text-center mt-10 space-y-3 px-6"
+              >
+                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-white via-gray-200 to-purple-200 bg-clip-text text-transparent">
+                  Welcome to Amptive
+                </h1>
+                <p className="text-sm sm:text-base text-gray-400 font-medium tracking-wide">
+                  Your account has been created. Redirecting...
+                </p>
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

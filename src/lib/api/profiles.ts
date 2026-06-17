@@ -94,11 +94,45 @@ export async function getProfileByUserId(targetUserId: string): Promise<UserProf
 export async function getProfileByUsername(targetUsername: string): Promise<UserProfile | null> {
   try {
     const response = await api.get<UserProfile>(
-      `/users/by-username/${encodeURIComponent(targetUsername)}`
+      `/users/by-username/${encodeURIComponent(targetUsername)}`,
+      { skipAuth: true }
     );
     return normalizeUserProfile(response);
   } catch {
     return null;
+  }
+}
+
+export async function searchProfiles(query: string): Promise<UserProfile[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const normalizeList = (response: any): UserProfile[] => {
+    const rawProfiles =
+      response?.users ??
+      response?.profiles ??
+      response?.results ??
+      response?.data?.users ??
+      response?.data?.profiles ??
+      response?.data?.results ??
+      response?.data ??
+      response;
+
+    if (!Array.isArray(rawProfiles)) return [];
+    return rawProfiles
+      .map((profile) => normalizeUserProfile(profile))
+      .filter(Boolean) as UserProfile[];
+  };
+
+  try {
+    const response = await api.get<any>(
+      `/search/users?q=${encodeURIComponent(trimmed)}`,
+      { skipAuth: !api.getToken() }
+    );
+    return normalizeList(response);
+  } catch {
+    const usernameProfile = await getProfileByUsername(trimmed.replace(/^@/, ''));
+    return usernameProfile ? [usernameProfile] : [];
   }
 }
 
