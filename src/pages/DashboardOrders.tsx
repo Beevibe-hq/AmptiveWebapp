@@ -2,9 +2,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye, X, XCircle, Clock, CheckCircle2, Ban, UserCheck, CircleSlash, Check, Scan } from 'lucide-react';
-import { getEventsByUser } from '@/lib/api/events';
+import { getEventOrders, getEventsByUser } from '@/lib/api/events';
 import { getEventOwnerPurchases } from '@/lib/api/finance';
-import { getTicketsForEvent } from '@/lib/api/tickets';
 
 const BillIcon = ({ className, fill }: { className?: string, fill?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
@@ -30,6 +29,84 @@ const RefundedIcon = ({ className }: { className?: string, fill?: string }) => (
         <path d="M3 3v5h5"></path>
     </svg>
 );
+
+const CHECK_IN_STORAGE_KEY = 'amptive.dashboard.checkins';
+
+const normalizeValue = (value: unknown) => String(value || '').trim().toLowerCase();
+
+const getLocalCheckIns = (): Record<string, string> => {
+    try {
+        const stored = localStorage.getItem(CHECK_IN_STORAGE_KEY);
+        return stored ? JSON.parse(stored) : {};
+    } catch {
+        return {};
+    }
+};
+
+const extractTicketTokens = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+
+    const tokens = new Set<string>([raw]);
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            [
+                'id',
+                'ticket_id',
+                'ticketId',
+                'ticket_code',
+                'ticketCode',
+                'code',
+                'qr_code_data',
+                'qrCodeData',
+                'access_code',
+                'accessCode',
+            ].forEach(key => {
+                const parsedValue = (parsed as Record<string, unknown>)[key];
+                if (parsedValue) tokens.add(String(parsedValue));
+            });
+        }
+    } catch {
+        raw.split(/[?&/#:=,\s]+/).forEach(part => {
+            if (part) tokens.add(part);
+        });
+    }
+
+    return Array.from(tokens);
+};
+
+const getTicketCheckInKeys = (ticket: any) => {
+    const eventId = ticket.event_id || ticket.eventId || ticket.purchase?.event_id || 'event';
+    return [
+        ticket.id,
+        ticket.ticket_id,
+        ticket.ticketId,
+        ticket.purchase_ticket_id,
+        ticket.purchaseTicketId,
+        ticket.ticket_code,
+        ticket.ticketCode,
+        ticket.code,
+        ticket.access_code,
+        ticket.accessCode,
+        ticket.qr_code_data,
+        ticket.qrCodeData,
+    ]
+        .flatMap(value => extractTicketTokens(value))
+        .map(normalizeValue)
+        .filter(Boolean)
+        .map(value => `${eventId}:${value}`);
+};
+
+const isTicketCheckedIn = (ticket: any) => {
+    const status = normalizeValue(ticket.ticket_status || ticket.status || ticket.check_in_status || ticket.checkInStatus);
+    if (['used', 'scanned', 'attended', 'checked-in', 'checked_in', 'check-in', 'check_in', 'validated', 'redeemed'].includes(status)) return true;
+    if (ticket.checked_in || ticket.checkedIn || ticket.is_checked_in || ticket.isCheckedIn) return true;
+    if (ticket.checked_in_at || ticket.checkedInAt || ticket.scanned_at || ticket.scannedAt || ticket.used_at || ticket.usedAt || ticket.validated_at || ticket.validatedAt || ticket.redeemed_at || ticket.redeemedAt) return true;
+
+    const localCheckIns = getLocalCheckIns();
+    return getTicketCheckInKeys(ticket).some(key => Boolean(localCheckIns[key]));
+};
 
 export default function DashboardOrders() {
     const [orders, setOrders] = useState<any[]>([]);
@@ -100,12 +177,13 @@ export default function DashboardOrders() {
         order?.ticket_status ||
         order?.status ||
         order?.payment_status ||
+        order?.purchase?.status ||
         'paid'
     ).toLowerCase();
 
     const normalizeStatus = (order: any) => {
         const status = getRawStatus(order);
-        if (['valid', 'completed', 'success', 'paid'].includes(status)) return 'paid';
+        if (['valid', 'completed', 'success', 'successful', 'paid'].includes(status)) return 'paid';
         if (['used', 'scanned', 'attended'].includes(status)) return 'attended';
         if (['cancelled', 'canceled'].includes(status)) return 'cancelled';
         if (status === 'refunded') return 'refunded';
@@ -117,60 +195,95 @@ export default function DashboardOrders() {
         order?.total_amount ??
         order?.total_price ??
         order?.amount ??
+        order?.purchase?.amount ??
+        order?.purchase?.total_amount ??
         order?.price_paid ??
         order?.ticket_price ??
         order?.event_tickets?.price ??
         0
     ) || 0;
 
-    const getTicketSoldCount = (ticket: any) => Math.max(0, Number(
-        ticket?.quantity_sold ??
-        ticket?.sold ??
-        ticket?.sold_quantity ??
-        ticket?.tickets_sold ??
-        ticket?.purchased_count ??
-        ticket?.purchase_count ??
-        0
-    ) || 0);
-
-    const getTicketPrice = (ticket: any) => Math.max(0, Number(
-        ticket?.price ??
-        ticket?.ticket_price ??
-        ticket?.amount ??
-        ticket?.event_tickets?.price ??
-        0
-    ) || 0);
-
     const getOrderUnitCount = (order: any) => Math.max(1, Number(order?.order_count || order?.quantity || 1) || 1);
 
     const normalizeOrder = (order: any) => {
+        const purchase = order.purchase || {};
+        const firstTicket = Array.isArray(order.tickets) ? order.tickets[0] : null;
+        const metadata = purchase.metadata || order.metadata || {};
         const status = normalizeStatus(order);
         const amount = getOrderAmount(order);
-        const buyerName = order.buyer_name || order.attendee_name || order.profiles?.display_name || order.profile?.display_name || 'Guest';
-        const buyerEmail = order.buyer_email || order.attendee_email || order.profiles?.email || order.profile?.email || '';
+        const buyerName = (
+            order.buyer_name ||
+            purchase.buyer_name ||
+            metadata.buyer_name ||
+            order.customer_name ||
+            order.attendee_name ||
+            firstTicket?.attendee_name ||
+            order.user?.name ||
+            order.user?.full_name ||
+            order.buyer?.name ||
+            order.buyer?.full_name ||
+            order.customer?.name ||
+            order.customer?.full_name ||
+            order.profiles?.display_name ||
+            order.profile?.display_name ||
+            'Guest'
+        );
+        const buyerEmail = (
+            order.buyer_email ||
+            purchase.buyer_email ||
+            metadata.buyer_email ||
+            order.customer_email ||
+            order.attendee_email ||
+            firstTicket?.attendee_email ||
+            order.user?.email ||
+            order.buyer?.email ||
+            order.customer?.email ||
+            order.profiles?.email ||
+            order.profile?.email ||
+            ''
+        );
         const ticketStatus = order.ticket_status || order.status || status;
         const tickets = Array.isArray(order.tickets) && order.tickets.length > 0
-            ? order.tickets
+            ? order.tickets.map((ticket: any) => ({
+                ...ticket,
+                event_id: ticket.event_id || order.event_id || purchase.event_id,
+                attendee_name: ticket.attendee_name || ticket.attendeeName || ticket.name || '',
+                attendee_email: ticket.attendee_email || ticket.attendeeEmail || ticket.email || '',
+                attendee_phone: ticket.attendee_phone || ticket.attendeePhone || ticket.phone || ticket.phone_number || '',
+                total_amount: ticket.total_amount ?? ticket.price_paid ?? ticket.event_tickets?.price ?? 0,
+                ticket_status: ticket.ticket_status || ticket.status || ticketStatus,
+                event_tickets: {
+                    ...(ticket.event_tickets || {}),
+                    label: ticket.event_tickets?.label || ticket.label || order.ticket_label || 'Ticket',
+                    price: ticket.event_tickets?.price ?? ticket.price_paid ?? ticket.total_amount ?? 0,
+                    color_theme: ticket.event_tickets?.color_theme || ticket.color_theme || 'silver',
+                },
+            }))
             : [{
-                id: order.ticket_id || order.id,
+                id: order.ticket_id || firstTicket?.id || order.id || purchase.id,
+                event_id: order.event_id || purchase.event_id,
+                attendee_name: order.attendee_name || firstTicket?.attendee_name || buyerName,
+                attendee_email: order.attendee_email || firstTicket?.attendee_email || buyerEmail,
+                attendee_phone: order.attendee_phone || firstTicket?.attendee_phone || firstTicket?.phone || order.phone_number || '',
                 total_amount: amount,
                 ticket_status: ticketStatus,
-                created_at: order.created_at || order.purchase_date || order.purchased_at,
+                created_at: order.created_at || purchase.created_at || order.purchase_date || order.purchased_at || firstTicket?.created_at,
                 event_tickets: {
-                    label: order.ticket_label || order.label || 'General Admission',
-                    price: order.ticket_price || amount,
-                    color_theme: order.color_theme || 'silver',
+                    label: order.ticket_label || order.label || firstTicket?.label || 'Ticket',
+                    price: order.ticket_price || firstTicket?.price_paid || amount,
+                    color_theme: order.color_theme || firstTicket?.color_theme || 'silver',
                 },
             }];
 
         return {
             ...order,
-            id: order.id || order.purchase_id || order.ticket_id,
-            created_at: order.created_at || order.purchase_date || order.purchased_at || new Date().toISOString(),
+            id: order.id || purchase.id || order.purchase_id || firstTicket?.purchase_id || order.ticket_id,
+            transaction_id: order.transaction_id || purchase.transaction_id,
+            created_at: order.created_at || purchase.created_at || order.purchase_date || order.purchased_at || firstTicket?.created_at || new Date().toISOString(),
             total_amount: amount,
             status,
             ticket_status: ticketStatus,
-            event_title: order.event_title || order.events?.title || order.event?.title || 'Untitled event',
+            event_title: order.event_title || order.events?.title || order.event?.title || firstTicket?.event_title || 'Untitled event',
             buyer_name: buyerName,
             buyer_email: buyerEmail,
             profiles: {
@@ -185,48 +298,18 @@ export default function DashboardOrders() {
 
     const isCompletedOrder = (order: any) => ['paid', 'completed', 'valid', 'attended', 'used'].includes(String(order.status || '').toLowerCase());
 
-    const buildTicketFallbackOrders = async () => {
+    const getOrdersFromOwnedEvents = async () => {
         const events = await getEventsByUser();
-        const rows = await Promise.all(events.map(async (event: any) => {
-            const embeddedTickets = Array.isArray(event.event_tickets) && event.event_tickets.length > 0
-                ? event.event_tickets
-                : Array.isArray(event.ticket_types) && event.ticket_types.length > 0
-                    ? event.ticket_types
-                    : await getTicketsForEvent(event.event_id).catch(() => []);
-
-            return (embeddedTickets || [])
-                .map((ticket: any) => {
-                    const sold = getTicketSoldCount(ticket);
-                    if (sold <= 0) return null;
-                    const price = getTicketPrice(ticket);
-                    const amount = sold * price;
-                    return normalizeOrder({
-                        id: ticket.id,
-                        event_id: event.event_id,
-                        event_title: event.title,
-                        created_at: ticket.updated_at || ticket.created_at || event.updated_at || event.created_at,
-                        total_amount: amount,
-                        status: 'paid',
-                        ticket_status: 'valid',
-                        buyer_name: 'Ticket sales',
-                        buyer_email: `${sold} sold`,
-                        order_count: sold,
-                        tickets: [{
-                            id: ticket.id,
-                            total_amount: amount,
-                            ticket_status: 'valid',
-                            created_at: ticket.updated_at || ticket.created_at,
-                            event_tickets: {
-                                label: ticket.label || 'General Admission',
-                                price,
-                                color_theme: ticket.color_theme || 'silver',
-                            },
-                        }],
-                    });
-                })
-                .filter(Boolean);
+        const rows = await Promise.all((events || []).map(async (event: any) => {
+            const eventId = event.event_id || event.id;
+            if (!eventId) return [];
+            const eventOrders = await getEventOrders(eventId).catch(() => []);
+            return (eventOrders || []).map((order: any) => normalizeOrder({
+                ...order,
+                event_id: order.event_id || eventId,
+                event_title: order.event_title || order.events?.title || order.event?.title || event.title,
+            }));
         }));
-
         return rows.flat();
     };
 
@@ -234,19 +317,26 @@ export default function DashboardOrders() {
         const fetchOrders = async () => {
             try {
                 const data = await getEventOwnerPurchases();
-                const mappedData = (data || [])
+                let mappedData = (data || [])
                     .map(normalizeOrder)
                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-                if (mappedData.length > 0) {
-                    setOrders(mappedData);
-                } else {
-                    const fallbackOrders = await buildTicketFallbackOrders();
-                    setOrders(fallbackOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+                if (mappedData.length === 0) {
+                    mappedData = (await getOrdersFromOwnedEvents())
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                 }
+
+                setOrders(mappedData);
             } catch (error) {
-                console.error('Error fetching orders:', error);
-                setOrders([]);
+                console.error('Error fetching owner purchase orders:', error);
+                try {
+                    const eventOrders = (await getOrdersFromOwnedEvents())
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                    setOrders(eventOrders);
+                } catch (fallbackError) {
+                    console.error('Error fetching event orders:', fallbackError);
+                    setOrders([]);
+                }
             } finally {
                 setLoading(false);
             }
@@ -876,23 +966,23 @@ export default function DashboardOrders() {
                                                             };
 
                                                             return (selectedOrder.tickets || []).map((ticket: any) => {
-                                                                const label = ticket.event_tickets?.label || 'General Admission';
+                                                                const label = ticket.event_tickets?.label || ticket.label || 'Ticket';
                                                                 const theme = ticket.event_tickets?.color_theme || 'silver';
                                                                 const price = Number(ticket.total_amount) || Number(ticket.event_tickets?.price) || 0;
                                                                 
                                                                 // Map DB status to Scanned/Unscanned for individual tickets
                                                                 const dbStatus = ticket.ticket_status?.toLowerCase();
                                                                 let individualStatus = 'Unscanned';
-                                                                if (dbStatus === 'used') individualStatus = 'Scanned';
+                                                                if (isTicketCheckedIn(ticket)) individualStatus = 'Attended';
                                                                 else if (dbStatus === 'cancelled') individualStatus = 'Cancelled';
                                                                 else if (dbStatus === 'refunded') individualStatus = 'Refunded';
 
                                                                 const renderStatusIndicator = () => {
-                                                                    if (individualStatus === 'Scanned') {
+                                                                    if (individualStatus === 'Attended') {
                                                                         return (
-                                                                            <div title="Scanned" className="text-blue-500">
+                                                                            <div title="Checked in" className="text-blue-500">
                                                                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256">
-                                                                                    <path d="M221.35,104.11a8,8,0,0,0-6.57,9.21A88.85,88.85,0,0,1,216,128a87.62,87.62,0,0,1-22.24,58.41,79.66,79.66,0,0,0-36.06-28.75,48,48,0,1,0-59.4,0,79.66,79.66,0,0,0-36.06,28.75A88,88,0,0,1,128,40a88.76,88.76,0,0,1,14.68,1.22,8,8,0,0,0,2.64-15.78,103.92,103.92,0,1,0,85.24,85.24A8,8,0,0,0,221.35,104.11ZM96,120a32,32,0,1,1,32,32A32,32,0,0,1,96,120ZM74.08,197.5a64,64,0,0,1,107.84,0,87.83,87.83,0,0,1-107.84,0ZM237.66,45.66l-32,32a8,8,0,0,1-11.32,0l-16-16a8,8,0,0,1,11.32-11.32L200,60.69l26.34-26.35a8,8,0,0,1,11.32,11.32Z" />
+                                                                                    <path d="M96.26,37A8,8,0,0,1,102,27.29a104.11,104.11,0,0,1,52,0,8,8,0,0,1-2,15.75,8.15,8.15,0,0,1-2-.26,88,88,0,0,0-44,0A8,8,0,0,1,96.26,37ZM33.35,110a8,8,0,0,0,9.85-5.57,87.88,87.88,0,0,1,22-38.09A8,8,0,0,0,53.8,55.14a103.92,103.92,0,0,0-26,45A8,8,0,0,0,33.35,110ZM150,213.22a88,88,0,0,1-44,0,8,8,0,0,0-4,15.49,104.11,104.11,0,0,0,52,0,8,8,0,0,0-4-15.49Zm62.8-108.77a8,8,0,0,0,15.42-4.28,104,104,0,0,0-26-45,8,8,0,1,0-11.41,11.21A88.14,88.14,0,0,1,212.79,104.45Zm15.44,51.39a103.68,103.68,0,0,1-30.68,49.47A8,8,0,0,1,185.07,203a64,64,0,0,0-114.14,0,8,8,0,0,1-12.48,2.32,103.74,103.74,0,0,1-30.68-49.49,8,8,0,0,1,15.42-4.27,87.58,87.58,0,0,0,19,34.88,79.57,79.57,0,0,1,36.1-28.77,48,48,0,1,1,59.38,0,79.57,79.57,0,0,1,36.1,28.77,87.58,87.58,0,0,0,19-34.88,8,8,0,1,1,15.42,4.28ZM128,152a32,32,0,1,0-32-32A32,32,0,0,0,128,152Z" />
                                                                                 </svg>
                                                                             </div>
                                                                         );
@@ -1017,7 +1107,13 @@ export default function DashboardOrders() {
 
                                         <div className="flex-1 overflow-y-auto no-scrollbar p-6">
                                             <div className="space-y-8">
-                                                {(selectedOrder.tickets || []).map((ticket: any, index: number) => (
+                                                {(selectedOrder.tickets || []).map((ticket: any, index: number) => {
+                                                    const checkedIn = isTicketCheckedIn(ticket);
+                                                    const attendeeName = ticket.attendee_name || ticket.attendeeName || ticket.name || selectedOrder.profiles?.display_name || selectedOrder.buyer_name || 'Guest';
+                                                    const attendeeEmail = ticket.attendee_email || ticket.attendeeEmail || ticket.email || selectedOrder.profiles?.email || selectedOrder.buyer_email || 'No email';
+                                                    const attendeePhone = ticket.attendee_phone || ticket.attendeePhone || ticket.phone || ticket.phone_number || selectedOrder.profiles?.phone_number || 'Not provided';
+
+                                                    return (
                                                     <div key={ticket.id} className="relative">
                                                         <div className="flex items-center justify-between mb-4">
                                                             <div className="flex items-center gap-2">
@@ -1025,14 +1121,14 @@ export default function DashboardOrders() {
                                                                     {index + 1}
                                                                 </div>
                                                                 <p className="text-[13px] font-bold text-black uppercase tracking-tight">
-                                                                    {ticket.event_tickets?.label || 'General Admission'}
+                                                                    {ticket.event_tickets?.label || ticket.label || 'Ticket'}
                                                                 </p>
                                                             </div>
                                                             <div className="flex items-center gap-2">
-                                                                {ticket.ticket_status?.toLowerCase() === 'used' ? (
+                                                                {checkedIn ? (
                                                                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-100/60">
                                                                         <Scan className="w-3 h-3 text-blue-500" />
-                                                                        <span className="text-[9px] font-bold text-blue-600 uppercase">Scanned</span>
+                                                                        <span className="text-[9px] font-bold text-blue-600 uppercase">Checked in</span>
                                                                     </div>
                                                                 ) : (
                                                                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-100/60">
@@ -1048,13 +1144,13 @@ export default function DashboardOrders() {
                                                                 <div>
                                                                     <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Full Name</p>
                                                                     <p className="text-[13px] font-semibold text-black leading-tight">
-                                                                        {selectedOrder.profiles?.display_name || 'Variance'}
+                                                                        {attendeeName}
                                                                     </p>
                                                                 </div>
                                                                 <div>
                                                                     <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Email Address</p>
                                                                     <p className="text-[11px] font-medium text-black truncate">
-                                                                        {selectedOrder.profiles?.email || selectedOrder.buyer_email || 'askvariance@gmail.com'}
+                                                                        {attendeeEmail}
                                                                     </p>
                                                                 </div>
                                                             </div>
@@ -1063,7 +1159,7 @@ export default function DashboardOrders() {
                                                                 <div>
                                                                     <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Phone Number</p>
                                                                     <p className="text-[11px] font-medium text-black">
-                                                                        {selectedOrder.profiles?.phone_number || 'Not provided'}
+                                                                        {attendeePhone}
                                                                     </p>
                                                                 </div>
                                                                 <div>
@@ -1093,7 +1189,8 @@ export default function DashboardOrders() {
                                                             <div className="absolute -bottom-4 left-3 w-[1px] h-4 bg-black/5" />
                                                         )}
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
 

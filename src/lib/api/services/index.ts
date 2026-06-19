@@ -160,8 +160,10 @@ export const $events = {
   delete: (eventId: string) =>
     api.delete<unknown>(`${EVENTS_PREFIX}/${eventId}`),
 
-  getForCurrentUser: () =>
-    api.get<{ events: unknown[]; total: number }>(`${EVENTS_PREFIX}/me/`),
+  getForCurrentUser: (params?: Record<string, string>) => {
+    const endpoint = EVENTS_PREFIX + '/me/' + (params ? `?${new URLSearchParams(params).toString()}` : '');
+    return api.get<{ events: unknown[]; total: number }>(endpoint);
+  },
 
   publish: (eventId: string, payload: { scheduled_date: string; reason?: string }) =>
     api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/publish`, payload),
@@ -227,6 +229,12 @@ export const $tickets = {
 
   walletPay: (eventId: string, data: unknown) =>
     api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/wallet-pay`, data),
+
+  validateForCheckIn: (eventId: string, ticketCode: string) =>
+    api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/tickets/validate?ticket_code=${encodeURIComponent(ticketCode)}`),
+
+  getOrdersForEvent: (eventId: string) =>
+    api.get<unknown>(`${TICKETS_PREFIX}/events/${eventId}/orders/list`),
 };
 
 // ============================================

@@ -13,8 +13,8 @@ export default defineConfig({
   publicDir: 'public',
   assetsInclude: ['**/*.svg', '**/*.png', '**/*.jpg', '**/*.jpeg', '**/*.gif'],
   server: {
-    port: 3000,
-    strictPort: true,
+    port: 3001,
+    strictPort: false,
     open: true
   },
   optimizeDeps: {

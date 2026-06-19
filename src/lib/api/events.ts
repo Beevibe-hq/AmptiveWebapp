@@ -1,4 +1,4 @@
-import { $events } from './services';
+import { $events, $tickets } from './services';
 import type { Venue } from './venues';
 
 export interface StandaloneEvent {
@@ -109,11 +109,13 @@ export interface EventListResponse {
 
 export async function listEvents(params?: {
   status?: string;
+  communityId?: string;
   page?: number;
   page_size?: number;
 }): Promise<StandaloneEvent[]> {
   const query: Record<string, string> = {};
   if (params?.status) query.status = params.status;
+  if (params?.communityId) query.communityId = params.communityId;
   if (params?.page) query.page = String(params.page);
   if (params?.page_size) query.page_size = String(params.page_size);
 
@@ -156,12 +158,17 @@ export async function deleteEvent(eventId: string): Promise<{ ok: boolean; error
   }
 }
 
-export async function getEventsByUser(userId?: string): Promise<StandaloneEvent[]> {
+export async function getEventsByUser(userId?: string, params?: { communityId?: string; page?: number; page_size?: number }): Promise<StandaloneEvent[]> {
+  const query: Record<string, string> = {};
+  if (params?.communityId) query.communityId = params.communityId;
+  if (params?.page) query.page = String(params.page);
+  if (params?.page_size) query.page_size = String(params.page_size);
+
   if (userId) {
-    const response = await $events.list({ userId });
+    const response = await $events.list({ userId, ...query });
     return (response?.events || []) as StandaloneEvent[];
   }
-  const response = await $events.getForCurrentUser();
+  const response = await $events.getForCurrentUser(Object.keys(query).length ? query : undefined);
   return (response?.events || []) as StandaloneEvent[];
 }
 
@@ -184,6 +191,15 @@ export async function publishEvent(eventId: string, scheduledDate: string): Prom
 }
 
 export async function getEventOrders(eventId: string): Promise<unknown[]> {
-  const response = await $events.getOrders(eventId);
-  return (response as { data?: unknown[] })?.data || (response as unknown[]) || [];
+  const response = await $tickets.getOrdersForEvent(eventId);
+  if (Array.isArray(response)) return response;
+  const payload = response as { data?: unknown[] | { orders?: unknown[]; purchases?: unknown[]; tickets?: unknown[] }; orders?: unknown[]; purchases?: unknown[]; tickets?: unknown[] };
+  if (Array.isArray(payload.orders)) return payload.orders;
+  if (Array.isArray(payload.purchases)) return payload.purchases;
+  if (Array.isArray(payload.tickets)) return payload.tickets;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.data?.orders)) return payload.data.orders;
+  if (Array.isArray(payload.data?.purchases)) return payload.data.purchases;
+  if (Array.isArray(payload.data?.tickets)) return payload.data.tickets;
+  return [];
 }

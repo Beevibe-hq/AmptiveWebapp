@@ -68,8 +68,7 @@ export default function VenueForm({
   const apiKey = import.meta.env.VITE_TOMTOM_API_KEY;
 
   const isPhysicalAdded = venueType === 'physical' && !!addressLine1;
-  const isVirtualAdded = venueType === 'virtual' && !!name && (!!platformNote || initialVenue?.venue_type === 'virtual');
-  const isVenueAdded = isPhysicalAdded || isVirtualAdded;
+  const isVenueAdded = isPhysicalAdded;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -335,6 +334,11 @@ export default function VenueForm({
                   Virtual
                 </button>
               </div>
+              {venueType === 'virtual' && (
+                <p className="mt-2.5 text-xs text-blue-600 font-semibold leading-relaxed px-1">
+                  Note: You will have to download the Amptive mobile app to be able to go live in your event.
+                </p>
+              )}
             </div>
 
             {venueType === 'physical' ? (
@@ -447,34 +451,22 @@ export default function VenueForm({
                   </div>
                 </div>
               </div>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Platform Note</label>
-                <textarea
-                  value={platformNote}
-                  onChange={(e) => setPlatformNote(e.target.value)}
-                  placeholder="e.g. Link will be sent before event"
-                  rows={3}
-                  className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 resize-none"
-                />
-                <p className="mt-2 text-xs text-gray-500">
-                  This note will be displayed to attendees (e.g., how to access the virtual event).
-                </p>
-              </div>
-            )}
+            ) : null}
           </>
         )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Description (Optional)</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief description of the venue"
-            rows={2}
-            className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 resize-none"
-          />
-        </div>
+        {venueType === 'physical' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Description (Optional)</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief description of the venue"
+              rows={2}
+              className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 resize-none"
+            />
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 flex-shrink-0">

@@ -4,9 +4,6 @@ import { Calendar, Search, Users } from 'lucide-react';
 import { getCommunity, type Community } from '@/lib/api/communities';
 import { listEvents, type StandaloneEvent } from '@/lib/api/events';
 
-const getEventCommunityId = (event: StandaloneEvent) =>
-  event.community?.community_id || (event as StandaloneEvent & { community_id?: string }).community_id;
-
 const formatEventDate = (value?: string | null) => {
   if (!value) return 'Date TBA';
   const date = new Date(value);
@@ -35,13 +32,13 @@ export default function CommunityEvents() {
       try {
         const [communityData, eventsData] = await Promise.all([
           getCommunity(id).catch(() => null),
-          listEvents({ page_size: 100 }).catch(() => []),
+          listEvents({ page_size: 100, communityId: id }).catch(() => []),
         ]);
 
         if (cancelled) return;
 
         setCommunity(communityData);
-        setEvents((eventsData || []).filter((event) => getEventCommunityId(event) === id));
+        setEvents(eventsData || []);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -74,9 +71,6 @@ export default function CommunityEvents() {
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
           <div className="absolute bottom-0 left-0 right-0">
             <div className="mx-auto w-full max-w-6xl px-4 pb-6 sm:px-6 sm:pb-8 lg:px-8">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-white/70">
-                Community
-              </p>
               <h1 className="max-w-3xl text-3xl font-bold tracking-tight text-white sm:text-5xl">
                 {community?.name || (loading ? 'Loading community' : 'Community')}
               </h1>

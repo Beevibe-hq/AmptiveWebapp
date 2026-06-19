@@ -82,7 +82,10 @@ export default function Explore() {
     const fetchEvents = async () => {
         setLoading(true);
         try {
-            const eventsData = await listEvents({ page_size: 100 });
+            const eventsData = await listEvents({
+                page_size: 100,
+                communityId: communityFilter !== 'all' ? communityFilter : undefined,
+            });
 
             let enriched: any[] = [];
             if (eventsData && eventsData.length > 0) {

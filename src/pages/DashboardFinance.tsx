@@ -1,20 +1,49 @@
 import React, { useEffect, useState } from 'react';
-import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2 } from 'lucide-react';
+import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSession } from '@/lib/api/auth';
-import { getEventOwnerPurchases, getBuyerProfiles } from '@/lib/api/finance';
+import {
+    createPaymentBankAccount,
+    deletePaymentBankAccount,
+    getBuyerProfiles,
+    getPaymentBankAccounts,
+    getPaymentBanks,
+    resolvePaymentBankAccount,
+    setDefaultPaymentBankAccount,
+    type PaymentBankAccount,
+} from '@/lib/api/finance';
 import { getEventsByUser } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 
+const BANK_BRANDS: Record<string, { label: string; className: string }> = {
+    '044': { label: 'A', className: 'bg-orange-50 text-orange-700' },
+    '063': { label: 'A', className: 'bg-orange-50 text-orange-700' },
+    '035A': { label: 'A', className: 'bg-purple-50 text-purple-700' },
+    '070': { label: 'F', className: 'bg-emerald-50 text-emerald-700' },
+    '011': { label: '1', className: 'bg-blue-50 text-blue-700' },
+    '214': { label: 'F', className: 'bg-indigo-50 text-indigo-700' },
+    '058': { label: 'GT', className: 'bg-orange-50 text-orange-700' },
+    '301': { label: 'J', className: 'bg-green-50 text-green-700' },
+    '082': { label: 'K', className: 'bg-red-50 text-red-700' },
+    '50211': { label: 'K', className: 'bg-violet-50 text-violet-700' },
+    '50515': { label: 'M', className: 'bg-sky-50 text-sky-700' },
+    '999992': { label: 'O', className: 'bg-emerald-50 text-emerald-700' },
+    '999991': { label: 'P', className: 'bg-pink-50 text-pink-700' },
+    '076': { label: 'P', className: 'bg-blue-50 text-blue-700' },
+    '221': { label: 'S', className: 'bg-blue-50 text-blue-700' },
+    '068': { label: 'SC', className: 'bg-emerald-50 text-emerald-700' },
+    '232': { label: 'S', className: 'bg-red-50 text-red-700' },
+    '033': { label: 'UBA', className: 'bg-red-50 text-red-700' },
+    '032': { label: 'U', className: 'bg-sky-50 text-sky-700' },
+    '215': { label: 'U', className: 'bg-green-50 text-green-700' },
+    '566': { label: 'V', className: 'bg-violet-50 text-violet-700' },
+    '035': { label: 'W', className: 'bg-purple-50 text-purple-700' },
+    '057': { label: 'Z', className: 'bg-red-50 text-red-700' },
+};
+
+const BANK_DETAILS_STORAGE_KEY = 'amptive_payout_bank_details';
+
 export default function DashboardFinance() {
-    const savedBankDetails = (() => {
-        try {
-            const stored = localStorage.getItem('amptive_payout_bank_details');
-            return stored ? JSON.parse(stored) : null;
-        } catch {
-            return null;
-        }
-    })();
 const savedWithdrawals = (() => {
         try {
             const stored = localStorage.getItem('amptive_withdrawal_requests');
@@ -39,6 +68,30 @@ const savedWithdrawals = (() => {
         </svg>
     );
 
+    const getBankBrand = (bankCode?: string, bankName?: string) => {
+        const directMatch = bankCode ? BANK_BRANDS[bankCode] : undefined;
+        if (directMatch) return directMatch;
+        const matchedBank = banks.find(bank => bank.name === bankName);
+        if (matchedBank && BANK_BRANDS[matchedBank.code]) return BANK_BRANDS[matchedBank.code];
+        const initials = (bankName || 'Bank')
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map(part => part[0])
+            .join('')
+            .toUpperCase();
+        return { label: initials || 'B', className: 'bg-gray-50 text-gray-500' };
+    };
+
+    const BankLogo = ({ bankCode, bankName, className = 'h-10 w-10 rounded-xl' }: { bankCode?: string; bankName?: string; className?: string }) => {
+        const brand = getBankBrand(bankCode, bankName);
+        return (
+            <div className={`${className} ${brand.className} shrink-0 overflow-hidden border border-black/5 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]`}>
+                <span className="text-[11px] font-black tracking-tight">{brand.label}</span>
+            </div>
+        );
+    };
+
     const [activeTab, setActiveTab] = useState<'payout' | 'settings' | 'receipt'>('payout');
     const [activeSettingsTab, setActiveSettingsTab] = useState<'payout-methods' | 'billing' | 'tax'>('payout-methods');
     const [showBalances, setShowBalances] = useState(true);
@@ -51,10 +104,45 @@ const savedWithdrawals = (() => {
     const [historyDateFilter, setHistoryDateFilter] = useState('All');
     const [showFilterChips, setShowFilterChips] = useState(false);
     // Bank Details State
+    const emptyBankDetails = {
+        id: '',
+        bankCode: '',
+        bankName: '',
+        accountNumber: '',
+        accountHolder: '',
+        backendConfirmed: false
+    };
+
+    const toBankDetails = (account: PaymentBankAccount | null | undefined) => {
+        if (!account) return { ...emptyBankDetails };
+        return {
+            id: account.id || account.bank_account_id || '',
+            bankCode: account.bank_code || '',
+            bankName: account.bank_name || '',
+            accountNumber: account.account_number || '',
+            accountHolder: account.account_name || '',
+            backendConfirmed: true
+        };
+    };
+
+    const readConfirmedBankDetails = () => {
+        try {
+            const stored = localStorage.getItem(BANK_DETAILS_STORAGE_KEY);
+            if (!stored) return null;
+            const parsed = JSON.parse(stored);
+            if (!parsed?.backendConfirmed || !parsed?.bankName || !parsed?.accountNumber) return null;
+            return {
+                ...emptyBankDetails,
+                ...parsed,
+                backendConfirmed: true
+            };
+        } catch {
+            return null;
+        }
+    };
+
     const [bankDetails, setBankDetails] = useState({
-        bankName: savedBankDetails?.bankName || '',
-        accountNumber: savedBankDetails?.accountNumber || '',
-        accountHolder: savedBankDetails?.accountHolder || ''
+        ...(readConfirmedBankDetails() || emptyBankDetails)
     });
     const [isEditingBank, setIsEditingBank] = useState(false);
     const [tempBankDetails, setTempBankDetails] = useState({ ...bankDetails });
@@ -65,11 +153,7 @@ const savedWithdrawals = (() => {
     const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
     const [withdrawals, setWithdrawals] = useState<any[]>(Array.isArray(savedWithdrawals) ? savedWithdrawals : []);
 
-    // Paystack API Key
-    const PAYSTACK_SECRET_KEY = import.meta.env.VITE_PAYSTACK_SECRET_KEY || '';
-    const PAYSTACK_BASE_URL = 'https://api.paystack.co';
-
-    // Bank Data State (Initialized with standard Nigerian bank codes)
+    // Bank Data State (backend list replaces this fallback when available)
     const [banks, setBanks] = useState<{name: string, code: string}[]>([
         { name: 'Access Bank', code: '044' },
         { name: 'Access Bank (Diamond)', code: '063' },
@@ -96,69 +180,176 @@ const savedWithdrawals = (() => {
         { name: 'Zenith Bank', code: '057' }
     ]);
     const [isLoadingBanks, setIsLoadingBanks] = useState(false);
+    const [isSavingBank, setIsSavingBank] = useState(false);
+    const [isDeletingBank, setIsDeletingBank] = useState(false);
+    const [bankSaveError, setBankSaveError] = useState('');
+    const [bankDeleteError, setBankDeleteError] = useState('');
+    const [accountResolveError, setAccountResolveError] = useState('');
     const hasBankAccount = Boolean(bankDetails.bankName && bankDetails.accountNumber);
 
-    const saveBankDetails = () => {
-        setBankDetails(tempBankDetails);
-        localStorage.setItem('amptive_payout_bank_details', JSON.stringify(tempBankDetails));
-        setIsEditingBank(false);
+    const saveBankDetails = async () => {
+        const selectedBank = banks.find(b => b.name === tempBankDetails.bankName);
+        if (!selectedBank || tempBankDetails.accountNumber.length !== 10) return;
+
+        setIsSavingBank(true);
+        setBankSaveError('');
+        setAccountResolveError('');
+        try {
+            const createdAccount = await createPaymentBankAccount({
+                bank_code: selectedBank.code,
+                bank_name: selectedBank.name,
+                account_number: tempBankDetails.accountNumber,
+                account_name: tempBankDetails.accountHolder || undefined,
+            });
+
+            if (!createdAccount) {
+                setBankSaveError('Could not save this bank account. Please try again.');
+                return;
+            }
+
+            const nextBankDetails = toBankDetails(createdAccount);
+            setBankDetails(nextBankDetails);
+            setTempBankDetails(nextBankDetails);
+            localStorage.setItem(BANK_DETAILS_STORAGE_KEY, JSON.stringify(nextBankDetails));
+            if (nextBankDetails.id) {
+                await setDefaultPaymentBankAccount(nextBankDetails.id);
+            }
+            await loadBankAccounts();
+            setIsEditingBank(false);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '';
+            if (message.toLowerCase().includes('already been added')) {
+                const loaded = await loadBankAccounts();
+                if (loaded) {
+                    setBankSaveError('');
+                    setIsEditingBank(false);
+                    return;
+                }
+                const existingAccount = {
+                    ...tempBankDetails,
+                    bankCode: selectedBank.code,
+                    bankName: selectedBank.name,
+                    backendConfirmed: true
+                };
+                setBankDetails(existingAccount);
+                setTempBankDetails(existingAccount);
+                localStorage.setItem(BANK_DETAILS_STORAGE_KEY, JSON.stringify(existingAccount));
+                setBankSaveError('');
+                setIsEditingBank(false);
+                return;
+            }
+            setBankSaveError(message || 'Could not save this bank account. Please try again.');
+        } finally {
+            setIsSavingBank(false);
+        }
     };
 
-    // Fetch Paystack Banks
-    useEffect(() => {
-        const fetchBanks = async () => {
-            if (!PAYSTACK_SECRET_KEY) return;
-            setIsLoadingBanks(true);
-            try {
-                const response = await fetch(`${PAYSTACK_BASE_URL}/bank`, {
-                    headers: { 'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}` }
-                });
-                const result = await response.json();
-                if (result.status && result.data) {
-                    setBanks(result.data.map((b: any) => ({ name: b.name, code: b.code })));
-                } else {
-                    console.warn('Paystack API Error:', result.message);
+    const loadBankAccounts = async () => {
+        try {
+            const accounts = await getPaymentBankAccounts();
+            const defaultAccount = accounts.find(account => account.is_default) || accounts[0];
+            if (defaultAccount) {
+                const nextBankDetails = toBankDetails(defaultAccount);
+                setBankDetails(nextBankDetails);
+                setTempBankDetails(nextBankDetails);
+                setBankDeleteError('');
+                localStorage.setItem(BANK_DETAILS_STORAGE_KEY, JSON.stringify(nextBankDetails));
+                return true;
+            } else {
+                const savedAccount = readConfirmedBankDetails();
+                if (savedAccount) {
+                    setBankDetails(savedAccount);
+                    setTempBankDetails(savedAccount);
+                    return true;
                 }
-            } catch (error) {
-                console.error('Error fetching banks (possible CORS/Auth issue):', error);
-                // Fallback list is already initialized
-            } finally {
-                setIsLoadingBanks(false);
+                setBankDetails({ ...emptyBankDetails });
+                setTempBankDetails({ ...emptyBankDetails });
+                setBankDeleteError('');
+                localStorage.removeItem(BANK_DETAILS_STORAGE_KEY);
+                return false;
             }
-        };
-        fetchBanks();
-    }, [PAYSTACK_SECRET_KEY]);
+        } catch (error) {
+            console.error('Error loading bank accounts:', error);
+            setBankDetails({ ...emptyBankDetails });
+            setTempBankDetails({ ...emptyBankDetails });
+            return false;
+        }
+    };
 
-    // Real Account Lookup via Paystack
+    const fetchBanks = async () => {
+        setIsLoadingBanks(true);
+        try {
+            const backendBanks = await getPaymentBanks();
+            if (backendBanks.length > 0) setBanks(backendBanks.map((b) => ({ name: b.name, code: b.code })));
+        } catch (error) {
+            console.error('Error fetching banks:', error);
+        } finally {
+            setIsLoadingBanks(false);
+        }
+    };
+
+    const openBankEditor = (details = hasBankAccount ? { ...bankDetails } : { ...emptyBankDetails }) => {
+        setTempBankDetails(details);
+        setBankSaveError('');
+        setBankDeleteError('');
+        setAccountResolveError('');
+        setIsEditingBank(true);
+        fetchBanks();
+    };
+
+    const deleteBankDetails = async () => {
+        if (!hasBankAccount || isDeletingBank) return;
+
+        setIsDeletingBank(true);
+        setBankDeleteError('');
+        try {
+            if (bankDetails.id) {
+                await deletePaymentBankAccount(bankDetails.id);
+            }
+            setBankDetails({ ...emptyBankDetails });
+            setTempBankDetails({ ...emptyBankDetails });
+            localStorage.removeItem(BANK_DETAILS_STORAGE_KEY);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '';
+            setBankDeleteError(message || 'Could not delete this bank account. Please try again.');
+        } finally {
+            setIsDeletingBank(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchBanks();
+    }, []);
+
     useEffect(() => {
         if (!isEditingBank) return;
         
         const { accountNumber, bankName } = tempBankDetails;
         const selectedBank = banks.find(b => b.name === bankName);
 
-        if (accountNumber.length === 10 && selectedBank && PAYSTACK_SECRET_KEY) {
+        if (accountNumber.length === 10 && selectedBank) {
             setIsCheckingAccount(true);
+            setAccountResolveError('');
             
             const resolveAccount = async () => {
                 try {
-                    const response = await fetch(`${PAYSTACK_BASE_URL}/bank/resolve?account_number=${accountNumber}&bank_code=${selectedBank.code}`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
+                    const result = await resolvePaymentBankAccount({
+                        account_number: accountNumber,
+                        bank_code: selectedBank.code,
                     });
-                    const result = await response.json();
-                    if (result.status && result.data) {
-                        setTempBankDetails(prev => ({ ...prev, accountHolder: result.data.account_name }));
+                    const accountName = result?.account_name || '';
+
+                    if (accountName) {
+                        setTempBankDetails(prev => ({ ...prev, bankCode: selectedBank.code, accountHolder: accountName }));
+                        setAccountResolveError('');
                     } else {
-                        const errorMsg = result.message || 'Unable to resolve';
-                        setTempBankDetails(prev => ({ ...prev, accountHolder: errorMsg }));
-                        console.error('Paystack Resolution Error:', result);
+                        setTempBankDetails(prev => ({ ...prev, bankCode: selectedBank.code, accountHolder: '' }));
+                        setAccountResolveError('Unable to resolve account. Please confirm the bank and account number, then try again.');
                     }
                 } catch (error: any) {
                     console.error('Error resolving account:', error);
-                    setTempBankDetails(prev => ({ ...prev, accountHolder: 'Check console or connection' }));
+                    setTempBankDetails(prev => ({ ...prev, bankCode: selectedBank.code, accountHolder: '' }));
+                    setAccountResolveError('Unable to resolve account. Please confirm the bank and account number, then try again.');
                 } finally {
                     setIsCheckingAccount(false);
                 }
@@ -167,9 +358,10 @@ const savedWithdrawals = (() => {
             const timer = setTimeout(resolveAccount, 1000); // 1s debounce
             return () => clearTimeout(timer);
         } else {
-            setTempBankDetails(prev => ({ ...prev, accountHolder: '' }));
+            setTempBankDetails(prev => ({ ...prev, bankCode: selectedBank?.code || '', accountHolder: '' }));
+            setAccountResolveError('');
         }
-    }, [tempBankDetails.accountNumber, tempBankDetails.bankName, isEditingBank, banks, PAYSTACK_SECRET_KEY]);
+    }, [tempBankDetails.accountNumber, tempBankDetails.bankName, isEditingBank, banks]);
 
     const fetchFinanceData = async () => {
         try {
@@ -177,11 +369,10 @@ const savedWithdrawals = (() => {
             const session = await getSession();
             if (!session?.user) return;
 
-            // 1. Fetch ticket purchases for events owned by this user
-            const purchasesData = await getEventOwnerPurchases();
-            const financeRows = (purchasesData || []).length > 0
-                ? purchasesData || []
-                : await buildTicketSalesFallback();
+            await loadBankAccounts();
+
+            // 1. Build ticket purchase rows from the event/ticket APIs that exist today.
+            const financeRows = await buildTicketSalesFallback();
             setPurchases(financeRows);
 
             // 2. Fetch buyer profiles for avatars
@@ -677,10 +868,7 @@ const savedWithdrawals = (() => {
                                                 <h2 className="text-lg font-bold text-black">Bank Accounts</h2>
                                             </div>
                                             <button 
-                                                onClick={() => {
-                                                    setTempBankDetails(hasBankAccount ? { ...bankDetails } : { bankName: '', accountNumber: '', accountHolder: '' });
-                                                    setIsEditingBank(true);
-                                                }}
+                                                onClick={() => openBankEditor()}
                                                 className="p-1 -mr-1 text-black/40 hover:text-black transition-colors"
                                                 title="Add Account"
                                             >
@@ -692,19 +880,24 @@ const savedWithdrawals = (() => {
                                             {hasBankAccount ? (
                                                 <div className="w-full max-w-[340px] bg-white rounded-2xl border border-black/5 shadow-sm p-5 flex flex-col transition-all duration-300">
                                                     <div className="flex justify-between items-start mb-4">
-                                                        <div className="w-10 h-10 bg-gray-50 flex items-center justify-center rounded-xl border border-black/5 shrink-0 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
-                                                            <Building2 className="w-5 h-5 text-black/30" />
+                                                        <BankLogo bankCode={bankDetails.bankCode} bankName={bankDetails.bankName} />
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={deleteBankDetails}
+                                                                disabled={isDeletingBank}
+                                                                className="w-9 h-9 rounded-xl border border-black/5 flex items-center justify-center text-black/40 hover:bg-red-50 hover:text-red-600 transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                title="Delete Account"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => openBankEditor({ ...bankDetails })}
+                                                                className="w-9 h-9 rounded-xl border border-black/5 flex items-center justify-center text-black/60 hover:bg-black/5 hover:text-black transition-colors shrink-0"
+                                                                title="Edit Account"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                                            </button>
                                                         </div>
-                                                        <button
-                                                            onClick={() => {
-                                                                setTempBankDetails({ ...bankDetails });
-                                                                setIsEditingBank(true);
-                                                            }}
-                                                            className="w-9 h-9 rounded-xl border border-black/5 flex items-center justify-center text-black/60 hover:bg-black/5 hover:text-black transition-colors shrink-0"
-                                                            title="Edit Account"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                                        </button>
                                                     </div>
 
                                                     <div className="mb-6">
@@ -721,6 +914,11 @@ const savedWithdrawals = (() => {
                                                             Active
                                                         </span>
                                                     </div>
+                                                    {bankDeleteError && (
+                                                        <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-[12px] font-medium text-red-600">
+                                                            {bankDeleteError}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <div className="py-8 flex flex-col items-center justify-center text-center">
@@ -732,10 +930,7 @@ const savedWithdrawals = (() => {
                                                         Add a payout account when you are ready to receive withdrawals.
                                                     </p>
                                                     <button
-                                                        onClick={() => {
-                                                            setTempBankDetails({ bankName: '', accountNumber: '', accountHolder: '' });
-                                                            setIsEditingBank(true);
-                                                        }}
+                                                        onClick={() => openBankEditor({ ...emptyBankDetails })}
                                                         className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-black px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
                                                     >
                                                         <Plus className="w-4 h-4" />
@@ -928,9 +1123,7 @@ const savedWithdrawals = (() => {
                                             <p className="text-[13px] font-medium text-gray-700 ml-1">Payout account</p>
                                             {hasBankAccount ? (
                                                 <div className="rounded-2xl border border-black/5 p-4 flex items-start gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-gray-50 border border-black/5 flex items-center justify-center shrink-0">
-                                                        <Building2 className="w-5 h-5 text-black/25" />
-                                                    </div>
+                                                    <BankLogo bankCode={bankDetails.bankCode} bankName={bankDetails.bankName} />
                                                     <div className="min-w-0 flex-1">
                                                         <p className="text-[14px] font-semibold text-black truncate">{bankDetails.bankName}</p>
                                                         <p className="mt-1 text-[12px] font-medium text-black/45 truncate">
@@ -948,8 +1141,7 @@ const savedWithdrawals = (() => {
                                                             setIsWithdrawOpen(false);
                                                             setActiveTab('settings');
                                                             setActiveSettingsTab('payout-methods');
-                                                            setTempBankDetails({ bankName: '', accountNumber: '', accountHolder: '' });
-                                                            setIsEditingBank(true);
+                                                            openBankEditor({ ...emptyBankDetails });
                                                         }}
                                                         className="mt-4 inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
                                                     >
@@ -1301,10 +1493,12 @@ const savedWithdrawals = (() => {
                                         value={tempBankDetails.accountNumber}
                                         onChange={(e) => {
                                             const val = e.target.value.replace(/\D/g, '');
+                                            setAccountResolveError('');
                                             setTempBankDetails({ 
                                                 ...tempBankDetails, 
                                                 accountNumber: val,
                                                 bankName: '',
+                                                bankCode: '',
                                                 accountHolder: ''
                                             });
                                         }}
@@ -1317,7 +1511,16 @@ const savedWithdrawals = (() => {
                                     <label className="block text-[13px] font-medium text-gray-700 ml-1">Bank Name</label>
                                         <select 
                                             value={tempBankDetails.bankName}
-                                            onChange={(e) => setTempBankDetails({ ...tempBankDetails, bankName: e.target.value })}
+                                            onChange={(e) => {
+                                                const selectedBank = banks.find(bank => bank.name === e.target.value);
+                                                setAccountResolveError('');
+                                                setTempBankDetails({
+                                                    ...tempBankDetails,
+                                                    bankName: e.target.value,
+                                                    bankCode: selectedBank?.code || '',
+                                                    accountHolder: ''
+                                                });
+                                            }}
                                             className="block w-full rounded-2xl px-3.5 py-3 text-base font-medium text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 appearance-none cursor-pointer disabled:opacity-50"
                                             disabled={isLoadingBanks}
                                         >
@@ -1326,6 +1529,15 @@ const savedWithdrawals = (() => {
                                                 <option key={`${bank.code}-${bank.name}`} value={bank.name}>{bank.name}</option>
                                             ))}
                                         </select>
+                                        {tempBankDetails.bankName && (
+                                            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-black/5 bg-white p-3">
+                                                <BankLogo bankCode={tempBankDetails.bankCode} bankName={tempBankDetails.bankName} className="h-9 w-9 rounded-xl" />
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-[13px] font-semibold text-black">{tempBankDetails.bankName}</p>
+                                                    <p className="mt-0.5 text-[11px] font-medium text-black/40">Selected bank</p>
+                                                </div>
+                                            </div>
+                                        )}
                                 </div>
 
                                 <div className="space-y-1.5">
@@ -1348,6 +1560,11 @@ const savedWithdrawals = (() => {
                                         className={`block w-full rounded-2xl px-3.5 py-3 text-base font-medium transition-all duration-200 shadow-sm ${isCheckingAccount ? 'bg-black/2' : 'bg-black/5'} ${tempBankDetails.accountHolder ? 'text-gray-900' : 'text-gray-400'}`}
                                         placeholder={isCheckingAccount ? "Resolving name..." : "Account holder name"}
                                     />
+                                    {accountResolveError && (
+                                        <p className="ml-1 text-[12px] font-medium leading-relaxed text-red-500">
+                                            {accountResolveError}
+                                        </p>
+                                    )}
                                 </div>
                                 
                                 {/* Info Tip */}
@@ -1356,6 +1573,12 @@ const savedWithdrawals = (() => {
                                         Note: The account holder name is automatically retrieved from your bank's records to ensure accuracy.
                                     </p>
                                 </div>
+
+                                {bankSaveError && (
+                                    <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
+                                        {bankSaveError}
+                                    </p>
+                                )}
                             </div>
 
                             {/* Sticky Footer */}
@@ -1368,10 +1591,10 @@ const savedWithdrawals = (() => {
                                 </button>
                                 <button 
                                     onClick={saveBankDetails}
-                                    disabled={!tempBankDetails.bankName || tempBankDetails.accountNumber.length !== 10}
+                                    disabled={isSavingBank || !tempBankDetails.bankName || tempBankDetails.accountNumber.length !== 10}
                                     className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
                                 >
-                                    Save Changes
+                                    {isSavingBank ? 'Saving...' : 'Save Changes'}
                                 </button>
                             </div>
                         </motion.div>

@@ -580,8 +580,22 @@ const EventDetail = () => {
                               </p>
                             </div>
                           )}
-                          {event.venue.venue_type === 'virtual' && event.venue.platform_note && (
-                            <p className="text-sm text-gray-500 mt-1">{event.venue.platform_note}</p>
+                          {event.venue.venue_type === 'virtual' && (
+                            <div className="mt-2 max-w-md space-y-2">
+                              <p className="text-sm leading-6 text-gray-500">
+                                This event happens inside the Amptive app. Download the app before the event starts so you can join smoothly, access the live event, and use your ticket from your account.
+                              </p>
+                              {event.venue.platform_note && (
+                                <p className="text-sm leading-6 text-gray-500">{event.venue.platform_note}</p>
+                              )}
+                              <Link
+                                to="/download"
+                                className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-700"
+                              >
+                                Download Amptive app
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </Link>
+                            </div>
                           )}
                         </>
                       ) : (
