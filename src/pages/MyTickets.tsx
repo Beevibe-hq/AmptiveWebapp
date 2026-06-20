@@ -2,12 +2,13 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Ticket as TicketIcon, X, ChevronDown, User } from 'lucide-react';
+import { Calendar, MapPin, Ticket as TicketIcon, X, ChevronDown, User, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getPurchasesByUser, type TicketPurchase } from '@/lib/api/purchases';
+import { getPurchasesByUser, transferTicket, type TicketPurchase } from '@/lib/api/purchases';
 import { getEvent } from '@/lib/api/events';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import { TICKET_THEMES } from '@/lib/constants';
+import { toastError, toastSuccess } from '@/lib/ui/toast';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 
 const CARD_PLACEHOLDER_GRADIENTS = [
@@ -24,6 +25,23 @@ interface GroupedEvent {
     event: TicketPurchase['events'];
     start_time: string | undefined;
 }
+
+type TicketDetailOverride = {
+    attendee_name?: string;
+    attendee_email?: string;
+    attendee_phone?: string;
+};
+
+const TICKET_DETAIL_OVERRIDES_KEY = 'amptive.my_tickets.detail_overrides';
+
+const readTicketDetailOverrides = (): Record<string, TicketDetailOverride> => {
+    try {
+        const stored = localStorage.getItem(TICKET_DETAIL_OVERRIDES_KEY);
+        return stored ? JSON.parse(stored) : {};
+    } catch {
+        return {};
+    }
+};
 
 const formatCompactPrice = (price: number, currency: string = 'NGN'): string => {
     if (price === 0) return 'Free';
@@ -84,6 +102,12 @@ const MyTickets = () => {
     const [expandedCard, setExpandedCard] = useState<string | null>(null);
     const [expandedQR, setExpandedQR] = useState<string | null>(null);
     const [viewingTicketCard, setViewingTicketCard] = useState<{group: GroupedEvent, ticket: TicketPurchase} | null>(null);
+    const [editingTicket, setEditingTicket] = useState<TicketPurchase | null>(null);
+    const [transferringTicket, setTransferringTicket] = useState<TicketPurchase | null>(null);
+    const [editForm, setEditForm] = useState({ name: '', email: '', phone: '' });
+    const [transferEmail, setTransferEmail] = useState('');
+    const [transferLoading, setTransferLoading] = useState(false);
+    const [ticketOverrides, setTicketOverrides] = useState<Record<string, TicketDetailOverride>>(() => readTicketDetailOverrides());
     const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
     const [eventDetails, setEventDetails] = useState<Record<string, any>>({});
 
@@ -102,10 +126,77 @@ const MyTickets = () => {
         }
     };
 
+    const ticketsWithOverrides = useMemo(() => {
+        return tickets.map(ticket => ({
+            ...ticket,
+            ...(ticketOverrides[ticket.id] || {}),
+        }));
+    }, [tickets, ticketOverrides]);
+
+    const openEditTicket = (ticket: TicketPurchase) => {
+        setEditingTicket(ticket);
+        setEditForm({
+            name: ticket.attendee_name || '',
+            email: ticket.attendee_email || '',
+            phone: (ticket as TicketPurchase & { attendee_phone?: string }).attendee_phone || '',
+        });
+    };
+
+    const saveTicketDetails = () => {
+        if (!editingTicket) return;
+        const nextOverrides = {
+            ...ticketOverrides,
+            [editingTicket.id]: {
+                attendee_name: editForm.name.trim(),
+                attendee_email: editForm.email.trim(),
+                attendee_phone: editForm.phone.trim(),
+            },
+        };
+        setTicketOverrides(nextOverrides);
+        localStorage.setItem(TICKET_DETAIL_OVERRIDES_KEY, JSON.stringify(nextOverrides));
+        setViewingTicketCard(prev => {
+            if (!prev || prev.ticket.id !== editingTicket.id) return prev;
+            return {
+                ...prev,
+                ticket: {
+                    ...prev.ticket,
+                    ...nextOverrides[editingTicket.id],
+                },
+            };
+        });
+        setEditingTicket(null);
+    };
+
+    const openTransferTicket = (ticket: TicketPurchase) => {
+        setTransferringTicket(ticket);
+        setTransferEmail('');
+    };
+
+    const submitTransferTicket = async () => {
+        if (!transferringTicket || transferLoading) return;
+        const email = transferEmail.trim();
+        const ticketCode = transferringTicket.ticket_code || transferringTicket.id;
+        if (!email) {
+            toastError('Enter the recipient email.');
+            return;
+        }
+        setTransferLoading(true);
+        const result = await transferTicket(ticketCode, email);
+        setTransferLoading(false);
+        if (!result.ok) {
+            toastError(result.error || 'We could not transfer this ticket.');
+            return;
+        }
+        toastSuccess('Ticket transferred successfully.');
+        setTransferringTicket(null);
+        setViewingTicketCard(null);
+        await fetchTickets();
+    };
+
     useEffect(() => {
         if (tickets.length === 0) return;
         const fetchMissingEventDetails = async () => {
-            const uniqueEventIds = [...new Set(tickets.map(t => t.event_id))];
+        const uniqueEventIds = [...new Set(ticketsWithOverrides.map(t => t.event_id))];
             for (const eventId of uniqueEventIds) {
                 if (eventDetails[eventId]) continue;
                 try {
@@ -122,14 +213,14 @@ const MyTickets = () => {
             }
         };
         fetchMissingEventDetails();
-    }, [tickets, eventDetails]);
+    }, [ticketsWithOverrides, eventDetails]);
 
     const now = new Date();
 
     // Group tickets by event_id
     const groupedEvents: GroupedEvent[] = useMemo(() => {
         const map = new Map<string, TicketPurchase[]>();
-        tickets.forEach((ticket) => {
+        ticketsWithOverrides.forEach((ticket) => {
             const key = ticket.event_id;
             if (!map.has(key)) map.set(key, []);
             map.get(key)!.push(ticket);
@@ -155,7 +246,7 @@ const MyTickets = () => {
                 start_time: mergedEvent.start_time || undefined,
             };
         });
-    }, [tickets, eventDetails]);
+    }, [ticketsWithOverrides, eventDetails]);
 
     const filteredGroups = groupedEvents
         .filter((group) => {
@@ -349,18 +440,43 @@ const MyTickets = () => {
                                     </button>
 
                                     {ticketCount === 1 && (
-                                        <button
-                                            type="button"
-                                            className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                setViewingTicketCard({ group, ticket: firstTicket });
-                                            }}
-                                        >
-                                            <TicketIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                                            <span>View Pass</span>
-                                        </button>
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    setViewingTicketCard({ group, ticket: firstTicket });
+                                                }}
+                                            >
+                                                <TicketIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                                <span>View Pass</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    openEditTicket(firstTicket);
+                                                }}
+                                            >
+                                                <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                                <span>Edit</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.10em] text-gray-900 transition hover:border-black/40 hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black/20 focus:ring-offset-2"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    openTransferTicket(firstTicket);
+                                                }}
+                                            >
+                                                <span>Transfer</span>
+                                            </button>
+                                        </>
                                     )}
 
                                     <button
@@ -444,7 +560,7 @@ const MyTickets = () => {
                                                     className="rounded-xl border border-black/5 bg-white/60 backdrop-blur-sm overflow-hidden"
                                                 >
                                                     {/* Ticket row header */}
-                                                    <div className="flex items-center gap-3 px-3.5 py-3 sm:px-4 sm:py-3.5">
+                                                    <div className="flex flex-wrap items-start gap-3 px-3.5 py-3 sm:flex-nowrap sm:items-center sm:px-4 sm:py-3.5">
                                                         {/* Number circle */}
                                                         <div className={`flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-black/5 text-gray-700'}`}>
                                                             {ticketIdx + 1}
@@ -455,22 +571,27 @@ const MyTickets = () => {
                                                             <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate">
                                                                 {ticket.attendee_name || 'Attendee'}
                                                             </p>
-                                                            <div className="flex items-center gap-2 mt-0.5">
+                                                            <div className="mt-0.5 flex items-center gap-2">
                                                                 <span className="text-[9px] sm:text-[10px] font-mono text-gray-400 tracking-wider">
                                                                     #{ticket.ticket_code || ticket.id.slice(0, 10)}
                                                                 </span>
-                                                                <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] sm:text-[9px] font-semibold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                                                <span className={`hidden sm:inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
                                                                     <span className={`w-1.5 h-1.5 rounded-full ${theme.gradient} border border-black/10 flex-shrink-0`} />
                                                                     {TICKET_THEMES[themeName]?.name || 'Silver'}
                                                                 </span>
                                                             </div>
                                                         </div>
 
+                                                        <span className={`ml-auto inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold sm:hidden ${isPast ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${theme.gradient} border border-black/10 flex-shrink-0`} />
+                                                            {TICKET_THEMES[themeName]?.name || 'Silver'}
+                                                        </span>
+
                                                         {/* QR toggle & View Pass buttons */}
-                                                        <div className="flex-shrink-0 flex items-center gap-2">
+                                                        <div className="flex w-full flex-wrap items-center gap-2 pt-1 sm:w-auto sm:flex-shrink-0 sm:flex-nowrap sm:pt-0">
                                                             <button
                                                                 type="button"
-                                                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition ${isThisQROpen ? 'bg-black text-white' : 'bg-black/5 text-gray-600 hover:bg-black/10'}`}
+                                                                className={`inline-flex flex-1 items-center justify-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:flex-none sm:text-[10px] font-semibold uppercase tracking-wider transition ${isThisQROpen ? 'bg-black text-white' : 'bg-black/5 text-gray-600 hover:bg-black/10'}`}
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     setExpandedQR(isThisQROpen ? null : ticket.id);
@@ -481,13 +602,33 @@ const MyTickets = () => {
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition bg-black/5 text-gray-600 hover:bg-black hover:text-white"
+                                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:flex-none sm:text-[10px] font-semibold uppercase tracking-wider transition bg-black/5 text-gray-600 hover:bg-black hover:text-white"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     setViewingTicketCard({ group, ticket });
                                                                 }}
                                                             >
                                                                 Pass
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:flex-none sm:text-[10px] font-semibold uppercase tracking-wider transition bg-black/5 text-gray-600 hover:bg-black hover:text-white"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    openEditTicket(ticket);
+                                                                }}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-full px-2.5 py-1.5 text-[9px] sm:flex-none sm:text-[10px] font-semibold uppercase tracking-wider transition bg-black/5 text-gray-600 hover:bg-black hover:text-white"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    openTransferTicket(ticket);
+                                                                }}
+                                                            >
+                                                                Transfer
                                                             </button>
                                                         </div>
                                                     </div>
@@ -617,6 +758,169 @@ const MyTickets = () => {
                 )}
             </div>
 
+            {/* Edit Ticket Details Modal */}
+            <AnimatePresence>
+                {editingTicket && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" onClick={() => setEditingTicket(null)}>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18 }}
+                            className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 18 }}
+                            transition={{ type: 'spring', damping: 28, stiffness: 340 }}
+                            className="relative z-10 w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="mb-6 flex items-start justify-between gap-4">
+                                <div>
+                                    <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">Ticket details</p>
+                                    <h2 className="mt-1 text-[24px] font-semibold leading-tight text-black">Edit attendee</h2>
+                                    <p className="mt-1 text-sm font-medium text-black/40">
+                                        {editingTicket.ticket_code || editingTicket.id.slice(0, 10)}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingTicket(null)}
+                                    className="flex h-9 w-9 items-center justify-center rounded-full bg-black/[0.04] text-black/50 transition hover:bg-black/10 hover:text-black"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                <label className="block">
+                                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-black/40">Full name</span>
+                                    <input
+                                        value={editForm.name}
+                                        onChange={(event) => setEditForm(prev => ({ ...prev, name: event.target.value }))}
+                                        placeholder="Attendee name"
+                                        className="h-12 w-full rounded-2xl border border-black/10 bg-black/[0.03] px-4 text-sm font-medium text-black outline-none transition focus:border-black focus:bg-white"
+                                    />
+                                </label>
+
+                                <label className="block">
+                                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-black/40">Email</span>
+                                    <input
+                                        type="email"
+                                        value={editForm.email}
+                                        onChange={(event) => setEditForm(prev => ({ ...prev, email: event.target.value }))}
+                                        placeholder="name@example.com"
+                                        className="h-12 w-full rounded-2xl border border-black/10 bg-black/[0.03] px-4 text-sm font-medium text-black outline-none transition focus:border-black focus:bg-white"
+                                    />
+                                </label>
+
+                                <label className="block">
+                                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-black/40">Phone</span>
+                                    <input
+                                        value={editForm.phone}
+                                        onChange={(event) => setEditForm(prev => ({ ...prev, phone: event.target.value }))}
+                                        placeholder="Optional"
+                                        className="h-12 w-full rounded-2xl border border-black/10 bg-black/[0.03] px-4 text-sm font-medium text-black outline-none transition focus:border-black focus:bg-white"
+                                    />
+                                </label>
+                            </div>
+
+                            <div className="mt-7 flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingTicket(null)}
+                                    className="h-11 rounded-full px-5 text-sm font-semibold text-black/55 transition hover:bg-black/[0.04] hover:text-black"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={saveTicketDetails}
+                                    disabled={!editForm.name.trim()}
+                                    className="h-11 rounded-full bg-black px-5 text-sm font-semibold text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    Save changes
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Transfer Ticket Modal */}
+            <AnimatePresence>
+                {transferringTicket && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" onClick={() => setTransferringTicket(null)}>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18 }}
+                            className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 18 }}
+                            transition={{ type: 'spring', damping: 28, stiffness: 340 }}
+                            className="relative z-10 w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="mb-6 flex items-start justify-between gap-4">
+                                <div>
+                                    <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">Transfer ticket</p>
+                                    <h2 className="mt-1 text-[24px] font-semibold leading-tight text-black">Send to another user</h2>
+                                    <p className="mt-1 text-sm font-medium text-black/40">
+                                        {transferringTicket.ticket_code || transferringTicket.id.slice(0, 10)}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setTransferringTicket(null)}
+                                    className="flex h-9 w-9 items-center justify-center rounded-full bg-black/[0.04] text-black/50 transition hover:bg-black/10 hover:text-black"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+
+                            <label className="block">
+                                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-black/40">Recipient email</span>
+                                <input
+                                    type="email"
+                                    value={transferEmail}
+                                    onChange={(event) => setTransferEmail(event.target.value)}
+                                    placeholder="recipient@example.com"
+                                    className="h-12 w-full rounded-2xl border border-black/10 bg-black/[0.03] px-4 text-sm font-medium text-black outline-none transition focus:border-black focus:bg-white"
+                                />
+                            </label>
+                            <p className="mt-3 text-sm font-medium leading-relaxed text-black/45">
+                                This sends ownership of this ticket to the recipient email. It is different from editing attendee details.
+                            </p>
+
+                            <div className="mt-7 flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setTransferringTicket(null)}
+                                    className="h-11 rounded-full px-5 text-sm font-semibold text-black/55 transition hover:bg-black/[0.04] hover:text-black"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={submitTransferTicket}
+                                    disabled={transferLoading || !transferEmail.trim()}
+                                    className="h-11 rounded-full bg-black px-5 text-sm font-semibold text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    {transferLoading ? 'Transferring...' : 'Transfer ticket'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
             {/* Ticket Pass Modal Overlay */}
             <AnimatePresence>
                 {viewingTicketCard && (
@@ -646,6 +950,10 @@ const MyTickets = () => {
                                 const theme = TICKET_THEMES[themeName] || TICKET_THEMES['silver'];
                                 const price = ticket.metadata?.price_paid || 0;
                                 const currency = ticket.metadata?.currency || 'NGN';
+                                const isEarlyBirdTicket = Boolean(
+                                    ticket.metadata?.early_bird_applied ||
+                                    (ticket.metadata?.base_price && price < ticket.metadata.base_price)
+                                );
                                 const event = group.event;
 
                                 return (
@@ -681,7 +989,7 @@ const MyTickets = () => {
                                                         {formatCompactPrice(price, currency)}
                                                     </span>
                                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
-                                                        Per guest
+                                                        {isEarlyBirdTicket ? 'Early Bird' : 'Per guest'}
                                                     </span>
                                                 </div>
                                             </div>

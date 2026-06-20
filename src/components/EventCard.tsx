@@ -63,6 +63,8 @@ interface EventCardProps {
   price?: number | TicketPrice[]; // Single price or array of ticket types with prices
   media: MediaSource | string; // Allow string for backward compatibility
   date?: string; // ISO date string (e.g., '2025-07-15T20:00:00')
+  hasEarlyBirdOnSale?: boolean;
+  isAlmostSoldOut?: boolean;
 }
 
 // Fallback SVG when media fails to load
@@ -179,7 +181,9 @@ const EventCard: React.FC<EventCardProps> = ({
   price: propPrice,
   media,
   date,
-  status
+  status,
+  hasEarlyBirdOnSale,
+  isAlmostSoldOut
 }) => {
   // Use the provided location or get a random one if not provided
   const [location] = React.useState(propLocation || getRandomLocation());
@@ -214,6 +218,20 @@ const EventCard: React.FC<EventCardProps> = ({
       {/* Media Thumbnail */}
       <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl">
         <MediaRenderer media={media} />
+        {status !== 'Sold Out' && (
+          <div className="absolute left-4 top-4 flex max-w-[calc(100%-2rem)] flex-wrap gap-1.5">
+            {hasEarlyBirdOnSale && (
+              <span className="rounded-full bg-orange-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm ring-1 ring-orange-300/70 sm:text-[10px]">
+                Early bird
+              </span>
+            )}
+            {isAlmostSoldOut && (
+              <span className="rounded-full bg-rose-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm ring-1 ring-rose-300/60 sm:text-[10px]">
+                Almost sold out
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Card Content */}
@@ -222,7 +240,7 @@ const EventCard: React.FC<EventCardProps> = ({
         {date && (
           <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
             <svg 
-              className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" 
+              className="w-[1.2em] h-[1.2em] text-red-500" 
               viewBox="0 0 24 24" 
               fill="currentColor"
             >

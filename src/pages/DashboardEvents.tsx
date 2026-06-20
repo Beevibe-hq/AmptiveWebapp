@@ -210,7 +210,7 @@ export default function DashboardEvents() {
                             </div>
                             <div className="p-3">
                                 <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
-                                    <CalendarDays className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" />
+                                    <CalendarDays className="w-[1.2em] h-[1.2em] text-red-500" />
                                     <span>{event.scheduled_for ? formatDate(event.scheduled_for!) : formatDate(event.created_at!)}</span>
                                 </div>
                                 <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{event.title}</h3>

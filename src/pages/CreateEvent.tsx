@@ -302,8 +302,8 @@ const CreateEvent = () => {
 
   const normalizeTicketEarlyBird = (ticket: EventTicket): EventTicket => {
     const rawTicket = ticket as EventTicket & Record<string, any>;
-    const earlyBirdUnits = rawTicket.early_bird_units ?? rawTicket.early_bird_quantity ?? rawTicket.earlyBirdUnits ?? rawTicket.earlyBirdQuantity;
-    const earlyBirdDiscount = rawTicket.early_bird_discount_percentage ?? rawTicket.early_bird_discount ?? rawTicket.earlyBirdDiscountPercentage ?? rawTicket.earlyBirdDiscount;
+    const earlyBirdUnits = rawTicket.early_bird_max_count ?? rawTicket.early_bird_units ?? rawTicket.early_bird_quantity ?? rawTicket.earlyBirdUnits ?? rawTicket.earlyBirdQuantity;
+    const earlyBirdDiscount = rawTicket.early_bird_discount_percent ?? rawTicket.early_bird_discount_percentage ?? rawTicket.early_bird_discount ?? rawTicket.earlyBirdDiscountPercentage ?? rawTicket.earlyBirdDiscount;
     const hasEarlyBird = Boolean(
       rawTicket.has_early_bird ??
       rawTicket.early_bird_enabled ??
@@ -320,9 +320,9 @@ const CreateEvent = () => {
   };
 
   const buildTicketPayload = (ticket: EventTicket, options: { includePhysical?: boolean } = {}) => {
-    const earlyBirdUnits = ticket.has_early_bird ? ticket.early_bird_units : undefined;
-    const earlyBirdDiscount = ticket.has_early_bird ? ticket.early_bird_discount_percentage : undefined;
-    const quantityTotal = ticket.quantity && ticket.quantity > 0 ? ticket.quantity : null;
+    const earlyBirdUnits = ticket.has_early_bird && ticket.early_bird_units && ticket.early_bird_units > 0 ? ticket.early_bird_units : null;
+    const earlyBirdDiscount = ticket.has_early_bird && ticket.early_bird_discount_percentage && ticket.early_bird_discount_percentage > 0 ? ticket.early_bird_discount_percentage : null;
+    const quantityTotal = ticket.quantity !== undefined && ticket.quantity !== null && ticket.quantity !== '' ? Number(ticket.quantity) : null;
 
     const payload = {
       label: ticket.label || ticket.title,
@@ -331,9 +331,8 @@ const CreateEvent = () => {
       quantity_total: quantityTotal,
       benefits: ticket.benefits,
       color_theme: ticket.color_theme,
-      has_early_bird: Boolean(ticket.has_early_bird),
-      early_bird_units: earlyBirdUnits,
-      early_bird_discount_percentage: earlyBirdDiscount,
+      early_bird_discount_percent: earlyBirdDiscount,
+      early_bird_max_count: earlyBirdUnits,
     };
 
     return options.includePhysical ? { ...payload, is_physical: false } : payload;
@@ -372,8 +371,8 @@ const CreateEvent = () => {
       toastError('Ticket price must be greater than 0');
       return;
     }
-    // Empty quantity means the ticket starts sold out.
-    const quantity = ticketForm.quantity ? parseInt(ticketForm.quantity) : 0;
+    // Empty quantity means unlimited inventory.
+    const quantity = ticketForm.quantity ? parseInt(ticketForm.quantity) : undefined;
     const benefits = ticketForm.benefits
       .split('\n')
       .map(b => b.trim())
@@ -405,9 +404,9 @@ const CreateEvent = () => {
         color_theme: ticketForm.color_theme,
         quantity,
         event_id: '',
-        quantity_total: quantity,
+        quantity_total: quantity ?? null,
         quantity_sold: 0,
-        quantity_remaining: quantity,
+        quantity_remaining: quantity ?? 0,
         reserved_quantity: 0,
         is_active: false,
         has_early_bird: false
@@ -1685,7 +1684,7 @@ const CreateEvent = () => {
                         type="number"
                         value={ticketForm.quantity}
                         onChange={(e) => setTicketForm(prev => ({ ...prev, quantity: e.target.value }))}
-                        placeholder="Leave empty for sold out"
+                        placeholder="Leave empty for unlimited"
                         min="0"
                         step="1"
                         className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
@@ -1703,7 +1702,7 @@ const CreateEvent = () => {
                         ))}
                       </div>
                       <p className="mt-2 text-xs text-gray-500">
-                        Leave empty to mark this ticket as sold out, or click a quick number above
+                        Leave empty for unlimited availability, or click a quick number above
                       </p>
                     </div>
                   </div>
@@ -1824,6 +1823,7 @@ const CreateEvent = () => {
                       const benefits = previewTicket.benefits.length > 0
                         ? previewTicket.benefits
                         : (ticketForm.title ? ['General Access', 'Event Entry'] : ['Benefit 1', 'Benefit 2']);
+                      const hasPreviewEarlyBird = Boolean(editingTicketId && form.tickets.find(t => t.id === editingTicketId)?.has_early_bird);
 
                       return (
                         <div className="relative h-full w-full transition-transform duration-700 ease-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
@@ -1833,26 +1833,20 @@ const CreateEvent = () => {
                             <span className={`pointer-events-none absolute left-1/2 top-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
                             <span className={`pointer-events-none absolute left-1/2 bottom-0 z-0 h-[18%] w-px -translate-x-1/2 border-l border-dashed ${theme.border}`} aria-hidden="true" />
 
-                            <div className="relative z-10 flex items-start justify-between gap-3">
-                              <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="relative z-10">
+                              <div className="space-y-1.5 min-w-0">
                                 <p className={`text-xs uppercase tracking-[0.28em] ${theme.text} opacity-60`}>{form.title || 'Event Name'}</p>
                                 <p className={`text-lg font-semibold ${theme.text} line-clamp-2 break-words`}>{previewTicket.title}</p>
                               </div>
-
                             </div>
 
                             <div className="relative z-10 mt-6">
-                              {((editingTicketId && form.tickets.find(t => t.id === editingTicketId)?.has_early_bird) || false) && (
-                                <div className="inline-flex items-center gap-1 mb-1 px-2 py-0.5 rounded-full bg-blue-100/80 text-blue-800 text-[9px] font-bold uppercase tracking-wider animate-in fade-in zoom-in-95 duration-200">
-                                  Early Bird
-                                </div>
-                              )}
                               <div className="flex items-baseline justify-between gap-2">
                                 <span className={`text-3xl font-bold ${theme.text} truncate`}>
                                   {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
                                 </span>
                                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
-                                  Per guest
+                                  {hasPreviewEarlyBird ? 'Early Bird' : 'Per guest'}
                                 </span>
                               </div>
                             </div>

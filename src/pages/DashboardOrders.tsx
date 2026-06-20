@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye, X, XCircle, Clock, CheckCircle2, Ban, UserCheck, CircleSlash, Check, Scan } from 'lucide-react';
 import { getEventOrders, getEventsByUser } from '@/lib/api/events';
 import { getEventOwnerPurchases } from '@/lib/api/finance';
+import { getProfileByUserId } from '@/lib/api/profiles';
 
 const BillIcon = ({ className, fill }: { className?: string, fill?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
@@ -97,6 +98,22 @@ const getTicketCheckInKeys = (ticket: any) => {
         .filter(Boolean)
         .map(value => `${eventId}:${value}`);
 };
+
+const getDisplayTicketId = (ticket: any) => String(
+    ticket.ticket_code ||
+    ticket.ticketCode ||
+    ticket.code ||
+    ticket.access_code ||
+    ticket.accessCode ||
+    ticket.qr_code_data ||
+    ticket.qrCodeData ||
+    ticket.ticket_id ||
+    ticket.ticketId ||
+    ticket.purchase_ticket_id ||
+    ticket.purchaseTicketId ||
+    ticket.id ||
+    ''
+);
 
 const isTicketCheckedIn = (ticket: any) => {
     const status = normalizeValue(ticket.ticket_status || ticket.status || ticket.check_in_status || ticket.checkInStatus);
@@ -205,10 +222,87 @@ export default function DashboardOrders() {
 
     const getOrderUnitCount = (order: any) => Math.max(1, Number(order?.order_count || order?.quantity || 1) || 1);
 
+    const getBuyerUserId = (order: any) => {
+        const purchase = order.purchase || {};
+        const firstTicket = Array.isArray(order.tickets) ? order.tickets[0] : null;
+        const metadata = purchase.metadata || order.metadata || {};
+        return String(
+            order.buyer_user_id ||
+            order.buyer_id ||
+            order.customer_user_id ||
+            order.customer_id ||
+            order.user_id ||
+            purchase.buyer_user_id ||
+            purchase.buyer_id ||
+            purchase.customer_user_id ||
+            purchase.customer_id ||
+            purchase.user_id ||
+            metadata.buyer_user_id ||
+            metadata.buyer_id ||
+            metadata.customer_user_id ||
+            metadata.customer_id ||
+            metadata.user_id ||
+            order.user?.user_id ||
+            order.user?.id ||
+            order.buyer?.user_id ||
+            order.buyer?.id ||
+            order.customer?.user_id ||
+            order.customer?.id ||
+            order.profile?.user_id ||
+            order.profiles?.user_id ||
+            firstTicket?.buyer_user_id ||
+            firstTicket?.buyer_id ||
+            firstTicket?.customer_user_id ||
+            firstTicket?.customer_id ||
+            firstTicket?.user_id ||
+            ''
+        ).trim();
+    };
+
+    const enrichOrdersWithBuyerProfiles = async (orderRows: any[]) => {
+        const ids = Array.from(new Set(
+            orderRows
+                .map(order => order.buyer_user_id || order.profiles?.user_id)
+                .filter((id): id is string => Boolean(id))
+        ));
+
+        if (ids.length === 0) return orderRows;
+
+        const profiles = new Map<string, any>();
+        await Promise.all(ids.map(async id => {
+            const profile = await getProfileByUserId(id);
+            if (profile) profiles.set(id, profile);
+        }));
+
+        if (profiles.size === 0) return orderRows;
+
+        return orderRows.map(order => {
+            const buyerUserId = order.buyer_user_id || order.profiles?.user_id;
+            const profile = buyerUserId ? profiles.get(buyerUserId) : null;
+            if (!profile) return order;
+
+            const profileAvatar = profile.avatar_url || profile.profile_picture || (profile as any).profile_image_url || '';
+
+            return {
+                ...order,
+                profiles: {
+                    ...(order.profiles || {}),
+                    user_id: buyerUserId,
+                    display_name: order.profiles?.display_name || profile.name || profile.username || order.buyer_name,
+                    username: order.profiles?.username || profile.username,
+                    email: order.profiles?.email || profile.email || order.buyer_email,
+                    avatar_url: order.profiles?.avatar_url || profileAvatar,
+                    profile_picture: order.profiles?.profile_picture || profileAvatar,
+                },
+            };
+        });
+    };
+
     const normalizeOrder = (order: any) => {
         const purchase = order.purchase || {};
         const firstTicket = Array.isArray(order.tickets) ? order.tickets[0] : null;
         const metadata = purchase.metadata || order.metadata || {};
+        const buyerUserId = getBuyerUserId(order);
         const status = normalizeStatus(order);
         const amount = getOrderAmount(order);
         const buyerName = (
@@ -240,6 +334,33 @@ export default function DashboardOrders() {
             order.customer?.email ||
             order.profiles?.email ||
             order.profile?.email ||
+            ''
+        );
+        const buyerAvatar = (
+            order.profiles?.avatar_url ||
+            order.profiles?.profile_picture ||
+            order.profiles?.profile_image_url ||
+            order.profile?.avatar_url ||
+            order.profile?.profile_picture ||
+            order.profile?.profile_image_url ||
+            order.buyer_avatar_url ||
+            order.buyer_profile_picture ||
+            order.buyer_profile_image_url ||
+            purchase.buyer_avatar_url ||
+            purchase.buyer_profile_picture ||
+            metadata.buyer_avatar_url ||
+            metadata.buyer_profile_picture ||
+            order.user?.avatar_url ||
+            order.user?.profile_picture ||
+            order.user?.profile_image_url ||
+            order.buyer?.avatar_url ||
+            order.buyer?.profile_picture ||
+            order.buyer?.profile_image_url ||
+            order.customer?.avatar_url ||
+            order.customer?.profile_picture ||
+            firstTicket?.profile?.avatar_url ||
+            firstTicket?.profiles?.avatar_url ||
+            firstTicket?.buyer_avatar_url ||
             ''
         );
         const ticketStatus = order.ticket_status || order.status || status;
@@ -286,17 +407,34 @@ export default function DashboardOrders() {
             event_title: order.event_title || order.events?.title || order.event?.title || firstTicket?.event_title || 'Untitled event',
             buyer_name: buyerName,
             buyer_email: buyerEmail,
+            buyer_user_id: buyerUserId,
             profiles: {
                 ...(order.profiles || {}),
+                user_id: buyerUserId || order.profiles?.user_id,
                 display_name: buyerName,
                 email: buyerEmail,
-                avatar_url: order.profiles?.avatar_url || order.profile?.avatar_url || order.buyer_avatar_url,
+                avatar_url: buyerAvatar,
             },
             tickets,
         };
     };
 
-    const isCompletedOrder = (order: any) => ['paid', 'completed', 'valid', 'attended', 'used'].includes(String(order.status || '').toLowerCase());
+    const isCompletedOrder = (order: any) => {
+        const statuses = [
+            order.status,
+            order.ticket_status,
+            order.payment_status,
+            order.transaction_status,
+            order.purchase?.status,
+            order.purchase?.payment_status,
+            order.payment?.status,
+            order.transaction?.status,
+            ...(order.tickets || []).map((ticket: any) => ticket.ticket_status || ticket.status),
+        ].map(status => String(status || '').toLowerCase()).filter(Boolean);
+
+        if (statuses.some(status => ['pending', 'cancelled', 'canceled', 'refunded', 'failed', 'void'].includes(status))) return false;
+        return statuses.some(status => ['paid', 'completed', 'valid', 'attended', 'used', 'scanned', 'success', 'successful'].includes(status));
+    };
 
     const getOrdersFromOwnedEvents = async () => {
         const events = await getEventsByUser();
@@ -326,13 +464,13 @@ export default function DashboardOrders() {
                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                 }
 
-                setOrders(mappedData);
+                setOrders(await enrichOrdersWithBuyerProfiles(mappedData));
             } catch (error) {
                 console.error('Error fetching owner purchase orders:', error);
                 try {
                     const eventOrders = (await getOrdersFromOwnedEvents())
                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                    setOrders(eventOrders);
+                    setOrders(await enrichOrdersWithBuyerProfiles(eventOrders));
                 } catch (fallbackError) {
                     console.error('Error fetching event orders:', fallbackError);
                     setOrders([]);
@@ -383,11 +521,24 @@ export default function DashboardOrders() {
         const profile = order.profiles;
         const name = profile?.display_name || order.buyer_name || 'Guest';
         const email = profile?.email || order.buyer_email || order.id;
+        const avatarUrl = profile?.avatar_url ||
+            profile?.profile_picture ||
+            profile?.profile_image_url ||
+            order.profile?.avatar_url ||
+            order.profile?.profile_picture ||
+            order.buyer_avatar_url ||
+            order.buyer_profile_picture ||
+            order.user?.avatar_url ||
+            order.user?.profile_picture ||
+            order.buyer?.avatar_url ||
+            order.buyer?.profile_picture ||
+            order.customer?.avatar_url ||
+            order.customer?.profile_picture;
 
-        if (profile?.avatar_url) {
+        if (avatarUrl) {
             return (
                 <img
-                    src={profile.avatar_url}
+                    src={avatarUrl}
                     alt={name}
                     className="w-8 h-8 rounded-full object-cover shrink-0"
                 />
@@ -477,7 +628,7 @@ export default function DashboardOrders() {
     const pendingOrderCount = orders
         .filter(order => String(order.status || '').toLowerCase() === 'pending')
         .reduce((sum, order) => sum + getOrderUnitCount(order), 0);
-    const revenueTotal = orders.reduce((acc, order) => acc + getOrderAmount(order), 0);
+    const revenueTotal = orders.filter(isCompletedOrder).reduce((acc, order) => acc + getOrderAmount(order), 0);
 
     return (
         <div className="px-4 md:px-8 py-8 w-full">
@@ -1170,7 +1321,7 @@ export default function DashboardOrders() {
 
                                                             <div className="pt-3 border-t border-black/5">
                                                                 <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Ticket ID</p>
-                                                                <p className="text-[11px] font-mono text-black break-all leading-relaxed">{ticket.id.toUpperCase()}</p>
+                                                                <p className="text-[11px] font-mono text-black break-all leading-relaxed">{getDisplayTicketId(ticket).toUpperCase()}</p>
                                                             </div>
 
                                                             <div className="grid grid-cols-2 gap-2 pt-3 border-t border-black/5">

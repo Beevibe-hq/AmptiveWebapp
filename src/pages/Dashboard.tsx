@@ -19,7 +19,7 @@ import {
     ScanLine,
     Download} from 'lucide-react';
 import { getSession } from '@/lib/api/auth';
-import { getEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { getEvent, getEventOrders, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
@@ -30,6 +30,9 @@ import CreateEvent from './CreateEvent';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEventOwnerPurchases } from '@/lib/api/finance';
+import { getProfileByUserId } from '@/lib/api/profiles';
+
+const CHECK_IN_STORAGE_KEY = 'amptive.dashboard.checkins';
 
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
@@ -108,6 +111,66 @@ const SalesCircularProgress = ({ sold, total }: { sold: number; total: number })
 
 const getOrderTickets = (order: any) => Array.isArray(order?.tickets) && order.tickets.length > 0 ? order.tickets : [order];
 
+const normalizeActivityToken = (value: unknown) => String(value || '').trim().toLowerCase();
+
+const getStoredCheckIns = (): Record<string, string> => {
+    try {
+        const stored = localStorage.getItem(CHECK_IN_STORAGE_KEY);
+        return stored ? JSON.parse(stored) : {};
+    } catch {
+        return {};
+    }
+};
+
+const extractActivityTokens = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+
+    const tokens = new Set<string>([raw]);
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            ['id', 'ticket_id', 'ticketId', 'ticket_code', 'ticketCode', 'code', 'qr_code_data', 'qrCodeData', 'access_code', 'accessCode'].forEach(key => {
+                const parsedValue = (parsed as Record<string, unknown>)[key];
+                if (parsedValue) tokens.add(String(parsedValue));
+            });
+        }
+    } catch {
+        raw.split(/[?&/#:=,\s]+/).forEach(part => {
+            if (part) tokens.add(part);
+        });
+    }
+
+    return Array.from(tokens);
+};
+
+const getActivityCheckInKeys = (order: any, ticket: any) => {
+    const eventId = order?.event_id || order?.__eventId || ticket?.event_id || ticket?.eventId || 'event';
+    return [
+        ticket?.id,
+        ticket?.ticket_id,
+        ticket?.ticketId,
+        ticket?.purchase_ticket_id,
+        ticket?.purchaseTicketId,
+        ticket?.ticket_code,
+        ticket?.ticketCode,
+        ticket?.code,
+        ticket?.access_code,
+        ticket?.accessCode,
+        ticket?.qr_code_data,
+        ticket?.qrCodeData,
+        order?.ticket_code,
+        order?.ticketCode,
+        order?.code,
+        order?.qr_code_data,
+        order?.qrCodeData,
+    ]
+        .flatMap(value => extractActivityTokens(value))
+        .map(normalizeActivityToken)
+        .filter(Boolean)
+        .map(value => `${eventId}:${value}`);
+};
+
 const getSoldTicketCount = (order: any) => {
     const tickets = getOrderTickets(order);
     if (tickets.length > 1) return tickets.length;
@@ -122,7 +185,14 @@ const getOrderAmount = (order: any) => {
         order?.total_amount ??
         order?.total_price ??
         order?.amount ??
+        order?.purchase?.amount ??
+        order?.purchase?.total_amount ??
+        order?.purchase?.total_price ??
+        order?.purchase?.price_paid ??
         order?.price_paid ??
+        order?.amount_paid ??
+        order?.unit_price_paid ??
+        order?.ticket_pricing?.unit_price ??
         order?.ticket_price ??
         order?.event_tickets?.price ??
         0
@@ -130,10 +200,52 @@ const getOrderAmount = (order: any) => {
     if (Number.isFinite(directAmount) && directAmount > 0) return directAmount;
 
     return getOrderTickets(order).reduce((sum: number, ticket: any) => {
-        const ticketAmount = Number(ticket?.total_amount ?? ticket?.price_paid ?? ticket?.event_tickets?.price ?? ticket?.price);
+        const ticketAmount = Number(ticket?.total_amount ?? ticket?.price_paid ?? ticket?.amount_paid ?? ticket?.unit_price_paid ?? ticket?.ticket_pricing?.unit_price ?? ticket?.event_tickets?.price ?? ticket?.ticket_type?.price ?? ticket?.price);
         return sum + (Number.isFinite(ticketAmount) ? ticketAmount : 0);
     }, 0);
 };
+
+const getOrderIdentity = (order: any) => String(
+    order?.id ||
+    order?.purchase_id ||
+    order?.purchase?.id ||
+    order?.transaction_id ||
+    order?.purchase?.transaction_id ||
+    order?.reference ||
+    ''
+);
+
+const getTicketCheckInTime = (order: any, ticket: any, checkedIns: Record<string, string>) => {
+    const directTime = ticket?.checked_in_at ||
+        ticket?.checkedInAt ||
+        ticket?.scanned_at ||
+        ticket?.scannedAt ||
+        ticket?.used_at ||
+        ticket?.usedAt ||
+        ticket?.validated_at ||
+        ticket?.validatedAt ||
+        order?.checked_in_at ||
+        order?.checkedInAt ||
+        order?.scanned_at ||
+        order?.scannedAt ||
+        order?.used_at ||
+        order?.usedAt ||
+        order?.validated_at ||
+        order?.validatedAt;
+    if (directTime) return directTime;
+
+    return getActivityCheckInKeys(order, ticket).map(key => checkedIns[key]).find(Boolean) || '';
+};
+
+const getActivityTicketLabel = (order: any, ticket: any) => (
+    ticket?.event_tickets?.label ||
+    ticket?.ticket_type?.label ||
+    ticket?.label ||
+    ticket?.ticket_label ||
+    order?.ticket_label ||
+    order?.label ||
+    ''
+);
 
 const isPaidOrder = (order: any) => {
     const statuses = [
@@ -141,13 +253,15 @@ const isPaidOrder = (order: any) => {
         order?.payment_status,
         order?.ticket_status,
         order?.transaction_status,
+        order?.purchase?.status,
+        order?.purchase?.payment_status,
         order?.payment?.status,
+        order?.transaction?.status,
         ...getOrderTickets(order).map((ticket: any) => ticket?.ticket_status || ticket?.status),
     ].map(value => String(value || '').toLowerCase()).filter(Boolean);
 
     if (statuses.some(status => ['cancelled', 'canceled', 'refunded', 'failed', 'void'].includes(status))) return false;
-    if (statuses.length === 0) return true;
-    return statuses.some(status => ['valid', 'used', 'completed', 'paid', 'success', 'attended', 'scanned'].includes(status));
+    return statuses.some(status => ['valid', 'used', 'completed', 'paid', 'success', 'successful', 'attended', 'scanned'].includes(status));
 };
 
 const getBuyerName = (order: any, ticket?: any) => (
@@ -164,6 +278,57 @@ const getBuyerEmail = (order: any, ticket?: any) => (
     order?.attendee_email ||
     order?.buyer_email ||
     order?.profiles?.email ||
+    ''
+);
+
+const getBuyerUserId = (order: any, ticket?: any) => String(
+    ticket?.buyer_user_id ||
+    ticket?.buyer_id ||
+    ticket?.customer_user_id ||
+    ticket?.user_id ||
+    order?.buyer_user_id ||
+    order?.buyer_id ||
+    order?.customer_user_id ||
+    order?.customer_id ||
+    order?.user_id ||
+    order?.purchase?.buyer_user_id ||
+    order?.purchase?.buyer_id ||
+    order?.purchase?.customer_user_id ||
+    order?.purchase?.user_id ||
+    order?.metadata?.buyer_user_id ||
+    order?.metadata?.buyer_id ||
+    order?.purchase?.metadata?.buyer_user_id ||
+    order?.purchase?.metadata?.buyer_id ||
+    order?.profiles?.user_id ||
+    order?.profile?.user_id ||
+    order?.user?.user_id ||
+    order?.user?.id ||
+    order?.buyer?.user_id ||
+    order?.buyer?.id ||
+    order?.customer?.user_id ||
+    order?.customer?.id ||
+    ''
+).trim();
+
+const getBuyerAvatarUrl = (order: any, ticket?: any) => (
+    ticket?.profile?.avatar_url ||
+    ticket?.profile?.profile_picture ||
+    ticket?.profiles?.avatar_url ||
+    ticket?.profiles?.profile_picture ||
+    ticket?.buyer_avatar_url ||
+    ticket?.buyer_profile_picture ||
+    order?.profiles?.avatar_url ||
+    order?.profiles?.profile_picture ||
+    order?.profile?.avatar_url ||
+    order?.profile?.profile_picture ||
+    order?.buyer_avatar_url ||
+    order?.buyer_profile_picture ||
+    order?.user?.avatar_url ||
+    order?.user?.profile_picture ||
+    order?.buyer?.avatar_url ||
+    order?.buyer?.profile_picture ||
+    order?.customer?.avatar_url ||
+    order?.customer?.profile_picture ||
     ''
 );
 
@@ -423,7 +588,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             const session = await getSession();
             if (!session || !session.user) return;
 
-            const data = await getEventsByUser();
+            const data = await getEventsByUser(undefined, { page_size: 100 });
             const events = data || [];
             setRealEvents(events);
 
@@ -438,14 +603,31 @@ function DashboardHome({ displayName }: { displayName: string }) {
                 })
             );
 
-            const ownerPurchases = await getEventOwnerPurchases();
             const eventTitleMap = new Map(events.map(event => [getEventId(event), event.title]));
-            const allOrders = (ownerPurchases || []).map((order: any) => ({
+            const eventOrderRows = (await Promise.all(events.map(async event => {
+                const eventId = getEventId(event);
+                const rows = await getEventOrders(eventId).catch(() => []);
+                return (rows || []).map((order: any) => ({
+                    ...order,
+                    __eventId: order.event_id || order.purchase?.event_id || eventId,
+                    __eventTitle: order.event_title || order.events?.title || order.event?.title || event.title || 'this event',
+                }));
+            }))).flat();
+            const ownerPurchases = await getEventOwnerPurchases();
+            const ownerPurchaseRows = (ownerPurchases || []).map((order: any) => ({
                 ...order,
-                __eventId: order.event_id,
-                __eventTitle: eventTitleMap.get(order.event_id) || order.event_title || order.events?.title || 'this event',
+                __eventId: order.event_id || order.purchase?.event_id,
+                __eventTitle: eventTitleMap.get(order.event_id || order.purchase?.event_id) || order.event_title || order.events?.title || order.event?.title || 'this event',
             }));
+            const seenOrders = new Set<string>();
+            const allOrders = [...eventOrderRows, ...ownerPurchaseRows].filter((order: any, index) => {
+                const identity = getOrderIdentity(order) || `${order.__eventId || order.event_id || 'event'}:${getOrderDate(order)}:${getOrderAmount(order)}:${index}`;
+                if (seenOrders.has(identity)) return false;
+                seenOrders.add(identity);
+                return true;
+            });
             const validOrders = allOrders.filter(isPaidOrder);
+            const hasOrderRows = allOrders.length > 0;
             const ticketSoldCount = ticketsByEvent.reduce((sum, item) => {
                 return sum + item.tickets.reduce((ticketSum: number, ticket: any) => ticketSum + getTicketSoldCount(ticket), 0);
             }, 0);
@@ -480,7 +662,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             setEventSales(salesByEvent);
 
             const orderRevenue = validOrders.reduce((acc, order) => acc + getOrderAmount(order), 0);
-            const total = Math.max(orderRevenue, ticketRevenue);
+            const total = hasOrderRows ? orderRevenue : ticketRevenue;
             const attendees = new Set<string>();
             validOrders.forEach(order => {
                 getOrderTickets(order).forEach((ticket: any) => {
@@ -489,8 +671,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
             });
 
             setTotalSales(total);
-            setOrderCount(Math.max(validOrders.length, ticketSoldCount));
-            setAttendeeCount(Math.max(attendees.size, ticketSoldCount));
+            setOrderCount(hasOrderRows ? validOrders.length : ticketSoldCount);
+            setAttendeeCount(hasOrderRows ? attendees.size : ticketSoldCount);
 
             const monthStart = new Date();
             monthStart.setDate(1);
@@ -502,8 +684,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
             const currentMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), monthStart, nextMonthStart));
             const previousMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), previousMonthStart, monthStart));
-            const currentMonthTicketFallback = validOrders.length === 0 ? ticketSoldCount : 0;
-            const currentMonthRevenue = currentMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0) + (validOrders.length === 0 ? ticketRevenue : 0);
+            const currentMonthTicketFallback = !hasOrderRows ? ticketSoldCount : 0;
+            const currentMonthRevenue = currentMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0) + (!hasOrderRows ? ticketRevenue : 0);
             const previousMonthRevenue = previousMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
             const currentMonthAttendees = new Set<string>();
             const previousMonthAttendees = new Set<string>();
@@ -524,19 +706,61 @@ function DashboardHome({ displayName }: { displayName: string }) {
                 attendees: formatPercentChange(currentMonthAttendees.size + currentMonthTicketFallback, previousMonthAttendees.size),
             });
 
+            const buyerProfileIds = Array.from(new Set(
+                validOrders
+                    .flatMap(order => getOrderTickets(order).map((ticket: any) => getBuyerUserId(order, ticket)))
+                    .filter(Boolean)
+            ));
+            const buyerProfiles = new Map<string, any>();
+            await Promise.all(buyerProfileIds.map(async id => {
+                const profile = await getProfileByUserId(id);
+                if (profile) buyerProfiles.set(id, profile);
+            }));
+
+            const checkedIns = getStoredCheckIns();
             const activity = validOrders
-                .flatMap(order => getOrderTickets(order).map((ticket: any) => {
-                    const status = String(ticket?.ticket_status || ticket?.status || order?.ticket_status || order?.status || '').toLowerCase();
-                    const date = getOrderDate(ticket) || getOrderDate(order);
-                    const action = ['used', 'attended', 'scanned'].includes(status) ? 'checked into' : 'purchased a ticket for';
-                    return {
-                        subject: getBuyerName(order, ticket),
-                        action,
-                        target: getEventTitleFromOrder(order, order.__eventTitle),
-                        date,
-                        time: formatTimeAgo(date),
-                    };
-                }))
+                .flatMap(order => {
+                    const tickets = getOrderTickets(order);
+                    const firstTicket = tickets[0] || order;
+                    const buyerUserId = getBuyerUserId(order, firstTicket);
+                    const buyerProfile = buyerUserId ? buyerProfiles.get(buyerUserId) : null;
+                    const avatarUrl = getBuyerAvatarUrl(order, firstTicket) || buyerProfile?.avatar_url || buyerProfile?.profile_picture || '';
+                    const eventTitle = getEventTitleFromOrder(order, order.__eventTitle);
+                    const subject = buyerProfile?.name || getBuyerName(order, firstTicket);
+                    const ticketLabel = getActivityTicketLabel(order, firstTicket);
+                    const purchaseDate = getOrderDate(order);
+                    const paidAmount = getOrderAmount(order);
+                    const ticketCount = tickets.length > 1 ? tickets.length : getSoldTicketCount(order);
+                    const plural = ticketCount > 1 ? 'tickets' : 'ticket';
+                    const purchaseAction = paidAmount > 0
+                        ? `purchased ${ticketLabel && !/^(ticket|general admission)$/i.test(ticketLabel) ? `${ticketCount > 1 ? `${ticketCount} ` : 'a '}${ticketLabel} ${plural}` : `${ticketCount > 1 ? `${ticketCount} tickets` : 'a ticket'}`} for`
+                        : 'registered for';
+                    const rows = [{
+                        subject,
+                        action: purchaseAction,
+                        target: eventTitle,
+                        avatarUrl,
+                        date: purchaseDate,
+                        time: formatTimeAgo(purchaseDate),
+                    }];
+
+                    tickets.forEach((ticket: any) => {
+                        const ticketStatus = String(ticket?.ticket_status || ticket?.status || order?.ticket_status || order?.status || '').toLowerCase();
+                        const checkedAt = getTicketCheckInTime(order, ticket, checkedIns);
+                        if (checkedAt || ['used', 'attended', 'scanned', 'checked-in', 'checked_in', 'validated', 'redeemed'].includes(ticketStatus)) {
+                            const scanDate = checkedAt || getOrderDate(ticket) || purchaseDate;
+                            rows.push({
+                                subject: buyerProfile?.name || getBuyerName(order, ticket),
+                                action: 'checked into',
+                                target: eventTitle,
+                                avatarUrl: getBuyerAvatarUrl(order, ticket) || avatarUrl,
+                                date: scanDate,
+                                time: formatTimeAgo(scanDate),
+                            });
+                        }
+                    });
+                    return rows;
+                })
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                 .slice(0, 6);
             setRecentActivity(activity);
@@ -563,7 +787,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                 aggregated[monthLabel].weeks[weekIdx] += amount;
             });
 
-            if (validOrders.length === 0 && ticketRevenue > 0) {
+            if (!hasOrderRows && ticketRevenue > 0) {
                 const currentMonth = getCurrentMonthLabel();
                 const currentDay = new Date().getDate();
                 const currentWeek = currentDay <= 7 ? 0 : currentDay <= 14 ? 1 : currentDay <= 21 ? 2 : 3;
@@ -1034,9 +1258,17 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                         <React.Fragment key={i}>
                                             <div className="flex items-center gap-2 py-1.5 text-[13px] text-black/60 tracking-tight">
                                                 <div className="flex shrink-0 items-center justify-center mr-[1px]">
-                                                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-black/5 text-[9px] font-bold uppercase text-black/50">
-                                                        {String(feed.subject || 'G').charAt(0)}
-                                                    </div>
+                                                    {feed.avatarUrl ? (
+                                                        <img
+                                                            src={feed.avatarUrl}
+                                                            alt={feed.subject || 'User'}
+                                                            className="h-5 w-5 rounded-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-black/5 text-[9px] font-bold uppercase text-black/50">
+                                                            {String(feed.subject || 'G').charAt(0)}
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <span>
                                                     <span className="font-semibold text-black">{feed.subject}</span> {feed.action} <span className="font-semibold text-black">{feed.target}</span> · {feed.time}

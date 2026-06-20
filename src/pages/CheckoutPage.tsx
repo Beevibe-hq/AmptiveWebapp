@@ -159,6 +159,10 @@ export default function CheckoutPage() {
         setLastDirection(delta > 0 ? 1 : -1);
         setSelection(prev => {
             const current = prev[ticketId] || 0;
+            if (delta > 0 && remaining !== null && current >= remaining) {
+                toastError(getInventoryMessage(ticket, current + delta));
+                return prev;
+            }
             const next = Math.max(0, current + delta);
             const cappedNext = remaining !== null ? Math.min(next, remaining) : next;
 
@@ -172,6 +176,30 @@ export default function CheckoutPage() {
             }
             return { ...prev, [ticketId]: cappedNext };
         });
+    };
+
+    const getInventoryMessage = (ticket?: EventTicket, requestedQuantity?: number) => {
+        const label = ticket?.label || 'This ticket';
+        const remaining = ticket ? getTicketRemaining(ticket) : null;
+        if (remaining === null) {
+            return `${label} no longer has enough tickets available.`;
+        }
+        if (remaining <= 0) {
+            return `${label} is sold out.`;
+        }
+        const leftLabel = `${remaining} ${remaining === 1 ? 'ticket' : 'tickets'} left`;
+        if (requestedQuantity && requestedQuantity > remaining) {
+            return `Only ${leftLabel} for ${label}. Please reduce your quantity.`;
+        }
+        return `Only ${leftLabel} for ${label}.`;
+    };
+
+    const getInventoryErrorMessage = (errorMessage: string, latestTickets: EventTicket[]) => {
+        const match = errorMessage.match(/Not enough inventory remaining for ['"]?([^'".]+)['"]?/i);
+        if (!match) return errorMessage;
+        const ticketName = match[1]?.trim();
+        const ticket = latestTickets.find(t => t.label?.toLowerCase() === ticketName?.toLowerCase());
+        return getInventoryMessage(ticket, ticket ? selection[ticket.id] : undefined);
     };
 
     const toggleBenefits = (ticketId: string) => {
@@ -242,9 +270,9 @@ export default function CheckoutPage() {
             });
 
             if (unavailableSelection) {
-                const [ticketId] = unavailableSelection;
+                const [ticketId, qty] = unavailableSelection;
                 const latestTicket = latestTickets.find(t => t.id === ticketId);
-                toastError(`${latestTicket?.label || 'This ticket'} is sold out or no longer has enough tickets available.`);
+                toastError(getInventoryMessage(latestTicket, qty));
                 setTickets(latestTickets);
                 setCheckoutStep('selection');
                 setProcessing(false);
@@ -269,10 +297,10 @@ export default function CheckoutPage() {
 
             const attendeesList: Attendee[] = attendees.map(a => ({
                 ticket_type_id: a.ticketId,
-                name: a.name.trim(),
-                email: a.email.trim() || undefined,
+                name: a.name.trim() || currentUser?.name || currentUser?.username || buyerName.trim(),
+                email: a.email.trim() || currentUser?.email || buyerEmail.trim() || undefined,
                 phone: a.phone?.trim() || undefined,
-                is_me: a.isMe,
+                is_me: a.isMe || (!a.name.trim() && Boolean(currentUser)),
             }));
 
             const request: CheckoutRequest = {
@@ -335,7 +363,9 @@ export default function CheckoutPage() {
 
         } catch (error: any) {
             console.error('Checkout error:', error);
-            toastError(error.message || 'Checkout failed');
+            const latestTickets = await getTicketsForEvent(eventId!).catch(() => tickets);
+            if (latestTickets.length > 0) setTickets(latestTickets);
+            toastError(getInventoryErrorMessage(error.message || 'Checkout failed', latestTickets));
         } finally {
             setProcessing(false);
         }
@@ -736,21 +766,29 @@ export default function CheckoutPage() {
                         </p>
                     </button>
 
-                    <button
-                        onClick={() => {
-                            setCheckoutStep('summary');
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className="group p-6 rounded-[2rem] border border-gray-100 bg-gray-50/30 hover:bg-white hover:border-gray-200 transition-all text-left space-y-3"
-                    >
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-gray-900">I'll assign guests later</h3>
-                            <span className="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-black uppercase tracking-wider rounded-full">Fastest</span>
-                        </div>
-                        <p className="text-sm text-gray-500 font-medium leading-relaxed">
-                            Skip this for now. You'll receive all tickets in your email and can assign names from your My Ticket page later.
-                        </p>
-                    </button>
+                    {!isGuest && (
+                        <button
+                            onClick={() => {
+                                setAttendees(prev => prev.map(a => ({
+                                    ...a,
+                                    name: currentUser?.name || currentUser?.username || '',
+                                    email: currentUser?.email || '',
+                                    isMe: true,
+                                })));
+                                setCheckoutStep('summary');
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="group p-6 rounded-[2rem] border border-gray-100 bg-gray-50/30 hover:bg-white hover:border-gray-200 transition-all text-left space-y-3"
+                        >
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-gray-900">I'll assign guests later</h3>
+                                <span className="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-black uppercase tracking-wider rounded-full">Fastest</span>
+                            </div>
+                            <p className="text-sm text-gray-500 font-medium leading-relaxed">
+                                Skip this for now. You'll receive all tickets in your email and can assign names from your My Ticket page later.
+                            </p>
+                        </button>
+                    )}
 
                     <button
                         onClick={() => {
@@ -860,7 +898,7 @@ export default function CheckoutPage() {
                                                         <div className="py-3 px-5 flex items-center justify-between gap-4">
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="min-w-0">
-                                                                    <h3 className="font-bold text-gray-900 truncate">{ticket.label}</h3>
+                                                                    <h3 className="truncate font-bold text-gray-900">{ticket.label}</h3>
                                                                     <div className="mt-1 flex flex-wrap items-center gap-2">
                                                                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-tight">
                                                                             {unitPrice === 0 ? 'Free' : formatPrice(unitPrice)}
@@ -877,8 +915,10 @@ export default function CheckoutPage() {
                                                                             {earlyBirdRemaining} early bird left
                                                                         </span>
                                                                     )}
-                                                                    {remainingCount !== null && remainingCount > 0 && remainingCount <= 10 && (
-                                                                        <span className="text-xs font-bold text-amber-600 mt-1 block">Only {remainingCount} left</span>
+                                                                    {remainingCount !== null && remainingCount <= 50 && remainingCount > 0 && (
+                                                                        <span className="inline-block mt-2 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full ring-1 ring-amber-100">
+                                                                            Only {remainingCount} left
+                                                                        </span>
                                                                     )}
 
                                                                     <button
@@ -1301,19 +1341,9 @@ export default function CheckoutPage() {
                                                                         <span className={`text-3xl font-bold ${theme.text} truncate`}>
                                                                             {unitPrice === 0 ? 'Free' : formatPrice(unitPrice)}
                                                                         </span>
-                                                                        {hasEarlyBirdPrice && (
-                                                                            <span className={`text-sm font-semibold line-through opacity-45 ${theme.text}`}>
-                                                                                {formatPrice(t.price)}
-                                                                            </span>
-                                                                        )}
                                                                     </div>
-                                                                    {hasEarlyBirdPrice && (
-                                                                        <span className={`w-fit rounded-full bg-white/25 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.text}`}>
-                                                                            Early bird
-                                                                        </span>
-                                                                    )}
                                                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-white/20 border-white/20 ${theme.text} w-fit opacity-80`}>
-                                                                        PER GUEST
+                                                                        {hasEarlyBirdPrice ? 'EARLY BIRD' : 'PER GUEST'}
                                                                     </span>
                                                                 </div>
 
@@ -1413,19 +1443,9 @@ export default function CheckoutPage() {
                                                                                     <span className={`text-3xl font-bold ${theme.text} truncate`}>
                                                                                         {unitPrice === 0 ? 'Free' : formatPrice(unitPrice)}
                                                                                     </span>
-                                                                                    {hasEarlyBirdPrice && (
-                                                                                        <span className={`text-sm font-semibold line-through opacity-45 ${theme.text}`}>
-                                                                                            {formatPrice(t.price)}
-                                                                                        </span>
-                                                                                    )}
                                                                                 </div>
-                                                                                {hasEarlyBirdPrice && (
-                                                                                    <span className={`w-fit rounded-full bg-white/25 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.text}`}>
-                                                                                        Early bird
-                                                                                    </span>
-                                                                                )}
                                                                             <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-white/20 border-white/20 ${theme.text} w-fit opacity-80`}>
-                                                                                PER GUEST
+                                                                                {hasEarlyBirdPrice ? 'EARLY BIRD' : 'PER GUEST'}
                                                                             </span>
                                                                         </div>
 

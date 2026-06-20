@@ -10,7 +10,7 @@ import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent, getRelatedEvents, publishEvent, StandaloneEvent } from '@/lib/api/events';
 import { getProfileByUserId } from '@/lib/api/profiles';
-import { getTicketsForEvent, isTicketSoldOut } from '@/lib/api/tickets';
+import { getTicketEarlyBirdRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '@/lib/api/tickets';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -74,6 +74,10 @@ type EventTicket = {
   is_sold_out?: boolean;
   benefits?: string[];
   color_theme?: string | null;
+  early_bird_discount_percent?: number | null;
+  early_bird_discount_percentage?: number | null;
+  early_bird_max_count?: number | null;
+  early_bird_units?: number | null;
 };
 
 
@@ -130,6 +134,10 @@ const TICKET_THEMES: Record<string, {
 // Helper Functions
 const formatTicketPrice = (price: number, currency: string = 'NGN'): string => {
   if (price === 0) return 'Free';
+  const symbol = currency === 'NGN' ? '₦' : `${currency} `;
+  if (price >= 1000000000) return `${symbol}${(price / 1000000000).toFixed(1).replace(/\.0$/, '')}B`;
+  if (price >= 1000000) return `${symbol}${(price / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (price >= 1000) return `${symbol}${(price / 1000).toFixed(1).replace(/\.0$/, '')}K`;
   const formatter = new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency,
@@ -450,6 +458,11 @@ const EventDetail = () => {
 
   const availableTickets = tickets.filter(t => !isTicketSoldOut(t));
   const soldOutTickets = tickets.filter(isTicketSoldOut);
+  const earlyBirdTickets = availableTickets.filter(ticket => (
+    getTicketEarlyBirdRemaining(ticket) > 0 &&
+    getTicketUnitPrice(ticket) < (Number(ticket.price) || 0)
+  ));
+  const hasEarlyBirdTickets = earlyBirdTickets.length > 0;
 
   return (
     <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">
@@ -695,14 +708,25 @@ const EventDetail = () => {
                   <div className="space-y-8">
                     {availableTickets.length > 0 && (
                       <div>
-                        <div className="flex items-center gap-2 text-[13px] font-semibold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
+                        <div className="mb-6 flex items-center gap-2 border-b border-gray-200/60 pb-2 text-[13px] font-semibold text-gray-600">
                           <Ticket className="h-4 w-4 text-blue-500" />
                           <span>Available tickets</span>
                         </div>
+                        {hasEarlyBirdTickets && (
+                          <div className="mb-5 border-l-2 border-orange-500 pl-3">
+                            <p className="text-[13px] font-semibold leading-tight text-gray-950">
+                              Early bird pricing is available
+                            </p>
+                            <p className="mt-1 text-[12px] font-medium leading-5 text-gray-500">
+                              Limited discounted tickets are still on sale before prices return to regular.
+                            </p>
+                          </div>
+                        )}
                         <div className="flex overflow-x-auto pb-4 snap-x gap-4 md:gap-6 -mx-4 px-4 md:mx-0 md:px-0 hide-scrollbar">
                           {availableTickets.map((ticket) => {
                             const benefits = deriveTicketBenefits(ticket);
                             const theme = TICKET_THEMES[ticket.color_theme || 'silver'] || TICKET_THEMES.silver;
+                            const hasTicketEarlyBird = getTicketEarlyBirdRemaining(ticket) > 0 && getTicketUnitPrice(ticket) < (Number(ticket.price) || 0);
 
                             return (
                               <div key={ticket.id} className="group relative min-h-[14rem] flex-shrink-0 snap-center [perspective:1600px]" style={{ width: '85vw', maxWidth: '360px' }}>
@@ -722,11 +746,22 @@ const EventDetail = () => {
 
                                     <div className="relative z-10 mt-4 flex items-end justify-between">
                                       <span className={`text-3xl font-bold ${theme.text} tracking-tight`}>
-                                        {formatTicketPrice(ticket.price, ticket.currency ?? 'NGN')}
+                                        {formatTicketPrice(hasTicketEarlyBird ? getTicketUnitPrice(ticket) : ticket.price, ticket.currency ?? 'NGN')}
                                       </span>
-                                      <button className={`px-5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 ${theme.text} text-xs font-bold transition-colors uppercase whitespace-nowrap`}>
-                                        PER GUEST
-                                      </button>
+                                      {hasTicketEarlyBird ? (
+                                        <div className="flex flex-col items-end gap-1">
+                                          <span className={`text-xs font-semibold line-through opacity-45 ${theme.text}`}>
+                                            {formatTicketPrice(ticket.price, ticket.currency ?? 'NGN')}
+                                          </span>
+                                          <button className={`px-5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 ${theme.text} text-xs font-bold transition-colors uppercase whitespace-nowrap`}>
+                                            Early bird
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button className={`px-5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 ${theme.text} text-xs font-bold transition-colors uppercase whitespace-nowrap`}>
+                                          PER GUEST
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
 
@@ -747,8 +782,13 @@ const EventDetail = () => {
                                     <div className="relative z-10 flex items-end justify-between">
                                       <div className="flex flex-col gap-1">
                                         <span className={`text-xl font-bold ${theme.text}`}>
-                                          {formatTicketPrice(ticket.price, ticket.currency ?? 'NGN')}
+                                          {formatTicketPrice(hasTicketEarlyBird ? getTicketUnitPrice(ticket) : ticket.price, ticket.currency ?? 'NGN')}
                                         </span>
+                                        {hasTicketEarlyBird && (
+                                          <span className={`text-xs font-semibold line-through opacity-45 ${theme.text}`}>
+                                            {formatTicketPrice(ticket.price, ticket.currency ?? 'NGN')}
+                                          </span>
+                                        )}
                                       </div>
                                       <div className={`flex flex-col items-end ${theme.text}`}>
                                         <QRCodeSVG value={`EVENT-${event.event_id}-TICKET-${ticket.id}`} size={48} fgColor="currentColor" bgColor="transparent" />

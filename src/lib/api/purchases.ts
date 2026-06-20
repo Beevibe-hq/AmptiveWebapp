@@ -36,6 +36,8 @@ export interface TicketPurchase {
   };
   metadata?: {
     price_paid: number;
+    base_price?: number;
+    early_bird_applied?: boolean;
     currency: string;
     physical_delivery: boolean;
   };
@@ -59,6 +61,37 @@ export async function getPurchasesByUser(): Promise<TicketPurchase[]> {
 
     const mapped: TicketPurchase[] = tickets.map((ticket: any) => {
       const rawEvent = ticket.events || ticket.event || ticket.event_details || {};
+      const rawMetadata = ticket.metadata || ticket.purchase?.metadata || {};
+      const ticketPricing = Array.isArray(rawMetadata.ticket_pricing)
+        ? rawMetadata.ticket_pricing.find((item: any) => (
+            item.ticket_type_id === ticket.ticket_type_id ||
+            item.ticket_type_id === ticket.event_ticket_id ||
+            item.ticket_id === ticket.ticket_type_id
+          ))
+        : null;
+      const pricePaid = Number(ticket.price_paid ?? ticket.amount_paid ?? ticket.unit_price_paid ?? ticketPricing?.unit_price ?? 0) || 0;
+      const basePrice = ticket.base_price ??
+        ticket.original_price ??
+        ticket.regular_price ??
+        ticket.ticket_price ??
+        ticket.price ??
+        ticket.event_tickets?.price ??
+        ticket.ticket_type?.price ??
+        ticketPricing?.base_price;
+      const earlyBirdDiscount = ticket.early_bird_discount_percent ??
+        ticket.early_bird_discount_percentage ??
+        ticket.event_tickets?.early_bird_discount_percent ??
+        ticket.event_tickets?.early_bird_discount_percentage ??
+        ticket.ticket_type?.early_bird_discount_percent;
+      const earlyBirdApplied = Boolean(
+        ticket.early_bird_applied ??
+        rawMetadata.early_bird_applied ??
+        ticket.was_early_bird ??
+        ticket.is_early_bird ??
+        ticketPricing?.early_bird_applied ??
+        (earlyBirdDiscount && Number(earlyBirdDiscount) > 0 && basePrice && pricePaid < Number(basePrice))
+      );
+
       return {
         id: ticket.id || '',
         ticket_id: ticket.id || '',
@@ -81,7 +114,9 @@ export async function getPurchasesByUser(): Promise<TicketPurchase[]> {
           location_type: ticket.event_location_type || ticket.location_type || rawEvent.location_type || rawEvent.location?.type || 'physical',
         },
         metadata: {
-          price_paid: ticket.price_paid || 0,
+          price_paid: pricePaid,
+          base_price: basePrice,
+          early_bird_applied: earlyBirdApplied,
           currency: ticket.currency || 'NGN',
           physical_delivery: ticket.is_physical || false,
         },
@@ -92,6 +127,15 @@ export async function getPurchasesByUser(): Promise<TicketPurchase[]> {
   } catch (error) {
     console.error('Error fetching tickets:', error);
     return [];
+  }
+}
+
+export async function transferTicket(ticketCode: string, targetEmail: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await $tickets.transfer(ticketCode, targetEmail);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
   }
 }
 

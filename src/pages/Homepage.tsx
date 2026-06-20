@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Calendar } from 'lucide-react';
 import QRCodeGenerator from '../components/QRCodeGenerator';
 import { listEvents } from '../lib/api/events';
-import { getTicketsForEvent } from '../lib/api/tickets';
+import { getTicketEarlyBirdRemaining, getTicketRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '../lib/api/tickets';
 import LocationMap from '../components/LocationMap';
 import { listCommunities, Community } from '@/lib/api/communities';
 import { useAuth } from '@/contexts/AuthContext';
@@ -81,6 +81,8 @@ interface EventType {
   price: number | any[];
   date: string;
   media: MediaSource;
+  hasEarlyBirdOnSale?: boolean;
+  isAlmostSoldOut?: boolean;
 }
 
 // Update image paths to use public directory
@@ -606,14 +608,7 @@ const Homepage: React.FC = () => {
           let finalPrice: number | any[] = 0;
           
           if (tickets.length > 0) {
-            const availableTickets = tickets.filter((t: any) => {
-              const isSoldOut = (t.is_active === false) ||
-                (t.quantity_remaining !== undefined && t.quantity_remaining !== null && t.quantity_remaining <= 0) ||
-                (t.quantity !== undefined && t.quantity !== null && t.quantity <= 0) ||
-                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_sold !== undefined && t.quantity_sold !== null && t.quantity_sold >= t.quantity_total) ||
-                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_total <= 0);
-              return !isSoldOut;
-            });
+            const availableTickets = tickets.filter((t: any) => !isTicketSoldOut(t));
             
             // If all tickets are sold out, we can just pass tickets since the card will override and display 'Sold Out'
             finalPrice = availableTickets.length > 0 ? availableTickets : tickets;
@@ -624,16 +619,28 @@ const Homepage: React.FC = () => {
 
           let isSoldOut = false;
           if (tickets.length > 0) {
-            isSoldOut = tickets.every((t: any) => {
-              return (t.is_active === false) ||
-                (t.quantity_remaining !== undefined && t.quantity_remaining !== null && t.quantity_remaining <= 0) ||
-                (t.quantity !== undefined && t.quantity !== null && t.quantity <= 0) ||
-                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_sold !== undefined && t.quantity_sold !== null && t.quantity_sold >= t.quantity_total) ||
-                (t.quantity_total !== undefined && t.quantity_total !== null && t.quantity_total <= 0);
-            });
+            isSoldOut = tickets.every((t: any) => isTicketSoldOut(t));
           } else {
             isSoldOut = event.is_sold_out;
           }
+
+          const hasEarlyBirdOnSale = tickets.some((ticket: any) => (
+            !isTicketSoldOut(ticket) &&
+            getTicketEarlyBirdRemaining(ticket) > 0 &&
+            getTicketUnitPrice(ticket) < (Number(ticket.price) || 0)
+          ));
+          const availableTickets = tickets.filter((ticket: any) => !isTicketSoldOut(ticket));
+          const remainingCounts = availableTickets
+            .map((ticket: any) => getTicketRemaining(ticket))
+            .filter((count: number | null): count is number => count !== null);
+          const totalRemaining = remainingCounts.reduce((sum, count) => sum + count, 0);
+          const totalCapacity = availableTickets.reduce((sum: number, ticket: any) => {
+            const total = Number(ticket.quantity_total ?? ticket.quantity ?? ticket.capacity ?? ticket.total_quantity ?? 0);
+            return sum + (Number.isFinite(total) ? total : 0);
+          }, 0);
+          const isAlmostSoldOut = !isSoldOut && remainingCounts.length > 0 && totalRemaining > 0 && (
+            totalRemaining <= 10 || (totalCapacity > 0 && totalRemaining / totalCapacity <= 0.2)
+          );
 
           return {
             id: event.event_id,
@@ -647,7 +654,9 @@ const Homepage: React.FC = () => {
               type: 'image' as const,
               src: event.thumbnail_url,
               alt: event.title
-            }
+            },
+            hasEarlyBirdOnSale,
+            isAlmostSoldOut
           };
         });
         setDbEvents(transformedEvents);
@@ -1691,6 +1700,8 @@ const Homepage: React.FC = () => {
                           price={event.price}
                           date={event.date}
                           media={event.media}
+                          hasEarlyBirdOnSale={event.hasEarlyBirdOnSale}
+                          isAlmostSoldOut={event.isAlmostSoldOut}
                         />
                       </div>
                     ))
@@ -1750,6 +1761,8 @@ const Homepage: React.FC = () => {
                           price={event.price}
                           date={event.date}
                           media={event.media}
+                          hasEarlyBirdOnSale={event.hasEarlyBirdOnSale}
+                          isAlmostSoldOut={event.isAlmostSoldOut}
                         />
                       </div>
                     ))}
@@ -1865,6 +1878,20 @@ const Homepage: React.FC = () => {
                     <p className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-gray-500">
                       {event.location} · {priceLabel} · {dateLabel}
                     </p>
+                    {(event.hasEarlyBirdOnSale || event.isAlmostSoldOut) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {event.hasEarlyBirdOnSale && (
+                          <span className="rounded-full bg-orange-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm">
+                            Early bird
+                          </span>
+                        )}
+                        {event.isAlmostSoldOut && (
+                          <span className="rounded-full bg-rose-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm ring-1 ring-rose-300/60">
+                            Almost sold out
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -1909,6 +1936,20 @@ const Homepage: React.FC = () => {
                     <p className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-gray-500">
                       {event.location} · {priceLabel} · {dateLabel}
                     </p>
+                    {(event.hasEarlyBirdOnSale || event.isAlmostSoldOut) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {event.hasEarlyBirdOnSale && (
+                          <span className="rounded-full bg-orange-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm sm:text-[10px]">
+                            Early bird
+                          </span>
+                        )}
+                        {event.isAlmostSoldOut && (
+                          <span className="rounded-full bg-rose-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm ring-1 ring-rose-300/60 sm:text-[10px]">
+                            Almost sold out
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -2047,7 +2088,7 @@ const Homepage: React.FC = () => {
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
-                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="w-[1.2em] h-[1.2em] text-red-500" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
                     </svg>
                     <span>July 12, 2025</span>
@@ -2078,7 +2119,7 @@ const Homepage: React.FC = () => {
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
-                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="w-[1.2em] h-[1.2em] text-red-500" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
                     </svg>
                     <span>July 13, 2025</span>
@@ -2109,7 +2150,7 @@ const Homepage: React.FC = () => {
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
-                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="w-[1.2em] h-[1.2em] text-red-500" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
                     </svg>
                     <span>July 7, 2025</span>
@@ -2140,7 +2181,7 @@ const Homepage: React.FC = () => {
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
-                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="w-[1.2em] h-[1.2em] text-red-500" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
                     </svg>
                     <span>Sunday</span>
@@ -2171,7 +2212,7 @@ const Homepage: React.FC = () => {
                 </div>
                 <div className="p-3">
                   <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
-                    <svg className="w-[1.2em] h-[1.2em] mr-1 text-red-500 -mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="w-[1.2em] h-[1.2em] text-red-500" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z" />
                     </svg>
                     <span>July 7, 2025</span>

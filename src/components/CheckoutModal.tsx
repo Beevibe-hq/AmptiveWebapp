@@ -311,8 +311,8 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                                                             Sold out
                                                         </span>
                                                     ) : (
-                                                        remainingCount !== null && remainingCount < 20 && (
-                                                            <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                                                        remainingCount !== null && remainingCount <= 50 && (
+                                                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full ring-1 ring-amber-100">
                                                                 Only {remainingCount} left
                                                             </span>
                                                         )

@@ -230,6 +230,9 @@ export const $tickets = {
   walletPay: (eventId: string, data: unknown) =>
     api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/wallet-pay`, data),
 
+  transfer: (ticketCode: string, targetEmail: string) =>
+    api.post<unknown>(`${TICKETS_PREFIX}/${encodeURIComponent(ticketCode)}/transfer`, { target_email: targetEmail }),
+
   validateForCheckIn: (eventId: string, ticketCode: string) =>
     api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/tickets/validate?ticket_code=${encodeURIComponent(ticketCode)}`),
 

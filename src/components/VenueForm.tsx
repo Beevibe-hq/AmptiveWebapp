@@ -451,7 +451,23 @@ export default function VenueForm({
                   </div>
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Platform Note</label>
+                  <textarea
+                    value={platformNote}
+                    onChange={(e) => setPlatformNote(e.target.value)}
+                    placeholder="e.g. Link will be sent before event. This note will be displayed to attendees."
+                    rows={2}
+                    className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 resize-none"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    This note will be displayed to attendees (e.g., how to access the virtual event).
+                  </p>
+                </div>
+              </div>
+            )}
           </>
         )}
 

@@ -12,7 +12,7 @@ import {
     setDefaultPaymentBankAccount,
     type PaymentBankAccount,
 } from '@/lib/api/finance';
-import { getEventsByUser } from '@/lib/api/events';
+import { getEventOrders, getEventsByUser } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 
 const BANK_BRANDS: Record<string, { label: string; className: string }> = {
@@ -42,17 +42,22 @@ const BANK_BRANDS: Record<string, { label: string; className: string }> = {
 };
 
 const BANK_DETAILS_STORAGE_KEY = 'amptive_payout_bank_details';
+const WITHDRAWALS_STORAGE_KEY = 'amptive_withdrawal_requests';
+
+const getUserScopedWithdrawalKey = (userId?: string) => (
+    userId ? `${WITHDRAWALS_STORAGE_KEY}:${userId}` : WITHDRAWALS_STORAGE_KEY
+);
+
+const readSavedWithdrawals = (userId?: string) => {
+    try {
+        const stored = localStorage.getItem(getUserScopedWithdrawalKey(userId));
+        return stored ? JSON.parse(stored) : [];
+    } catch {
+        return [];
+    }
+};
 
 export default function DashboardFinance() {
-const savedWithdrawals = (() => {
-        try {
-            const stored = localStorage.getItem('amptive_withdrawal_requests');
-            return stored ? JSON.parse(stored) : [];
-        } catch {
-            return [];
-        }
-    })();
-
     const WithdrawalIcon = () => (
         <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="1.23584" y="1.24219" width="31.5273" height="31.5273" rx="15.7636" fill="#307FE2" />
@@ -151,7 +156,8 @@ const savedWithdrawals = (() => {
     const [withdrawalAmount, setWithdrawalAmount] = useState('');
     const [withdrawalError, setWithdrawalError] = useState('');
     const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
-    const [withdrawals, setWithdrawals] = useState<any[]>(Array.isArray(savedWithdrawals) ? savedWithdrawals : []);
+    const [currentUserKey, setCurrentUserKey] = useState('');
+    const [withdrawals, setWithdrawals] = useState<any[]>([]);
 
     // Bank Data State (backend list replaces this fallback when available)
     const [banks, setBanks] = useState<{name: string, code: string}[]>([
@@ -368,6 +374,9 @@ const savedWithdrawals = (() => {
             setLoading(true);
             const session = await getSession();
             if (!session?.user) return;
+            const userKey = String((session.user as any).id || (session.user as any).user_id || session.user.email || '');
+            setCurrentUserKey(userKey);
+            setWithdrawals(readSavedWithdrawals(userKey));
 
             await loadBankAccounts();
 
@@ -432,24 +441,56 @@ const savedWithdrawals = (() => {
 
     const getTicketPrice = (ticket: any) => toNumber(ticket.price ?? ticket.amount ?? ticket.ticket_price);
 
-    const getOrderAmount = (item: any) => toNumber(
-        item.total_amount ??
-        item.amount ??
-        item.event_tickets?.price ??
-        item.ticket_price
-    );
+    const getOrderAmount = (item: any) => {
+        const directAmount = toNumber(
+            item.total_amount ??
+            item.total_price ??
+            item.amount ??
+            item.purchase?.amount ??
+            item.purchase?.total_amount ??
+            item.price_paid ??
+            item.amount_paid ??
+            item.unit_price_paid ??
+            item.ticket_pricing?.unit_price
+        );
+        if (directAmount > 0) return directAmount;
+
+        const tickets = Array.isArray(item.tickets) ? item.tickets : [];
+        const ticketTotal = tickets.reduce((sum: number, ticket: any) => {
+            const ticketAmount = toNumber(
+                ticket.total_amount ??
+                ticket.price_paid ??
+                ticket.amount_paid ??
+                ticket.unit_price_paid ??
+                ticket.ticket_pricing?.unit_price
+            );
+            return sum + ticketAmount;
+        }, 0);
+        if (ticketTotal > 0) return ticketTotal;
+
+        return toNumber(item.event_tickets?.price ?? item.ticket_price);
+    };
 
     const getOrderStatus = (item: any) => String(
         item.ticket_status ??
         item.status ??
         item.payment_status ??
+        item.purchase?.status ??
+        item.purchase?.payment_status ??
+        item.payment?.status ??
+        item.transaction_status ??
+        item.transaction?.status ??
+        item.tickets?.[0]?.ticket_status ??
+        item.tickets?.[0]?.status ??
         ''
     ).trim().toLowerCase();
 
     const isPaidOrder = (item: any) => {
         if (item.source === 'ticket_summary') return true;
         const status = getOrderStatus(item);
-        return ['valid', 'used', 'paid', 'completed', 'success', 'successful'].includes(status);
+        if (['cancelled', 'canceled', 'refunded', 'failed', 'void'].includes(status)) return false;
+        if (['valid', 'used', 'paid', 'completed', 'success', 'successful', 'attended', 'scanned'].includes(status)) return true;
+        return getOrderAmount(item) > 0 && !status;
     };
 
     const getEventTitle = (item: any) => (
@@ -486,6 +527,33 @@ const savedWithdrawals = (() => {
             const rows = await Promise.all((events || []).map(async (event: any) => {
                 const eventId = event.event_id || event.id;
                 if (!eventId) return [];
+
+                const eventOrders = await getEventOrders(eventId).catch(() => []);
+                if (eventOrders.length > 0) {
+                    return eventOrders.map((order: any) => {
+                        const purchase = order.purchase || {};
+                        const tickets = Array.isArray(order.tickets) ? order.tickets : [];
+                        const firstTicket = tickets[0] || {};
+                        const metadata = purchase.metadata || order.metadata || {};
+
+                        return {
+                            ...order,
+                            source: 'event_order',
+                            id: order.id || purchase.id || order.purchase_id || firstTicket.purchase_id || firstTicket.id,
+                            event_id: order.event_id || purchase.event_id || eventId,
+                            event_title: order.event_title || order.events?.title || order.event?.title || event.title,
+                            events: { ...(order.events || {}), title: order.event_title || order.events?.title || order.event?.title || event.title },
+                            buyer_id: order.buyer_id || order.buyer_user_id || order.user_id || purchase.buyer_id || purchase.buyer_user_id || purchase.user_id || metadata.buyer_id || metadata.buyer_user_id || order.user?.id || order.buyer?.id || '',
+                            buyer_name: order.buyer_name || purchase.buyer_name || metadata.buyer_name || firstTicket.attendee_name || order.user?.name || order.buyer?.name || 'Guest',
+                            buyer_email: order.buyer_email || purchase.buyer_email || metadata.buyer_email || firstTicket.attendee_email || order.user?.email || order.buyer?.email || '',
+                            ticket_label: order.ticket_label || firstTicket.event_tickets?.label || firstTicket.label || 'Ticket',
+                            ticket_count: tickets.length || order.ticket_count || order.quantity || 1,
+                            total_amount: getOrderAmount(order),
+                            ticket_status: order.ticket_status || order.status || purchase.status || firstTicket.ticket_status || firstTicket.status || 'paid',
+                            created_at: order.created_at || purchase.created_at || order.purchase_date || order.purchased_at || firstTicket.created_at || new Date().toISOString(),
+                        };
+                    }).filter((order: any) => getOrderAmount(order) > 0 && isPaidOrder(order));
+                }
 
                 let tickets = Array.isArray(event.ticket_types)
                     ? event.ticket_types
@@ -598,7 +666,7 @@ const savedWithdrawals = (() => {
         };
         const nextWithdrawals = [request, ...withdrawals];
         setWithdrawals(nextWithdrawals);
-        localStorage.setItem('amptive_withdrawal_requests', JSON.stringify(nextWithdrawals));
+        localStorage.setItem(getUserScopedWithdrawalKey(currentUserKey), JSON.stringify(nextWithdrawals));
         setWithdrawalSuccess(true);
         setWithdrawalError('');
         setWithdrawalAmount('');
@@ -614,7 +682,7 @@ const savedWithdrawals = (() => {
             ...item,
             type: item.type || 'purchase',
             created_at: getItemDate(item),
-        })),
+        })).filter(isPaidOrder),
     ].sort((a, b) => new Date(getItemDate(b)).getTime() - new Date(getItemDate(a)).getTime());
 
     const formatCurrency = (amount: number) => {
