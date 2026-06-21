@@ -22,6 +22,17 @@ export interface UserProfile {
   following_count?: number;
   has_hosted_shows?: boolean;
   has_hosted_events?: boolean;
+  support_enabled?: boolean;
+  accept_tips?: boolean;
+  support_message?: string | null;
+  support_tagline?: string | null;
+  support_button_text?: string | null;
+  support_amounts?: number[] | null;
+  support_card_variant?: number | null;
+  profile_type?: string | null;
+  support_socials?: Record<string, string | undefined> | null;
+  support_avatar_url?: string | null;
+  support_banner_url?: string | null;
   role?: string;
   created_at?: string;
   updated_at?: string;

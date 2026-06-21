@@ -1027,13 +1027,14 @@ const ProfilePage = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    if (profile?.support_enabled) {
+                    const hasEnabledTips = profile?.support_enabled === true || (profile as any)?.accept_tips === true;
+                    if (hasEnabledTips) {
                       navigate(`/support/${profile.username || profile.user_id}`);
                     } else {
                       navigate('/profile/support-setup');
                     }
                   }}
-                  title={profile?.support_enabled ? "View My Support Page" : "Setup Support Me"}
+                  title={(profile?.support_enabled === true || (profile as any)?.accept_tips === true) ? "View My Support Page" : "Setup Support Me"}
                   className="inline-flex items-center gap-2 px-4 py-2.5 md:py-3 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition-all duration-200 shadow-sm hover:scale-110 active:scale-95 group text-sm font-semibold"
                 >
                   <svg
@@ -1047,7 +1048,7 @@ const ProfilePage = () => {
                     <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                     <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                   </svg>
-                  <span>{profile?.support_enabled ? 'My Support Page' : 'Accept Tips'}</span>
+                  <span>{(profile?.support_enabled === true || (profile as any)?.accept_tips === true) ? 'My Support Page' : 'Accept Tips'}</span>
                 </button>
               </>
             )}

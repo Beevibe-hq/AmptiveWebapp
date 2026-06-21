@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { getSession } from '@/lib/api/auth';
 import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
+import amptiveLogo from '@/assets/amptivelogo.svg';
 
 export default function DashboardEvents() {
     const [events, setEvents] = useState<StandaloneEvent[]>([]);
@@ -196,7 +197,13 @@ export default function DashboardEvents() {
                             className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm block group"
                         >
                             <div className="relative aspect-square bg-white px-2 pt-2 rounded-t-xl overflow-hidden">
-                                <img src={event.thumbnail_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87'} alt={event.title} className="w-full h-full object-cover rounded-lg group-hover:scale-[1.02] transition-transform duration-300" />
+                                {event.thumbnail_url ? (
+                                    <img src={event.thumbnail_url} alt={event.title} className="w-full h-full object-cover rounded-lg group-hover:scale-[1.02] transition-transform duration-300" />
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center rounded-lg bg-gray-50">
+                                        <img src={amptiveLogo} alt="Amptive" className="h-14 w-auto opacity-20 grayscale" />
+                                    </div>
+                                )}
 
                                 {/* Ticket Count Pill */}
                                 <div className="absolute top-4 right-4">

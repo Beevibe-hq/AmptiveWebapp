@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'; // Refined Support Me Journey
 import { useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getSupportProfile, updateSupportProfile, SupportProfile } from '@/lib/api/support';
+import { getMySupportProfile, updateSupportProfile, SupportProfile } from '@/lib/api/support';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import {  ArrowLeft, Check, Heart, Save, Sparkles, Wallet, Gift, ArrowRight, Users, Store, Building2, Brush, Calendar, Copy , Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +9,7 @@ import Navbar from '@/components/Navbar';
 import SupportCard from '@/components/SupportCard';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import { getEmojiFallback } from '@/utils/avatar';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface CharacterProgressProps {
     current: number;
@@ -301,6 +302,7 @@ type Step = 'welcome' | 'selection' | 'settings' | 'preview';
 
 export default function SupportSetup() {
     const navigate = useNavigate();
+    const { refreshUser } = useAuth();
     const [user, setUser] = useState<SupportProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -351,9 +353,10 @@ export default function SupportSetup() {
 
             // Load Profile
             try {
-                const profile = await getSupportProfile(currentUser.id);
+                const profile = await getMySupportProfile();
                 if (profile) {
-                    setSupportEnabled(profile.support_enabled ?? false);
+                    const isAcceptingTips = profile.support_enabled ?? profile.accept_tips ?? false;
+                    setSupportEnabled(isAcceptingTips);
                     setSupportMessage(profile.support_message || profile.support_tagline || '');
                     setSupportButtonText(profile.support_button_text || 'Support Me');
                     setSupportAmounts(profile.support_amounts || [500, 1000, 2000, 5000]);
@@ -365,7 +368,7 @@ export default function SupportSetup() {
                     setSocials(profile.support_socials || {});
 
                     // If already enabled, skip onboarding
-                    if (profile.support_enabled) {
+                    if (isAcceptingTips) {
                         setStep('settings');
                     }
                 }
@@ -412,6 +415,7 @@ export default function SupportSetup() {
 
             const { ok, error } = await updateSupportProfile(updates);
             if (!ok) throw new Error(error || 'Failed to update support settings');
+            await refreshUser();
 
             toastSuccess('Support settings updated successfully!');
 

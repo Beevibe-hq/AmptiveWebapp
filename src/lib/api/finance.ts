@@ -41,6 +41,27 @@ export interface PaymentBankAccount {
   [key: string]: unknown;
 }
 
+export interface WalletBalance {
+  available_balance: number;
+  pending_balance: number;
+}
+
+export interface PaymentTransaction {
+  id: string;
+  reference: string;
+  category: string;
+  transaction_type: string;
+  transaction_status: string;
+  amount: number;
+  currency: string;
+  created_at: string;
+  profile_picture?: string;
+  buyer_name?: string;
+  buyer_email?: string;
+  event_title?: string;
+  [key: string]: unknown;
+}
+
 const parseMaybeJsonString = (response: unknown) => {
   if (typeof response !== 'string') return response;
   try {
@@ -83,6 +104,12 @@ const unwrapObject = (response: unknown, keys: string[]) => {
   return root;
 };
 
+const toAmount = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return 0;
+  const numeric = Number(String(value).replace(/,/g, ''));
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export async function getEventOwnerPurchases(): Promise<PurchaseRecord[]> {
   try {
     const response = await $finance.getEventOwnerPurchases();
@@ -98,6 +125,50 @@ export async function getBuyerProfiles(userIds: string[]): Promise<BuyerProfile[
   try {
     const response = await $finance.getBuyerProfiles(userIds);
     return (response.profiles || []) as BuyerProfile[];
+  } catch {
+    return [];
+  }
+}
+
+export async function getWalletBalance(): Promise<WalletBalance | null> {
+  try {
+    const response = await $finance.getWalletBalance();
+    const balance = unwrapObject(response, ['wallet', 'balance']);
+    if (!balance) return null;
+    return {
+      available_balance: toAmount(balance.available_balance ?? balance.availableBalance ?? balance.available),
+      pending_balance: toAmount(balance.pending_balance ?? balance.pendingBalance ?? balance.pending),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getPaymentTransactions(pageSize = 100): Promise<PaymentTransaction[]> {
+  try {
+    const response = await $finance.getTransactions({ page_size: pageSize });
+    const root = parseMaybeJsonString(response) as Record<string, any> | null;
+    const data = root?.data && typeof root.data === 'object' ? root.data : root;
+    if (!data || typeof data !== 'object') return [];
+
+    const groupedValues = Object.values(data).flatMap((value: any) => (
+      Array.isArray(value) ? value : []
+    ));
+
+    return groupedValues.map((item: any, index) => ({
+      ...item,
+      id: item.id || item.reference || `transaction-${index}`,
+      reference: item.reference || '',
+      category: item.category || '',
+      transaction_type: item.transaction_type || item.type || '',
+      transaction_status: item.transaction_status || item.status || '',
+      amount: toAmount(item.amount),
+      currency: item.currency || 'NGN',
+      created_at: item.created_at || item.createdAt || new Date().toISOString(),
+      buyer_name: item.buyer_name || item.customer_name || item.name || '',
+      buyer_email: item.buyer_email || item.customer_email || item.email || '',
+      event_title: item.event_title || item.event?.title || item.metadata?.event_title || '',
+    }));
   } catch {
     return [];
   }

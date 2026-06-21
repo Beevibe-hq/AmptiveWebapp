@@ -11,6 +11,7 @@ import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent, getRelatedEvents, publishEvent, StandaloneEvent } from '@/lib/api/events';
 import { getProfileByUserId } from '@/lib/api/profiles';
 import { getTicketEarlyBirdRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '@/lib/api/tickets';
+import { getVenue } from '@/lib/api/venues';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -165,6 +166,19 @@ const deriveTicketBenefits = (ticket: EventTicket): string[] => {
   return Array.from(benefits);
 };
 
+const toCoordinate = (value: unknown) => {
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
+};
+
+const getVenueAddress = (venue: NonNullable<StandaloneEvent['venue']>) => {
+  return [venue.address_line1, venue.city, venue.state, venue.country].filter(Boolean).join(', ');
+};
+
+const getLegacyLocationLabel = (event: StandaloneEvent) => {
+  return [event.location?.venue, event.location?.city].filter(Boolean).join(', ');
+};
+
 
 
 const EventDetail = () => {
@@ -263,8 +277,16 @@ const EventDetail = () => {
 
       try {
         // Fetch Event
-        const eventData = await getEvent(id);
+        let eventData = await getEvent(id);
         if (!eventData) throw new Error('Event not found');
+
+        if (!eventData.venue && eventData.venue_id) {
+          const venue = await getVenue(eventData.venue_id);
+          if (venue) {
+            eventData = { ...eventData, venue };
+          }
+        }
+
         setEvent(eventData);
 
         // Fetch Dominant Color
@@ -346,8 +368,14 @@ const EventDetail = () => {
     );
   }
 
-  const mapSrc = event.location?.venue ?
-    `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(event.location?.venue + (event.location?.city ? `, ${event.location?.city}` : ''))}`
+  const physicalVenue = event.venue?.venue_type === 'physical' ? event.venue : null;
+  const physicalLatitude = toCoordinate(physicalVenue?.latitude ?? event.location?.latitude);
+  const physicalLongitude = toCoordinate(physicalVenue?.longitude ?? event.location?.longitude);
+  const fallbackMapQuery = physicalVenue
+    ? [physicalVenue.name, getVenueAddress(physicalVenue)].filter(Boolean).join(', ')
+    : getLegacyLocationLabel(event);
+  const fallbackMapSrc = fallbackMapQuery
+    ? `https://www.google.com/maps?q=${encodeURIComponent(fallbackMapQuery)}&z=15&output=embed`
     : null;
 
   const handleScheduleEvent = async () => {
@@ -588,9 +616,9 @@ const EventDetail = () => {
                           {event.venue.venue_type === 'physical' && (
                             <div className="text-sm text-gray-500 mt-1 space-y-0.5">
                               {event.venue.address_line1 && <p>{event.venue.address_line1}</p>}
-                              <p>
-                                {[event.venue.city, event.venue.state, event.venue.country].filter(Boolean).join(', ')}
-                              </p>
+                              {getVenueAddress(event.venue) && (
+                                <p>{[event.venue.city, event.venue.state, event.venue.country].filter(Boolean).join(', ')}</p>
+                              )}
                             </div>
                           )}
                           {event.venue.venue_type === 'virtual' && (
@@ -881,19 +909,19 @@ const EventDetail = () => {
               </section>
 
               {/* Location Map Section */}
-              {event.venue?.venue_type === 'physical' && event.venue.latitude && event.venue.longitude ? (
+              {physicalLatitude !== null && physicalLongitude !== null ? (
                 <section className="pt-12 border-t border-gray-100">
                   <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
                     <MapPin className="h-4 w-4 text-blue-500" />
                     Location
                   </div>
                   <VenueMap
-                    latitude={event.venue.latitude}
-                    longitude={event.venue.longitude}
-                    venueName={event.venue.name}
+                    latitude={physicalLatitude}
+                    longitude={physicalLongitude}
+                    venueName={physicalVenue?.name || event.location?.venue}
                   />
                 </section>
-              ) : event.location?.type !== 'online' && mapSrc ? (
+              ) : event.location?.type !== 'online' && fallbackMapSrc ? (
                 <section className="pt-12 border-t border-gray-100">
                   <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
                     <MapPin className="h-4 w-4 text-blue-500" />
@@ -901,7 +929,8 @@ const EventDetail = () => {
                   </div>
                   <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-gray-200 bg-gray-100 shadow-sm group">
                     <iframe
-                      src={mapSrc}
+                      src={fallbackMapSrc}
+                      title={`${fallbackMapQuery} map`}
                       className="absolute inset-0 h-full w-full grayscale-[20%] transition-all duration-700 group-hover:grayscale-0"
                       loading="lazy"
                       referrerPolicy="no-referrer-when-downgrade"

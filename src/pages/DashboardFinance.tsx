@@ -8,9 +8,12 @@ import {
     getBuyerProfiles,
     getPaymentBankAccounts,
     getPaymentBanks,
+    getPaymentTransactions,
+    getWalletBalance,
     resolvePaymentBankAccount,
     setDefaultPaymentBankAccount,
     type PaymentBankAccount,
+    type WalletBalance,
 } from '@/lib/api/finance';
 import { getEventOrders, getEventsByUser } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
@@ -101,6 +104,8 @@ export default function DashboardFinance() {
     const [activeSettingsTab, setActiveSettingsTab] = useState<'payout-methods' | 'billing' | 'tax'>('payout-methods');
     const [showBalances, setShowBalances] = useState(true);
     const [purchases, setPurchases] = useState<any[]>([]);
+    const [paymentTransactions, setPaymentTransactions] = useState<any[]>([]);
+    const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);
     const [loading, setLoading] = useState(true);
     const [profileMap, setProfileMap] = useState<Record<string, any>>({});
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -379,6 +384,12 @@ export default function DashboardFinance() {
             setWithdrawals(readSavedWithdrawals(userKey));
 
             await loadBankAccounts();
+            const [balance, transactions] = await Promise.all([
+                getWalletBalance(),
+                getPaymentTransactions(100),
+            ]);
+            setWalletBalance(balance);
+            setPaymentTransactions(transactions);
 
             // 1. Build ticket purchase rows from the event/ticket APIs that exist today.
             const financeRows = await buildTicketSalesFallback();
@@ -479,6 +490,7 @@ export default function DashboardFinance() {
         item.purchase?.payment_status ??
         item.payment?.status ??
         item.transaction_status ??
+        item.transaction_status ??
         item.transaction?.status ??
         item.tickets?.[0]?.ticket_status ??
         item.tickets?.[0]?.status ??
@@ -494,14 +506,21 @@ export default function DashboardFinance() {
     };
 
     const getEventTitle = (item: any) => (
+        item.event_title ||
+        item.metadata?.event_title ||
         item.events?.title ||
         item.event?.title ||
-        item.event_title ||
-        'Event'
+        (item.category ? item.category.replace(/_/g, ' ') : 'Transaction')
     );
 
     const getBuyerName = (item: any, profile?: any) => {
         if (item.source === 'ticket_summary') return item.ticket_label || 'Ticket sales';
+        if (item.source === 'payment_transaction') {
+            if (item.category === 'event_payment') return item.buyer_name || item.customer_name || 'Ticket payment';
+            if (item.category === 'withdrawal') return 'Withdrawal';
+            if (item.category === 'wallet_funding') return 'Wallet funding';
+            return item.category ? item.category.replace(/_/g, ' ') : 'Transaction';
+        }
         return profile?.full_name || item.buyer_name || item.customer_name || 'Guest';
     };
 
@@ -608,7 +627,8 @@ export default function DashboardFinance() {
     const pendingWithdrawalTotal = withdrawals
         .filter((item) => item.status === 'pending' || item.status === 'processing')
         .reduce((acc, item) => acc + toNumber(item.amount), 0);
-    const availableBalance = Math.max(totalBalance - pendingWithdrawalTotal, 0);
+    const pendingBalance = walletBalance?.pending_balance ?? 0;
+    const availableBalance = walletBalance?.available_balance ?? 0;
 
     const openWithdrawDrawer = () => {
         setWithdrawalError('');
@@ -672,7 +692,20 @@ export default function DashboardFinance() {
         setWithdrawalAmount('');
     };
 
-    const activityItems = [
+    const backendActivityItems = paymentTransactions
+        .map((item) => ({
+            ...item,
+            source: 'payment_transaction',
+            type: item.transaction_type === 'debit' || item.category === 'withdrawal' ? 'withdrawal' : 'purchase',
+            status: item.transaction_status,
+            created_at: item.created_at || new Date().toISOString(),
+        }))
+        .filter((item) => {
+            if (item.type === 'withdrawal') return true;
+            return ['successful', 'success', 'paid', 'completed'].includes(String(item.transaction_status || item.status || '').toLowerCase());
+        });
+
+    const fallbackActivityItems = [
         ...withdrawals.map((item) => ({
             ...item,
             type: 'withdrawal',
@@ -683,7 +716,10 @@ export default function DashboardFinance() {
             type: item.type || 'purchase',
             created_at: getItemDate(item),
         })).filter(isPaidOrder),
-    ].sort((a, b) => new Date(getItemDate(b)).getTime() - new Date(getItemDate(a)).getTime());
+    ];
+
+    const activityItems = (backendActivityItems.length > 0 ? backendActivityItems : fallbackActivityItems)
+        .sort((a, b) => new Date(getItemDate(b)).getTime() - new Date(getItemDate(a)).getTime());
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount);
@@ -790,9 +826,9 @@ export default function DashboardFinance() {
                                         showBalances ? formatCurrency(availableBalance) : '••••••••'
                                     )}
                                 </div>
-                                {pendingWithdrawalTotal > 0 && !loading && (
+                                {pendingBalance > 0 && !loading && (
                                     <p className="mt-2 text-[12px] font-medium text-black/40">
-                                        {formatCurrency(pendingWithdrawalTotal)} pending withdrawal
+                                        {formatCurrency(pendingBalance)} pending
                                     </p>
                                 )}
                                 <div className="flex flex-row md:flex-col min-[1285px]:flex-row items-center md:items-stretch min-[1285px]:items-center gap-3 mt-6">
@@ -1165,9 +1201,9 @@ export default function DashboardFinance() {
                                             <p className="mt-1 text-[32px] font-bold tracking-tight text-black">
                                                 {showBalances ? formatCurrency(availableBalance) : '••••••••'}
                                             </p>
-                                            {pendingWithdrawalTotal > 0 && (
+                                            {pendingBalance > 0 && (
                                                 <p className="mt-1 text-[12px] font-medium text-black/40">
-                                                    {formatCurrency(pendingWithdrawalTotal)} is already pending.
+                                                    {formatCurrency(pendingBalance)} is already pending.
                                                 </p>
                                             )}
                                         </div>

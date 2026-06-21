@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, ChevronDown, Users } from "lucide-react";
+import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, ChevronDown, Users, Search } from "lucide-react";
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
@@ -101,21 +101,99 @@ const GALLERY_IMAGES = [
   '/images/clouds.jpg',
   '/images/love.jpg',
   '/images/render.jpg',
-  'https://images.pexels.com/photos/1190298/pexels-photo-1190298.jpeg?auto=compress&cs=tinysrgb&w=800', // Concert Crowd
-  'https://images.pexels.com/photos/2747449/pexels-photo-2747449.jpeg?auto=compress&cs=tinysrgb&w=800', // Party Lights
-  'https://images.pexels.com/photos/1105666/pexels-photo-1105666.jpeg?auto=compress&cs=tinysrgb&w=800', // Music Festival
-  'https://images.pexels.com/photos/2263436/pexels-photo-2263436.jpeg?auto=compress&cs=tinysrgb&w=800', // DJ Performance
-  'https://images.pexels.com/photos/1763075/pexels-photo-1763075.jpeg?auto=compress&cs=tinysrgb&w=800', // Live Concert
-  'https://images.pexels.com/photos/1540406/pexels-photo-1540406.jpeg?auto=compress&cs=tinysrgb&w=800', // Stage Lights
-  'https://images.pexels.com/photos/2114365/pexels-photo-2114365.jpeg?auto=compress&cs=tinysrgb&w=800', // Festival Crowd
-  'https://images.pexels.com/photos/1267697/pexels-photo-1267697.jpeg?auto=compress&cs=tinysrgb&w=800', // Night Event
-  'https://images.pexels.com/photos/2747449/pexels-photo-2747449.jpeg?auto=compress&cs=tinysrgb&w=800', // Club Scene
-  'https://images.pexels.com/photos/1449791/pexels-photo-1449791.jpeg?auto=compress&cs=tinysrgb&w=800', // Party Celebration
-  'https://images.pexels.com/photos/1105666/pexels-photo-1105666.jpeg?auto=compress&cs=tinysrgb&w=800', // Music Event
-  'https://images.pexels.com/photos/2306203/pexels-photo-2306203.jpeg?auto=compress&cs=tinysrgb&w=800', // Colorful Lights
-  'https://images.pexels.com/photos/1763067/pexels-photo-1763067.jpeg?auto=compress&cs=tinysrgb&w=800', // Concert Stage
-  'https://images.pexels.com/photos/2747449/pexels-photo-2747449.jpeg?auto=compress&cs=tinysrgb&w=800', // Neon Vibes
-  'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=800', // Crowd Energy
+  'https://images.pexels.com/photos/1190298/pexels-photo-1190298.jpeg?auto=compress&cs=tinysrgb&w=800',
+  'https://images.pexels.com/photos/2747449/pexels-photo-2747449.jpeg?auto=compress&cs=tinysrgb&w=800',
+  'https://images.pexels.com/photos/1105666/pexels-photo-1105666.jpeg?auto=compress&cs=tinysrgb&w=800',
+  'https://images.pexels.com/photos/2263436/pexels-photo-2263436.jpeg?auto=compress&cs=tinysrgb&w=800',
+  'https://images.pexels.com/photos/1763075/pexels-photo-1763075.jpeg?auto=compress&cs=tinysrgb&w=800',
+];
+
+const LUMA_GALLERY_CATEGORIES = [
+  {
+    name: 'Featured',
+    images: [
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/de/a12a3146-d8ca-4e7d-865b-772a559a0a14',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/xi/9ab80c47-70bf-4d4d-8b76-f983b49b7c71.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/rr/9368bcbe-4579-46d3-b341-b5330215ebee',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/z8/63471081-717f-4230-8d6c-6d76aeab5e08',
+    ],
+  },
+  {
+    name: 'Business',
+    images: [
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/vt/318de18d-3cb8-4b4e-ae3b-60e03f671ee2.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/qk/a33323fb-d69b-45c5-9362-3a49dc9b4cbc.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/di/5eed6028-6641-4564-8544-731c4d29371e.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/u1/3ad47c7f-bae0-4396-aa9f-29522aab4084.png',
+    ],
+  },
+  {
+    name: 'Tech',
+    images: [
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/yd/c8ded50f-24e7-4af0-aeb2-9bac97712e4c.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/x4/232b7986-33f1-4753-928d-84910cd55dd8.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/sx/81dcf961-c47a-4474-a332-2640c211ac3e.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/ve/ab94b70b-d954-410a-b686-1a32c74a4d75.png',
+    ],
+  },
+  {
+    name: 'Party',
+    images: [
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/px/7023a147-7a8e-428d-8f5f-ec1ac96946a2.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/q7/df06078f-53c0-4ad1-a151-15dc8f3e8804.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/fp/ea6ba574-ab98-4e50-96fb-854a8390d48a.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/5g/e9610f9d-f711-4a87-a692-757aa04e66c0.png',
+    ],
+  },
+  {
+    name: 'Music',
+    images: GALLERY_IMAGES.slice(7, 12),
+  },
+  {
+    name: 'Sports',
+    images: [
+      '/images/gallery/sports/football-classic.png',
+      '/images/gallery/sports/run-with-us.png',
+      '/images/gallery/sports/formula-watch-party.png',
+      '/images/gallery/sports/speed-is-everything.png',
+      '/images/gallery/sports/f1-speed.png',
+      '/images/gallery/sports/f1-front-dark.png',
+      '/images/gallery/sports/f1-distant-dark.png',
+      '/images/gallery/sports/f1-red-line.png',
+      '/images/gallery/sports/f1-red-glow.png',
+      '/images/gallery/sports/race-weekend.png',
+      '/images/gallery/sports/goal-green.png',
+      '/images/gallery/sports/game-day.png',
+      '/images/gallery/sports/football-neon.png',
+    ],
+  },
+  {
+    name: 'School',
+    images: [
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/qz/95e54594-3503-4a28-96be-a84452f1d13b.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/an/1a84247d-82e8-4605-867d-5231fd102404.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/6s/4151ebf4-08f7-454f-ad5f-a584cdda0619.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/45/c841ec5a-04b9-4ea4-9bc1-6c6d94b1ae48',
+    ],
+  },
+  {
+    name: 'Invitations',
+    images: [
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/1y/9ba31350-4f83-4d92-b6af-adfc0da51d82.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/17/53eb7aa8-96be-4ea7-b52e-da82c82c445c.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/mn/1f9bb9ed-4d81-47da-b62e-74320ef3b85a.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/iy/34245b63-83d8-4645-bade-2b92ba69bd79.gif',
+    ],
+  },
+  {
+    name: 'Women',
+    images: [
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/3b/bb4d566a-1780-43d2-ade8-ca82fa8b9986.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/02/7f5096be-e7ee-4631-b699-d215d4f3818d.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/yf/e6c839a1-a1f9-4187-afca-5a539862338d.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/nn/8ce964b2-0ce2-4cfd-b26e-2a9c25ce2695.png',
+    ],
+  },
 ];
 
 const buildInitialFormState = (): FormState => {
@@ -256,6 +334,7 @@ const CreateEvent = () => {
 
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitting, setSubmitting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(false);
@@ -279,6 +358,9 @@ const CreateEvent = () => {
   // Mobile modal states
   const [showMobileUploadOptions, setShowMobileUploadOptions] = useState(false);
   const [showMobileGallery, setShowMobileGallery] = useState(false);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [gallerySearch, setGallerySearch] = useState('');
+  const [activeGalleryCategory, setActiveGalleryCategory] = useState(LUMA_GALLERY_CATEGORIES[0].name);
   const [mobileTab, setMobileTab] = useState<'details' | 'preview'>('details');
 
   // Ticket management state
@@ -644,6 +726,9 @@ const CreateEvent = () => {
     setCoverPreview(objectUrl);
     setCoverFile(file); // Store the file for upload
     setCoverPreviewError(false);
+    setShowImagePicker(false);
+    setShowMobileUploadOptions(false);
+    setShowMobileGallery(false);
     event.target.value = '';
   };
 
@@ -660,6 +745,8 @@ const CreateEvent = () => {
 
   const handleGallerySelect = (url: string) => {
     setForm(prev => ({ ...prev, coverImage: url }));
+    setShowImagePicker(false);
+    setShowMobileGallery(false);
   };
 
   const handleGalleryRefresh = () => {
@@ -668,12 +755,13 @@ const CreateEvent = () => {
   };
 
   const handleCoverClick = (e: React.MouseEvent) => {
+    e.preventDefault();
     // Check if mobile (using simple width check or just always showing options on small screens)
     if (window.innerWidth < 1024) { // lg breakpoint
-      e.preventDefault();
       setShowMobileUploadOptions(true);
+    } else {
+      setShowImagePicker(true);
     }
-    // On desktop, default behavior (opens file picker) applies via label
   };
 
   const timeZoneMeta = useMemo(() => {
@@ -703,12 +791,24 @@ const CreateEvent = () => {
 
   const handlePublish = async () => {
     if (!id) return;
+    if (!form.title.trim()) {
+      toastError('Please provide an event title before scheduling.');
+      return;
+    }
+    if (!form.communityId) {
+      toastError('Please select a community before scheduling.');
+      return;
+    }
     if (!form.startDateTime) {
       toastError('Please set a start date and time before publishing.');
       return;
     }
     if (new Date(form.startDateTime) <= new Date()) {
       toastError('Start date and time must be in the future.');
+      return;
+    }
+    if (form.venueType !== 'virtual' && !form.endDateTime) {
+      toastError('Please set an end date and time before scheduling this physical event.');
       return;
     }
     setPublishing(true);
@@ -722,17 +822,18 @@ const CreateEvent = () => {
     }
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const saveEvent = async ({ asDraft = false }: { asDraft?: boolean } = {}) => {
     if (!userId) return;
 
-    const trimmedTitle = form.title.trim();
+    const isDraftEdit = !!id && eventStatus.toLowerCase() === 'draft';
+    const relaxedDraftSave = asDraft || isDraftEdit;
+    const trimmedTitle = form.title.trim() || (relaxedDraftSave ? 'Untitled Event' : '');
     if (!trimmedTitle) {
       toastError('Please provide an event title.');
       return;
     }
 
-    if (!form.communityId) {
+    if (!relaxedDraftSave && !form.communityId) {
       toastError('Please select a community.');
       return;
     }
@@ -746,13 +847,13 @@ const CreateEvent = () => {
         toastError('Start time is invalid.');
         return;
       }
-    } else if (isPublished) {
+    } else if (!relaxedDraftSave && isPublished) {
       toastError('Published events must have a start date. You cannot unset it.');
       return;
     }
 
     const isPhysicalEvent = form.venueType !== 'virtual';
-    if (isPhysicalEvent && !form.endDateTime) {
+    if (!relaxedDraftSave && isPhysicalEvent && !form.endDateTime) {
       toastError('Please set an end date and time for physical events.');
       return;
     }
@@ -771,7 +872,11 @@ const CreateEvent = () => {
       endTimeIso = endTime.toISOString();
     }
 
-    setSubmitting(true);
+    if (asDraft) {
+      setSavingDraft(true);
+    } else {
+      setSubmitting(true);
+    }
     try {
       let coverImageUrl = form.coverImage;
 
@@ -780,7 +885,11 @@ const CreateEvent = () => {
           coverImageUrl = await uploadCoverImage(coverFile);
         } catch (uploadError: any) {
           toastError('Failed to upload cover image. Please try again.');
-          setSubmitting(false);
+          if (asDraft) {
+            setSavingDraft(false);
+          } else {
+            setSubmitting(false);
+          }
           return;
         }
       }
@@ -791,6 +900,9 @@ const CreateEvent = () => {
         if (venueResult.id) {
           resolvedVenueId = venueResult.id;
         }
+      }
+      if (form.venueType === 'virtual') {
+        resolvedVenueId = null;
       }
 
       const insertPayload = {
@@ -827,8 +939,8 @@ const CreateEvent = () => {
       }
 
       // Handle tickets
-      if (id) {
-        const currentTickets = await getTicketsForEvent(id);
+      if (eventId) {
+        const currentTickets = id ? await getTicketsForEvent(eventId) : [];
         const currentTicketIds = (currentTickets || []).map(t => t.id);
         const formTicketIds = new Set(form.tickets.map(t => t.id).filter(id => !id.startsWith('ticket-')));
         const ticketsToDelete = currentTicketIds.filter(tid => !formTicketIds.has(tid));
@@ -860,19 +972,38 @@ const CreateEvent = () => {
         }
       }
 
-      toastSuccess(id ? 'Event updated successfully!' : 'Event created successfully!');
+      toastSuccess(asDraft ? 'Draft saved successfully!' : (id ? 'Event updated successfully!' : 'Event created successfully!'));
       if (!id) {
+        if (asDraft && eventId) {
+          navigate(`/dashboard/events/${eventId}/edit`);
+          return;
+        }
         setForm(buildInitialFormState());
         setCoverFile(null);
         setActiveTheme(0);
       }
-      navigate(`/dashboard/events`);
+      if (!asDraft) {
+        navigate(`/dashboard/events`);
+      }
     } catch (error) {
       console.error('Unexpected error while creating event', error);
       toastError('Something went wrong. Please try again.');
     } finally {
-      setSubmitting(false);
+      if (asDraft) {
+        setSavingDraft(false);
+      } else {
+        setSubmitting(false);
+      }
     }
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await saveEvent();
+  };
+
+  const handleSaveDraft = async () => {
+    await saveEvent({ asDraft: true });
   };
 
   const datetimeValue = (value: string | null) => {
@@ -901,6 +1032,16 @@ const CreateEvent = () => {
     const date = new Date(form.startDateTime);
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }, [form.startDateTime]);
+
+  const visibleGalleryCategories = useMemo(() => {
+    const query = gallerySearch.trim().toLowerCase();
+    if (!query) return LUMA_GALLERY_CATEGORIES;
+    return LUMA_GALLERY_CATEGORIES.filter(category => category.name.toLowerCase().includes(query));
+  }, [gallerySearch]);
+  const currentGalleryCategory = LUMA_GALLERY_CATEGORIES.find(category => category.name === activeGalleryCategory) || LUMA_GALLERY_CATEGORIES[0];
+  const pickerImages = gallerySearch.trim()
+    ? visibleGalleryCategories.flatMap(category => category.images)
+    : currentGalleryCategory.images;
 
   if (!ready || loadingEvent) {
     return (
@@ -1058,7 +1199,7 @@ const CreateEvent = () => {
                         type="datetime-local"
                         min={form.startDateTime ? datetimeValue(form.startDateTime) : nowIsoLocal}
                         value={form.endDateTime ? datetimeValue(form.endDateTime) : ''}
-                        required={form.venueType !== 'virtual'}
+                        required={isPublished && form.venueType !== 'virtual'}
                         onChange={(e) => {
                           setForm(prev => ({ ...prev, endDateTime: e.target.value || null }));
                         }}
@@ -1332,45 +1473,91 @@ const CreateEvent = () => {
               </div>
 
               <div className="pt-8 border-t border-gray-100">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full rounded-full bg-black px-8 py-4 text-lg font-medium text-white transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {submitting ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      {id ? 'Saving...' : 'Creating...'}
-                    </span>
-                  ) : (
-                    id ? 'Save Changes' : 'Create Event'
-                  )}
-                </button>
-
-                {id && eventStatus.toLowerCase() === 'draft' && (
-                  <button
-                    type="button"
-                    onClick={handlePublish}
-                    disabled={publishing}
-                    className="w-full mt-3 rounded-full bg-emerald-500 px-8 py-4 text-lg font-medium text-white transition-transform hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {publishing ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                        Publishing...
-                      </span>
-                    ) : (
-                      'Schedule Event'
+                {id && eventStatus.toLowerCase() === 'draft' ? (
+                  <>
+                    <div className="mb-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+                      <button
+                        type="submit"
+                        disabled={submitting || publishing}
+                        className="inline-flex items-center justify-center gap-2 text-lg font-medium text-gray-500 transition-colors hover:text-gray-950 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          'Save Changes'
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handlePublish}
+                      disabled={publishing || submitting}
+                      className="w-full rounded-full bg-black px-8 py-4 text-lg font-medium text-white transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {publishing ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          Scheduling...
+                        </span>
+                      ) : (
+                        'Schedule Event'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate(-1)}
+                      className="w-full mt-3 rounded-full bg-gray-100 px-8 py-4 text-lg font-medium text-gray-900 transition-all hover:bg-gray-200 active:scale-[0.98]"
+                    >
+                      Cancel Changes
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {!id && (
+                      <div className="mb-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveDraft}
+                          disabled={submitting || savingDraft}
+                          className="inline-flex items-center justify-center gap-2 text-lg font-medium text-gray-500 transition-colors hover:text-gray-950 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {savingDraft ? (
+                            <>
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                              Saving draft...
+                            </>
+                          ) : (
+                            'Save as Draft'
+                          )}
+                        </button>
+                      </div>
                     )}
-                  </button>
+                    <button
+                      type="submit"
+                      disabled={submitting || savingDraft}
+                      className="w-full rounded-full bg-black px-8 py-4 text-lg font-medium text-white transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {submitting ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          {id ? 'Saving...' : 'Creating...'}
+                        </span>
+                      ) : (
+                        id ? 'Save Changes' : 'Create Event'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate(-1)}
+                      className="w-full mt-3 rounded-full bg-gray-100 px-8 py-4 text-lg font-medium text-gray-900 transition-all hover:bg-gray-200 active:scale-[0.98]"
+                    >
+                      {id ? 'Cancel Changes' : 'Cancel'}
+                    </button>
+                  </>
                 )}
-                <button
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  className="w-full mt-3 rounded-full bg-gray-100 px-8 py-4 text-lg font-medium text-gray-900 transition-all hover:bg-gray-200 active:scale-[0.98]"
-                >
-                  {id ? 'Cancel Changes' : 'Cancel'}
-                </button>
               </div>
             </form>
           </main>
@@ -1447,57 +1634,13 @@ const CreateEvent = () => {
               </div>
             </div>
 
-            {/* Gallery & AI (Desktop Only) */}
-            <div className="hidden lg:block rounded-2xl border border-gray-100 bg-white/50 p-5 shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:shadow-md">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-900">Cover Gallery</h3>
-                <button
-                  type="button"
-                  onClick={handleGalleryRefresh}
-                  className="p-1.5 rounded-full text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-all"
-                  title="Refresh gallery"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-5 gap-2 mb-4">
-                {visibleGalleryImages.map((url, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleGallerySelect(url)}
-                    className="relative aspect-square overflow-hidden rounded-lg ring-offset-2 transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-black/20"
-                  >
-                    <img
-                      src={url}
-                      alt="Gallery option"
-                      className="h-full w-full object-cover"
-                    />
-                    {form.coverImage === url && (
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                        <div className="h-2 w-2 rounded-full bg-white shadow-sm" />
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-
+            <div className="hidden lg:block">
               <button
                 type="button"
-                className="w-full group relative flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:bg-purple-50"
-                style={{
-                  backgroundColor: 'rgba(168, 85, 247, 0.1)',
-                  color: 'rgb(139, 92, 246)',
-                  border: '1px solid rgba(168, 85, 247, 0.2)'
-                }}
+                onClick={() => setShowImagePicker(true)}
+                className="w-full rounded-2xl border border-gray-100 bg-white/70 px-5 py-4 text-sm font-semibold text-gray-800 shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:shadow-md active:scale-[0.99]"
               >
-                <span className="relative z-10 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                    <path fillRule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.91l1.036.258a.75.75 0 0 1 0 1.456l-1.036.258c-.94.236-1.674.97-1.91 1.91l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.91-1.91l-1.036-.258a.75.75 0 0 1 0-1.456l1.036-.258a2.625 2.625 0 0 0 1.91-1.91l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clipRule="evenodd"></path>
-                  </svg>
-                  <span>Generate with AI</span>
-                </span>
+                Choose from Gallery
               </button>
             </div>
 
@@ -1505,6 +1648,129 @@ const CreateEvent = () => {
           </div>
         </div >
       </div >
+
+      {showImagePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="flex h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-black/5 px-5 py-4">
+              <h3 className="text-[17px] font-semibold text-gray-950">Choose Image</h3>
+              <button
+                type="button"
+                onClick={() => setShowImagePicker(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="border-b border-black/5 p-4">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex min-h-[86px] w-full flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center transition-colors hover:border-gray-300 hover:bg-gray-100"
+              >
+                <span className="text-sm font-semibold text-gray-600">Drag & drop or click here to upload.</span>
+                <span className="mt-1 text-xs font-medium text-gray-400">Or choose an image below. The ideal aspect ratio is 1:1.</span>
+              </button>
+            </div>
+
+            <div className="relative border-b border-black/5 px-4 py-3">
+              <Search className="absolute left-8 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={gallerySearch}
+                onChange={(event) => setGallerySearch(event.target.value)}
+                placeholder="Search for more photos"
+                className="h-11 w-full rounded-2xl border border-gray-100 bg-white pl-10 pr-10 text-sm font-medium text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-300"
+              />
+              {gallerySearch && (
+                <button
+                  type="button"
+                  onClick={() => setGallerySearch('')}
+                  className="absolute right-7 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-[150px_1fr]">
+              <aside className="overflow-y-auto border-r border-black/5 p-2">
+                {LUMA_GALLERY_CATEGORIES.map(category => {
+                  const selected = category.name === activeGalleryCategory && !gallerySearch;
+                  return (
+                    <button
+                      key={category.name}
+                      type="button"
+                      onClick={() => {
+                        setActiveGalleryCategory(category.name);
+                        setGallerySearch('');
+                      }}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                        selected ? 'bg-gray-100 text-gray-950' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                    >
+                      {category.name}
+                    </button>
+                  );
+                })}
+              </aside>
+
+              <main className="min-h-0 overflow-y-auto p-4">
+                {!gallerySearch && activeGalleryCategory === 'Featured' ? (
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    {LUMA_GALLERY_CATEGORIES.slice(1).map(category => (
+                      <button
+                        key={category.name}
+                        type="button"
+                        onClick={() => setActiveGalleryCategory(category.name)}
+                        className="group rounded-2xl border border-gray-100 bg-white p-3 text-left transition-all hover:border-gray-200 hover:shadow-sm"
+                      >
+                        <div className="relative h-32 overflow-hidden rounded-xl bg-gray-50">
+                          {category.images.slice(0, 4).map((image, index) => (
+                            <img
+                              key={image}
+                              src={image}
+                              alt=""
+                              className="absolute left-1/2 top-1/2 h-[72%] w-[72%] -translate-x-1/2 -translate-y-1/2 rounded-xl object-cover shadow-sm transition-transform duration-300 group-hover:scale-[1.02]"
+                              style={{
+                                opacity: index === 0 ? 0.35 : 1,
+                                transform: `translate(-50%, calc(-50% + ${index * 8 - 12}px)) scale(${0.76 + index * 0.07})`,
+                                zIndex: index,
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <p className="mt-3 truncate text-center text-sm font-semibold text-gray-600">{category.name}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                    {pickerImages.map((url, index) => (
+                      <button
+                        key={`${url}-${index}`}
+                        type="button"
+                        onClick={() => handleGallerySelect(url)}
+                        className="group relative aspect-square overflow-hidden rounded-2xl bg-gray-100 transition-transform hover:scale-[1.015] focus:outline-none focus:ring-2 focus:ring-black/20"
+                      >
+                        <img src={url} alt="Gallery option" className="h-full w-full object-cover" />
+                        {form.coverImage === url && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/35">
+                            <span className="h-2.5 w-2.5 rounded-full bg-white shadow-sm" />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </main>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Upload Options Modal */}
       {

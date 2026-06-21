@@ -38,10 +38,26 @@ type CaptureAnimation = {
 } | null;
 
 const CHECK_IN_STORAGE_KEY = 'amptive.dashboard.checkins';
+const TICKET_DETAIL_OVERRIDES_KEY = 'amptive.my_tickets.detail_overrides';
+
+type TicketDetailOverride = {
+    attendee_name?: string;
+    attendee_email?: string;
+    attendee_phone?: string;
+};
 
 const readStoredCheckIns = (): Record<string, string> => {
     try {
         const stored = localStorage.getItem(CHECK_IN_STORAGE_KEY);
+        return stored ? JSON.parse(stored) : {};
+    } catch {
+        return {};
+    }
+};
+
+const readTicketDetailOverrides = (): Record<string, TicketDetailOverride> => {
+    try {
+        const stored = localStorage.getItem(TICKET_DETAIL_OVERRIDES_KEY);
         return stored ? JSON.parse(stored) : {};
     } catch {
         return {};
@@ -287,6 +303,7 @@ const getStoredCheckInTime = (checkedIn: Record<string, string>, ticket: CheckIn
 };
 
 const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent): CheckInTicket[] => {
+    const ticketOverrides = readTicketDetailOverrides();
     return orders.flatMap((order) => {
         const eventTitle = order.event_title || order.events?.title || fallbackEvent?.title || 'Untitled event';
         const eventId = order.event_id || fallbackEvent?.event_id || '';
@@ -342,6 +359,11 @@ const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent): CheckInT
             );
             const id = firstValue(ticketId, code, qr, orderId ? `${orderId}:${index}` : `ticket:${index}`);
             const checkedAt = getTicketCheckedAt(ticket, order);
+            const override = [ticketId, code, qr, id]
+                .map(value => String(value || ''))
+                .find(value => value && ticketOverrides[value])
+                ? ticketOverrides[[ticketId, code, qr, id].map(value => String(value || '')).find(value => value && ticketOverrides[value]) as string]
+                : undefined;
 
             return {
                 id,
@@ -352,8 +374,8 @@ const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent): CheckInT
                     : ticket.ticket_status || ticket.status || order.ticket_status || order.status || 'valid',
                 eventId,
                 eventTitle,
-                attendeeName: ticket.attendee_name || order.attendee_name || buyerName,
-                attendeeEmail: ticket.attendee_email || order.attendee_email || buyerEmail,
+                attendeeName: override?.attendee_name || ticket.attendee_name || order.attendee_name || buyerName,
+                attendeeEmail: override?.attendee_email || ticket.attendee_email || order.attendee_email || buyerEmail,
                 ticketLabel: firstValue(
                     getNested(ticket, 'event_tickets.label'),
                     ticket.label,
@@ -404,6 +426,7 @@ export default function DashboardCheckIn() {
     const feedbackTimerRef = useRef<number | null>(null);
     const captureTimerRef = useRef<number | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
+    const audioUnlockedRef = useRef(false);
 
     useEffect(() => {
         localStorage.setItem(CHECK_IN_STORAGE_KEY, JSON.stringify(checkedIn));
@@ -413,7 +436,11 @@ export default function DashboardCheckIn() {
         const fetchEvents = async () => {
             try {
                 const data = await getEventsByUser();
-                setEvents(data || []);
+                const checkInEvents = (data || []).filter(event => {
+                    const status = normalize(event.status);
+                    return status && !['draft', 'pending', 'cancelled', 'canceled', 'archived'].includes(status);
+                });
+                setEvents(checkInEvents);
             } catch {
                 setEvents([]);
             } finally {
@@ -483,7 +510,32 @@ export default function DashboardCheckIn() {
         captureTimerRef.current = window.setTimeout(() => setCaptureAnimation(null), 1050);
     };
 
-    const playScanSound = (type: Exclude<ScanFeedback, null>) => {
+    const unlockScanAudio = async () => {
+        try {
+            const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextCtor) return;
+
+            const audioContext = audioContextRef.current || new AudioContextCtor();
+            audioContextRef.current = audioContext;
+
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            if (!audioUnlockedRef.current && audioContext.state === 'running') {
+                const buffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+                source.start(0);
+                audioUnlockedRef.current = true;
+            }
+        } catch {
+            // Safari may still refuse audio until a stronger user gesture; scanning should continue.
+        }
+    };
+
+    const playScanSound = async (type: Exclude<ScanFeedback, null>) => {
         try {
             const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
             if (!AudioContextCtor) return;
@@ -491,7 +543,10 @@ export default function DashboardCheckIn() {
             const audioContext = audioContextRef.current || new AudioContextCtor();
             audioContextRef.current = audioContext;
             if (audioContext.state === 'suspended') {
-                void audioContext.resume();
+                await audioContext.resume();
+            }
+            if (audioContext.state !== 'running') {
+                return;
             }
 
             const now = audioContext.currentTime;
@@ -524,7 +579,7 @@ export default function DashboardCheckIn() {
     };
 
     const triggerScanFeedback = (type: Exclude<ScanFeedback, null>) => {
-        playScanSound(type);
+        void playScanSound(type);
         setScanFeedback(type);
         if (feedbackTimerRef.current) {
             window.clearTimeout(feedbackTimerRef.current);
@@ -645,6 +700,7 @@ export default function DashboardCheckIn() {
 
     const handleManualSubmit = async (event: FormEvent) => {
         event.preventDefault();
+        await unlockScanAudio();
         await checkInCode(manualCode);
         setManualCode('');
     };
@@ -661,6 +717,7 @@ export default function DashboardCheckIn() {
 
     const startCamera = async () => {
         setCameraError('');
+        await unlockScanAudio();
         const BarcodeDetector = (window as any).BarcodeDetector;
 
         try {
@@ -720,8 +777,8 @@ export default function DashboardCheckIn() {
 
                 {events.length === 0 ? (
                     <div className="max-w-xl border-y border-dashed border-black/10 py-14 text-center">
-                        <p className="text-[17px] font-semibold text-black">No events found</p>
-                        <p className="mt-2 text-sm font-medium text-black/40">Create or publish an event before using check-in.</p>
+                        <p className="text-[17px] font-semibold text-black">No published events found</p>
+                        <p className="mt-2 text-sm font-medium text-black/40">Schedule or publish an event before using check-in.</p>
                     </div>
                 ) : (
                     <div className="max-w-3xl divide-y divide-black/5 border-y border-black/5">

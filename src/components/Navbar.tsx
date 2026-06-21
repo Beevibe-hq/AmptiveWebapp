@@ -109,7 +109,8 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   // Removed auto-redirect on route change; incomplete sessions are signed out silently instead.
 
   // Navigation links for authenticated users
-  const shouldShowAcceptTips = String(authUser?.support_enabled).toLowerCase() !== 'true';
+  const hasEnabledTips = authUser?.support_enabled === true || (authUser as any)?.accept_tips === true;
+  const shouldShowAcceptTips = !hasEnabledTips;
 
   const authLinks: NavLink[] = [
     ...(shouldShowAcceptTips ? [{ name: 'Accept Tip$', path: '/profile/support-setup' } as MenuItem] : []),

@@ -6,6 +6,14 @@ import { toastSuccess, toastError } from '@/lib/ui/toast';
 import VenueForm from './VenueForm';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
+const AMPTIVE_APP_VENUE_ID = 'virtual-amptive-app';
+const AMPTIVE_APP_VENUE: Venue = {
+  venue_id: AMPTIVE_APP_VENUE_ID,
+  name: 'Amptive App',
+  venue_type: 'virtual',
+  platform_note: 'Audience will join the live event inside the Amptive mobile app.',
+};
+
 interface VenueSelectorProps {
   selectedVenueId?: string | null;
   onVenueSelect: (venueId: string | null, venueType?: 'physical' | 'virtual' | null) => void;
@@ -20,8 +28,11 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
   const [showForm, setShowForm] = useState(false);
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
   const [draftPayload, setDraftPayload] = useState<VenueCreateRequest | null>(null);
+  const physicalVenues = venues.filter((venue) => venue.venue_type === 'physical');
 
-  const selectedVenue = venues.find((v) => v.venue_id === selectedVenueId) ||
+  const selectedVenue = selectedVenueId === AMPTIVE_APP_VENUE_ID
+    ? AMPTIVE_APP_VENUE
+    : venues.find((v) => v.venue_id === selectedVenueId) ||
     (draftPayload && selectedVenueId?.startsWith('draft-')
       ? { venue_id: selectedVenueId, name: draftPayload.name, venue_type: draftPayload.venue_type, city: draftPayload.city, state: draftPayload.state, address_line1: draftPayload.address_line1 } as Venue
       : undefined);
@@ -44,6 +55,12 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
 
   const handleOpen = () => {
     if (selectedVenueId) {
+      if (selectedVenueId === AMPTIVE_APP_VENUE_ID) {
+        setEditingVenue(AMPTIVE_APP_VENUE);
+        setShowForm(true);
+        setOpen(true);
+        return;
+      }
       const venueToEdit = venues.find((v) => v.venue_id === selectedVenueId) ||
         (draftPayload && selectedVenueId.startsWith('draft-')
           ? {
@@ -74,6 +91,16 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
 
   const handleSaveVenue = useCallback(async (payload: VenueCreateRequest) => {
     try {
+      if (payload.venue_type === 'virtual') {
+        setDraftPayload(null);
+        onDraftVenue?.(null);
+        onVenueSelect(AMPTIVE_APP_VENUE_ID, 'virtual');
+        setOpen(false);
+        setShowForm(false);
+        setEditingVenue(null);
+        return;
+      }
+
       if (editingVenue) {
         if (deferVenueCreation && editingVenue.venue_id.startsWith('draft-')) {
           setDraftPayload(payload);
@@ -189,7 +216,7 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
                 setOpen(false);
                 setEditingVenue(null);
               } : undefined}
-              existingVenues={venues}
+              existingVenues={physicalVenues}
               selectedVenueId={selectedVenueId}
               onSelectVenue={(venueId) => {
                 const venue = venues.find(v => v.venue_id === venueId);

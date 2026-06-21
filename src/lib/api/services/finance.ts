@@ -18,6 +18,17 @@ export const $finance = {
   getBanks: () =>
     api.get<unknown>(`${PAYMENTS_PREFIX}/banks`),
 
+  getWalletBalance: () =>
+    api.get<unknown>(`${PAYMENTS_PREFIX}/wallet/balance`),
+
+  getTransactions: (params?: { cursor?: string; page_size?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.page_size) query.set('page_size', String(params.page_size));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return api.get<unknown>(`${PAYMENTS_PREFIX}/transactions${suffix}`);
+  },
+
   resolveBankAccount: (payload: { bank_code: string; account_number: string }) =>
     api.post<unknown>(`${PAYMENTS_PREFIX}/bank-accounts/resolve`, payload),
 

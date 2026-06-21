@@ -150,7 +150,7 @@ export default function VenueForm({
     <>
       <div className="flex items-center justify-between mb-4 lg:mb-6 flex-shrink-0">
         <h4 className="text-lg font-bold text-gray-900">
-          {initialVenue ? 'Edit Venue' : 'Add Venue'}
+          {venueType === 'virtual' ? 'Select Venue' : (initialVenue ? 'Edit Venue' : 'Add Venue')}
         </h4>
         <button
           type="button"
@@ -492,7 +492,7 @@ export default function VenueForm({
           disabled={!name.trim()}
           className="flex-1 px-6 py-3.5 rounded-full bg-black text-white text-sm font-semibold hover:bg-gray-900 transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {initialVenue ? 'Update Venue' : 'Save Venue'}
+          {venueType === 'virtual' ? 'Select' : (initialVenue ? 'Update Venue' : 'Save Venue')}
         </button>
         {onClear && (
           <button

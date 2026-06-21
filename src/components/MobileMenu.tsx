@@ -52,7 +52,8 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
   const { user, loading, logout: contextLogout } = useAuth();
 
   // Navigation links for authenticated users with icons
-  const shouldShowAcceptTips = String(user?.support_enabled).toLowerCase() !== 'true';
+  const hasEnabledTips = user?.support_enabled === true || (user as any)?.accept_tips === true;
+  const shouldShowAcceptTips = !hasEnabledTips;
 
   const authLinks: LinkItem[] = [
     ...(shouldShowAcceptTips ? [{
