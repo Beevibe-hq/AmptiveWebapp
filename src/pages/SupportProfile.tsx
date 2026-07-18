@@ -6,7 +6,7 @@ import SupportCard from '@/components/SupportCard';
 import Navbar from '@/components/Navbar';
 import SupportEditModal from '@/components/SupportEditModal';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getSupportProfile, getSupportProfileByUsername, getSupportPayments, SupportProfile as SupportProfileType } from '@/lib/api/support';
+import { getSupportProfile, getSupportProfileByUsername, getSupportProfileBySlug, getSupportPayments, mergeSupportProfileIdentity, SupportProfile as SupportProfileType } from '@/lib/api/support';
 import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
@@ -193,16 +193,30 @@ export default function SupportProfile() {
       setLoading(true);
       try {
         const user = await getCurrentUser();
-        setCurrentUserId(user?.id || null);
+        setCurrentUserId(user?.user_id || user?.id || null);
 
-        let profileData: SupportProfileType | null = null;
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-
-        if (isUuid) {
-          profileData = await getSupportProfile(id);
-        } else {
-          profileData = await getSupportProfileByUsername(id);
+        // The canonical lookup is the backend's support slug; fall back to the older
+        // user-id / username lookups for legacy links.
+        let profileData: SupportProfileType | null = await getSupportProfileBySlug(id);
+        if (!profileData) {
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          profileData = isUuid
+            ? await getSupportProfile(id)
+            : await getSupportProfileByUsername(id);
         }
+
+        // The support response intentionally contains support settings only. For the
+        // owner, hydrate identity fields from the already-loaded authenticated user.
+        if (profileData && user) {
+          const userId = user.user_id || user.id;
+          if (profileData.user_id === userId) {
+            profileData = mergeSupportProfileIdentity(
+              profileData,
+              user as unknown as Record<string, unknown>
+            );
+          }
+        }
+
         setProfile(profileData);
       } catch (error) {
         console.error('Error loading support profile:', error);
@@ -302,6 +316,14 @@ export default function SupportProfile() {
   const queryParams = new URLSearchParams(window.location.search);
   const viewAs = queryParams.get('viewAs');
   const isOwner = currentUserId === profile.user_id && viewAs !== 'public';
+  const displayName = profile.full_name || profile.name || profile.username || 'Amptive Creator';
+  const profileAvatarUrl = profile.support_avatar_url || profile.avatar_url;
+  const avatarInitials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'A';
 
   return (
     <div className={paymentStatus === 'success' ? "min-h-screen overflow-x-hidden font-sans selection:bg-blue-100 selection:text-blue-900 bg-transparent" : "min-h-screen overflow-x-hidden bg-white font-sans selection:bg-blue-100 selection:text-blue-900"}>
@@ -316,7 +338,7 @@ export default function SupportProfile() {
           className="fixed inset-0 -z-10"
           style={{
             backdropFilter: 'blur(140px)',
-            backgroundImage: 'url("/mkimage/image/thumb/Features125/v4/d5/bb/ad/d5bbad45-cb3e-6334-ac5d-72442a0e822c/pr_source.png/800x800vb.webp")',
+            backgroundImage: profileAvatarUrl ? `url("${profileAvatarUrl}")` : 'none',
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
@@ -329,7 +351,7 @@ export default function SupportProfile() {
             <Eye size={16} /> <span>You are previewing your profile as a supporter</span>
           </div>
           <button 
-            onClick={() => navigate(`/support/${profile.username || profile.user_id}`)}
+            onClick={() => navigate(`/support/${(profile.support_slug as string) || profile.username || profile.user_id}`)}
             className="px-4 py-1.5 bg-white text-indigo-600 rounded-full text-xs font-black hover:bg-indigo-50 transition-all shadow-sm active:scale-95"
           >
             Exit Preview
@@ -371,7 +393,7 @@ export default function SupportProfile() {
           {isOwner ? (
             <>
               <button 
-                onClick={() => navigate(`/support/${profile.username || profile.user_id}?viewAs=public`)}
+                onClick={() => navigate(`/support/${(profile.support_slug as string) || profile.username || profile.user_id}?viewAs=public`)}
                 className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-blue-600 group relative"
                 title="View as public"
               >
@@ -404,11 +426,17 @@ export default function SupportProfile() {
                 animate={{ scale: 1, opacity: 1 }}
                 className="w-40 h-40 md:w-48 md:h-48 rounded-[40px] border-[6px] border-white overflow-hidden bg-white"
               >
-                <img 
-                  src={profile.support_avatar_url || profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'} 
-                  alt={profile.full_name || ''} 
-                  className="w-full h-full object-cover"
-                />
+                {profileAvatarUrl ? (
+                  <img
+                    src={profileAvatarUrl}
+                    alt={displayName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gray-100 text-4xl font-bold text-gray-500">
+                    {avatarInitials}
+                  </div>
+                )}
               </motion.div>
             </div>
 
@@ -416,7 +444,7 @@ export default function SupportProfile() {
               <div className="space-y-1">
                 <div className="flex items-center justify-center gap-1.5">
                   <h2 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">
-                    {profile.full_name || 'Amptive Creator'}
+                    {displayName}
                   </h2>
                   {profile.profile_type && (
                     <div className="relative flex-shrink-0 cursor-help group">
@@ -716,7 +744,7 @@ export default function SupportProfile() {
                 >
                   <div id="support-card-target" className="p-4 md:p-8 -m-4 md:-m-8">
                     <SupportCard 
-                      name={profile.full_name || 'Standard'} 
+                      name={displayName}
                       username={profile.username} 
                       avatarUrl={profile.support_avatar_url || profile.avatar_url} 
                       message={profile.support_message || profile.support_tagline || "Level up your journey with me."} 
@@ -783,11 +811,17 @@ export default function SupportProfile() {
                 >
                   {/* Front Side (Avatar) */}
                   <div className="absolute inset-0 w-full h-full" style={{ backfaceVisibility: 'hidden' }}>
-                    <img 
-                      src={profile.support_avatar_url || profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'} 
-                      alt={profile.full_name || ''} 
-                      className="w-full h-full object-cover rounded-full shadow-xl shadow-black/10 border-4 border-white"
-                    />
+                    {profileAvatarUrl ? (
+                      <img
+                        src={profileAvatarUrl}
+                        alt={displayName}
+                        className="w-full h-full object-cover rounded-full shadow-xl shadow-black/10 border-4 border-white"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center rounded-full border-4 border-white bg-gray-100 text-2xl font-bold text-gray-500 shadow-xl shadow-black/10">
+                        {avatarInitials}
+                      </div>
+                    )}
                     <motion.div 
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
@@ -828,7 +862,7 @@ export default function SupportProfile() {
                 </motion.div>
                 <h1 className="text-3xl font-bold text-gray-900 mt-2 mb-4">Support Successful!</h1>
                 <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                  Thank you for supporting {profile.full_name || 'this creator'}. Your contribution of <strong className="text-gray-900">₦{Number(selectedTier === 'custom' ? customAmount : selectedTier).toLocaleString()}</strong> means a lot!
+                  Thank you for supporting {displayName}. Your contribution of <strong className="text-gray-900">₦{Number(selectedTier === 'custom' ? customAmount : selectedTier).toLocaleString()}</strong> means a lot!
                 </p>
                 <button
                   onClick={() => setPaymentStatus('idle')}
@@ -841,7 +875,7 @@ export default function SupportProfile() {
           ) : (
             <div className="max-w-4xl mx-auto px-4 md:px-0">
               <div className="text-center mb-12">
-                <h3 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight leading-tight">Support {profile.full_name}</h3>
+                <h3 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight leading-tight">Support {displayName}</h3>
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

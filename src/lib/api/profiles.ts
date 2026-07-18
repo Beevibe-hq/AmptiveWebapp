@@ -50,6 +50,7 @@ export function normalizeUserProfile(user: Partial<UserProfile> | null | undefin
     following_count: user.following_count ?? 0,
     has_hosted_shows: user.has_hosted_shows ?? false,
     has_hosted_events: user.has_hosted_events ?? false,
+    is_wallet_setup: user.is_wallet_setup ?? false,
     support_enabled: user.support_enabled ?? (user as any).accept_tips ?? false,
     accept_tips: (user as any).accept_tips ?? user.support_enabled ?? false,
     support_message: (user as any).support_message ?? null,
@@ -66,18 +67,22 @@ export function normalizeUserProfile(user: Partial<UserProfile> | null | undefin
   };
 }
 
+// Treat null like undefined: PATCH /users/me should only receive fields being set,
+// never nulls that could clear (or fail validation on) existing values.
+const orOmit = <T,>(value: T | null | undefined): T | undefined => value ?? undefined;
+
 function mapUpdatePayload(data: Partial<UserProfile>): UpdateProfilePayload {
   return {
-    profile_picture: data.profile_picture ?? data.avatar_url ?? undefined,
-    name: data.name ?? undefined,
-    username: data.username ?? undefined,
-    bio: data.bio ?? undefined,
-    country: data.country ?? undefined,
-    cover_photo: data.cover_photo ?? undefined,
-    x_url: data.x_url ?? undefined,
-    instagram_url: data.instagram_url ?? undefined,
-    linkedin_url: data.linkedin_url ?? undefined,
-    website_url: data.website_url ?? undefined,
+    profile_picture: orOmit(data.profile_picture) ?? orOmit(data.avatar_url),
+    name: orOmit(data.name),
+    username: orOmit(data.username),
+    bio: orOmit(data.bio),
+    country: orOmit(data.country),
+    cover_photo: orOmit(data.cover_photo),
+    x_url: orOmit(data.x_url),
+    instagram_url: orOmit(data.instagram_url),
+    linkedin_url: orOmit(data.linkedin_url),
+    website_url: orOmit(data.website_url),
   };
 }
 

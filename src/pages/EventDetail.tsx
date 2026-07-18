@@ -363,7 +363,7 @@ const EventDetail = () => {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white">
         <h1 className="text-2xl font-bold text-black">Event Not Found</h1>
         <p className="text-black">{error || "The event you're looking for doesn't exist."}</p>
-        <Link to="/events" className="text-black hover:underline">Browse Events</Link>
+        <Link to="/explore" className="text-black hover:underline">Browse Events</Link>
       </div>
     );
   }

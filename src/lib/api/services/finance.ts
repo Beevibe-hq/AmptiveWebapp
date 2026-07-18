@@ -1,6 +1,5 @@
 import { api } from '../client';
 
-const EVENTS_PREFIX = '/events';
 const PAYMENTS_PREFIX = '/payments';
 
 export interface PaymentBankAccountPayload {
@@ -9,12 +8,6 @@ export interface PaymentBankAccountPayload {
 }
 
 export const $finance = {
-  getEventOwnerPurchases: () =>
-    api.get<{ purchases: unknown[] }>(`${EVENTS_PREFIX}/me/purchases`),
-
-  getBuyerProfiles: (userIds: string[]) =>
-    api.post<{ profiles: Record<string, unknown>[] }>(`/users/batch`, { user_ids: userIds }),
-
   getBanks: () =>
     api.get<unknown>(`${PAYMENTS_PREFIX}/banks`),
 
@@ -46,4 +39,7 @@ export const $finance = {
 
   setDefaultBankAccount: (bankAccountId: string) =>
     api.patch<unknown>(`${PAYMENTS_PREFIX}/bank-accounts/${bankAccountId}/default`, {}),
+
+  withdraw: (payload: { amount: number; bank_account_id?: string }) =>
+    api.post<unknown>(`${PAYMENTS_PREFIX}/withdraw`, payload),
 };

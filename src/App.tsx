@@ -30,6 +30,10 @@ import SupportSetup from './pages/SupportSetup';
 import MyTickets from './pages/MyTickets';
 import Blog from './pages/Blog';
 import BlogPostDetail from './pages/BlogPostDetail';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
+import FAQs from './pages/FAQs';
+import CommunityGuidelines from './pages/CommunityGuidelines';
 import Dashboard from './pages/Dashboard';
 import SupportProfile from './pages/SupportProfile.tsx';
 
@@ -149,6 +153,12 @@ function MainLayout() {
           <Route path="/my-tickets" element={<ProtectedRoute><MyTickets /></ProtectedRoute>} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:id" element={<BlogPostDetail />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/terms-of-service" element={<TermsOfService />} />
+          <Route path="/faqs" element={<FAQs />} />
+          <Route path="/community-guidelines" element={<CommunityGuidelines />} />
           <Route path="/dashboard/*" element={<Dashboard />} />
         </Routes>
       </main>

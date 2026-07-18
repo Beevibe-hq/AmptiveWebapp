@@ -5,6 +5,7 @@ import Cropper from 'react-easy-crop';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/api/storage';
 import { updateSupportProfile, SupportProfile } from '@/lib/api/support';
+import { updateProfile } from '@/lib/api/profiles';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 
 interface SupportEditModalProps {
@@ -210,12 +211,29 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
         throw new Error(error);
       }
 
+      // Persist the name, cover photo and avatar in the user's main profile record so they
+      // don't disappear on refresh. Only send fields that have values — nulls would clear
+      // (or get rejected by) the backend record.
+      const profileResult = await updateProfile({
+        ...(formData.full_name ? { name: formData.full_name } : {}),
+        ...(formData.support_avatar_url ? { avatar_url: formData.support_avatar_url } : {}),
+        ...(formData.support_banner_url ? { cover_photo: formData.support_banner_url } : {}),
+      });
+      if (!profileResult.ok) {
+        throw new Error(profileResult.error || 'Could not save your name. Please try again.');
+      }
+
       onSave({ ...profile, ...updates });
       toast.success('Profile saved');
       onClose();
     } catch (error: any) {
       console.error('handleSave error:', error);
-      toast.error('Error saving profile: ' + error.message);
+      const message = String(error?.message || '');
+      toast.error(
+        /first and last name/i.test(message)
+          ? 'The server currently requires a first and last name.'
+          : 'Error saving profile: ' + message
+      );
     } finally {
       setLoading(false);
     }
@@ -377,7 +395,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
                     {formData.full_name.length}/50
                   </span>
                 </div>
-                <input 
+                <input
                   type="text"
                   value={formData.full_name}
                   maxLength={50}

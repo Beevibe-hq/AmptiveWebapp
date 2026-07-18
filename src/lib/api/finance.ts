@@ -46,6 +46,12 @@ export interface WalletBalance {
   pending_balance: number;
 }
 
+export interface WalletBalanceStatus {
+  balance: WalletBalance | null;
+  walletMissing: boolean;
+  error?: string;
+}
+
 export interface PaymentTransaction {
   id: string;
   reference: string;
@@ -110,37 +116,30 @@ const toAmount = (value: unknown) => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
-export async function getEventOwnerPurchases(): Promise<PurchaseRecord[]> {
-  try {
-    const response = await $finance.getEventOwnerPurchases();
-    if (Array.isArray(response)) return response as PurchaseRecord[];
-    return ((response as any)?.purchases || (response as any)?.data?.purchases || (response as any)?.data || []) as PurchaseRecord[];
-  } catch {
-    return [];
-  }
-}
-
-export async function getBuyerProfiles(userIds: string[]): Promise<BuyerProfile[]> {
-  if (userIds.length === 0) return [];
-  try {
-    const response = await $finance.getBuyerProfiles(userIds);
-    return (response.profiles || []) as BuyerProfile[];
-  } catch {
-    return [];
-  }
-}
-
 export async function getWalletBalance(): Promise<WalletBalance | null> {
+  const result = await getWalletBalanceStatus();
+  return result.balance;
+}
+
+export async function getWalletBalanceStatus(): Promise<WalletBalanceStatus> {
   try {
     const response = await $finance.getWalletBalance();
     const balance = unwrapObject(response, ['wallet', 'balance']);
-    if (!balance) return null;
+    if (!balance) return { balance: null, walletMissing: false };
     return {
-      available_balance: toAmount(balance.available_balance ?? balance.availableBalance ?? balance.available),
-      pending_balance: toAmount(balance.pending_balance ?? balance.pendingBalance ?? balance.pending),
+      balance: {
+        available_balance: toAmount(balance.available_balance ?? balance.availableBalance ?? balance.available),
+        pending_balance: toAmount(balance.pending_balance ?? balance.pendingBalance ?? balance.pending),
+      },
+      walletMissing: false,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return {
+      balance: null,
+      walletMissing: /wallet not found/i.test(message),
+      error: message,
+    };
   }
 }
 
@@ -155,20 +154,23 @@ export async function getPaymentTransactions(pageSize = 100): Promise<PaymentTra
       Array.isArray(value) ? value : []
     ));
 
-    return groupedValues.map((item: any, index) => ({
-      ...item,
-      id: item.id || item.reference || `transaction-${index}`,
-      reference: item.reference || '',
-      category: item.category || '',
-      transaction_type: item.transaction_type || item.type || '',
-      transaction_status: item.transaction_status || item.status || '',
-      amount: toAmount(item.amount),
-      currency: item.currency || 'NGN',
-      created_at: item.created_at || item.createdAt || new Date().toISOString(),
-      buyer_name: item.buyer_name || item.customer_name || item.name || '',
-      buyer_email: item.buyer_email || item.customer_email || item.email || '',
-      event_title: item.event_title || item.event?.title || item.metadata?.event_title || '',
-    }));
+    return groupedValues.map((item: any, index) => {
+      const meta = typeof item.metadata === 'string' ? parseMaybeJsonString(item.metadata) : (item.metadata || {});
+      return {
+        ...item,
+        id: item.id || item.reference || `transaction-${index}`,
+        reference: item.reference || '',
+        category: item.category || '',
+        transaction_type: item.transaction_type || item.type || '',
+        transaction_status: item.transaction_status || item.status || '',
+        amount: toAmount(item.amount),
+        currency: item.currency || 'NGN',
+        created_at: item.created_at || item.createdAt || new Date().toISOString(),
+        buyer_name: item.buyer_name || item.customer_name || item.name || meta.buyer_name || meta.customer_name || '',
+        buyer_email: item.buyer_email || item.customer_email || item.email || meta.buyer_email || meta.customer_email || '',
+        event_title: item.event_title || item.event?.title || meta.event_title || '',
+      };
+    });
   } catch {
     return [];
   }
@@ -270,6 +272,18 @@ export async function createPaymentBankAccount(payload: {
     };
   } catch (error) {
     throw error;
+  }
+}
+
+export async function requestWithdrawal(payload: { amount: number; bank_account_id?: string }): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await $finance.withdraw(payload);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Withdrawal request failed. Please try again.',
+    };
   }
 }
 

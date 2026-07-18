@@ -9,6 +9,8 @@ import { getTicketEarlyBirdRemaining, getTicketRemaining, getTicketUnitPrice, ge
 import LocationMap from '../components/LocationMap';
 import { listCommunities, Community } from '@/lib/api/communities';
 import { useAuth } from '@/contexts/AuthContext';
+import { getPublishedPosts } from '@/lib/api/blog';
+import { blogPosts as staticBlogPosts } from '@/lib/blog-data';
 
 
 // Type definition for Trending Card
@@ -84,6 +86,14 @@ interface EventType {
   hasEarlyBirdOnSale?: boolean;
   isAlmostSoldOut?: boolean;
 }
+
+const HOMEPAGE_CACHE_TTL = 60_000;
+
+let homepageBlogCache: { data: any[]; timestamp: number } | null = null;
+let homepageEventsCache: { data: EventType[]; timestamp: number } | null = null;
+let homepageCommunitiesCache: { data: Community[]; timestamp: number } | null = null;
+let homepageHeroSlide = 0;
+const homepageHeroVideoTimes: Record<string, number> = {};
 
 // Update image paths to use public directory
 const techConferenceCardStyles = `
@@ -185,7 +195,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
     if (isActive) {
       setCurrentVideoIndex(0);
       if (videoRef.current) {
-        videoRef.current.currentTime = 0;
+        videoRef.current.currentTime = homepageHeroVideoTimes[activeSrc] || 0;
         videoRef.current.play().catch(err => {
           console.log("Video play interrupted/prevented:", err);
         });
@@ -238,6 +248,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
     const video = e.currentTarget;
     const time = video.currentTime;
     const src = video.currentSrc || activeSrc;
+    homepageHeroVideoTimes[activeSrc] = time;
 
     // Check if we are on the third slide videos
     if (src.includes('accepttips_encode4.mp4')) {
@@ -332,6 +343,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 ref={videoRef}
                 key={activeSrc}
                 autoPlay
+                preload="auto"
                 loop={!hasMultiple}
                 muted
                 playsInline
@@ -540,6 +552,88 @@ const Homepage: React.FC = () => {
   // User state from AuthContext
   const { user } = useAuth();
 
+  // Blog state
+  const [blogPosts, setBlogPosts] = useState<any[]>(() => homepageBlogCache?.data || []);
+  const [loadingBlog, setLoadingBlog] = useState(() => !homepageBlogCache?.data);
+
+  // Fetch latest blog posts on mount
+  useEffect(() => {
+    const fetchLatestBlogPosts = async () => {
+      const cached = homepageBlogCache;
+      if (cached) {
+        setBlogPosts(cached.data);
+        setLoadingBlog(false);
+
+        if (Date.now() - cached.timestamp < HOMEPAGE_CACHE_TTL) {
+          return;
+        }
+      } else {
+        setLoadingBlog(true);
+      }
+
+      try {
+        const response = await getPublishedPosts({ page_size: 6 });
+        const apiPosts = response.posts || [];
+        
+        let mapped = apiPosts.map(apiPost => {
+          const category = apiPost.tags?.[0]?.name || 'General';
+          
+          const categoryColors: Record<string, string> = {
+            'Events': '#22c55e',
+            'Insights': '#f59e0b',
+            'Amptive': '#3b82f6',
+            'Product': '#8b5cf6',
+            'Community': '#ec4899',
+            'General': '#64748b'
+          };
+          
+          let formattedDate = 'Recent';
+          try {
+            if (apiPost.created_at) {
+              formattedDate = new Date(apiPost.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+          } catch (e) {
+            // ignore
+          }
+
+          return {
+            id: apiPost.id,
+            slug: apiPost.slug,
+            title: apiPost.title,
+            category: category.toUpperCase(),
+            image: apiPost.featured_image_url || '/images/Overview.png',
+            date: formattedDate,
+            color: categoryColors[category] || '#3b82f6',
+            content: apiPost.content,
+            excerpt: apiPost.excerpt
+          };
+        });
+
+        if (mapped.length === 0) {
+          const fallbackPosts = staticBlogPosts.slice(0, 6);
+          homepageBlogCache = { data: fallbackPosts, timestamp: Date.now() };
+          setBlogPosts(fallbackPosts);
+        } else {
+          if (mapped.length < 6) {
+            const staticSlice = staticBlogPosts.slice(mapped.length, 6);
+            mapped = [...mapped, ...staticSlice];
+          }
+          homepageBlogCache = { data: mapped, timestamp: Date.now() };
+          setBlogPosts(mapped);
+        }
+      } catch (err) {
+        console.error('Error fetching blog posts for homepage:', err);
+        const fallbackPosts = staticBlogPosts.slice(0, 6);
+        homepageBlogCache = { data: fallbackPosts, timestamp: Date.now() };
+        setBlogPosts(fallbackPosts);
+      } finally {
+        setLoadingBlog(false);
+      }
+    };
+
+    fetchLatestBlogPosts();
+  }, []);
+
   // State for filter dropdowns
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [userCountry, setUserCountry] = useState('Loading...');
@@ -553,11 +647,11 @@ const Homepage: React.FC = () => {
 
   // State for active tab in Trending section
   const [activeTab, setActiveTab] = useState<'shows' | 'events'>('shows');
-  const [filteredEvents, setFilteredEvents] = useState<EventType[]>([]);
-  const [dbEvents, setDbEvents] = useState<EventType[]>([]);
-  const [loadingEvents, setLoadingEvents] = useState(true);
-  const [communities, setCommunities] = useState<Community[]>([]);
-  const [loadingCommunities, setLoadingCommunities] = useState(true);
+  const [filteredEvents, setFilteredEvents] = useState<EventType[]>(() => homepageEventsCache?.data || []);
+  const [dbEvents, setDbEvents] = useState<EventType[]>(() => homepageEventsCache?.data || []);
+  const [loadingEvents, setLoadingEvents] = useState(() => !homepageEventsCache?.data);
+  const [communities, setCommunities] = useState<Community[]>(() => homepageCommunitiesCache?.data || []);
+  const [loadingCommunities, setLoadingCommunities] = useState(() => !homepageCommunitiesCache?.data);
 
   // Get user's country on component mount
   useEffect(() => {
@@ -587,9 +681,20 @@ const Homepage: React.FC = () => {
   // Fetch events from database
   useEffect(() => {
     const fetchEvents = async () => {
-      try {
-        setLoadingEvents(true);
+      const cached = homepageEventsCache;
+      if (cached) {
+        setDbEvents(cached.data);
+        setFilteredEvents(cached.data);
+        setLoadingEvents(false);
 
+        if (Date.now() - cached.timestamp < HOMEPAGE_CACHE_TTL) {
+          return;
+        }
+      } else {
+        setLoadingEvents(true);
+      }
+
+      try {
         const eventsData = await listEvents({ page_size: 20 });
         
         // Fetch tickets for all events to handle multiple prices correctly
@@ -659,6 +764,7 @@ const Homepage: React.FC = () => {
             isAlmostSoldOut
           };
         });
+        homepageEventsCache = { data: transformedEvents, timestamp: Date.now() };
         setDbEvents(transformedEvents);
         setFilteredEvents(transformedEvents);
         setLoadingEvents(false);
@@ -674,8 +780,21 @@ const Homepage: React.FC = () => {
   // Fetch communities
   useEffect(() => {
     const fetchCommunities = async () => {
+      const cached = homepageCommunitiesCache;
+      if (cached) {
+        setCommunities(cached.data);
+        setLoadingCommunities(false);
+
+        if (Date.now() - cached.timestamp < HOMEPAGE_CACHE_TTL) {
+          return;
+        }
+      } else {
+        setLoadingCommunities(true);
+      }
+
       try {
         const data = await listCommunities({ page_size: 20 });        
+        homepageCommunitiesCache = { data, timestamp: Date.now() };
         setCommunities(data);
       } catch (error) {
         console.error('Error fetching communities:', error);
@@ -1053,7 +1172,7 @@ const Homepage: React.FC = () => {
     setIsFilterOpen(!isFilterOpen);
   };
   // State for carousel
-  const [currentSlide, setCurrentSlide] = useState(0);
+  const [currentSlide, setCurrentSlide] = useState(() => homepageHeroSlide);
   const [isPaused, setIsPaused] = useState(false);
   const [progressBars, setProgressBars] = useState<number[]>(Array(SLIDES.length).fill(0));
   const sliderRef = useRef<HTMLDivElement>(null);
@@ -1061,6 +1180,10 @@ const Homepage: React.FC = () => {
   const upcomingMobileEventsScrollRef = useRef<HTMLDivElement>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const resumeTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    homepageHeroSlide = currentSlide;
+  }, [currentSlide]);
 
   // Handle slide change
   const goToSlide = (index: number) => {
@@ -2430,131 +2553,57 @@ const Homepage: React.FC = () => {
 
         <div className="flex flex-col lg:flex-row justify-between gap-8">
           {/* First Column - Original size */}
-          <div className="space-y-8 pt-2">
-            {/* First Blog Post */}
-            <div className="group w-full max-w-[700px] flex flex-col gap-6">
-              <Link to="/blog/1" className="block w-full overflow-hidden lg:max-w-[800px] lg:mx-auto" style={{ aspectRatio: '16/9' }}>
-                <img
-                  src="/images/Overview (1).png"
-                  alt="Event overview"
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                />
-              </Link>
-              <div className="w-full">
-                <span className="text-[15px] font-medium text-green-600 uppercase">EVENTS</span>
-                <Link to="/blog/1" className="block mt-2">
-                  <h3 className="text-[24px] lg:text-[40px] leading-[30px] lg:leading-[44px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">How to Host Successful Virtual Events</h3>
-                  <p className="hidden lg:block text-gray-600 text-[18px] font-medium mt-3 leading-relaxed">
-                    Learn the essential strategies and tools needed to create engaging and successful virtual events.
-                  </p>
+          {blogPosts[0] && (
+            <div className="space-y-8 pt-2">
+              {/* First Blog Post */}
+              <div className="group w-full max-w-[700px] flex flex-col gap-6">
+                <Link to={`/blog/${blogPosts[0].slug || blogPosts[0].id}`} className="block w-full overflow-hidden lg:max-w-[800px] lg:mx-auto" style={{ aspectRatio: '16/9' }}>
+                  <img
+                    src={blogPosts[0].image}
+                    alt={blogPosts[0].title}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
+                  />
                 </Link>
+                <div className="w-full">
+                  <span className="text-[15px] font-medium uppercase" style={{ color: blogPosts[0].color }}>{blogPosts[0].category}</span>
+                  <Link to={`/blog/${blogPosts[0].slug || blogPosts[0].id}`} className="block mt-2">
+                    <h3 className="text-[24px] lg:text-[40px] leading-[30px] lg:leading-[44px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">{blogPosts[0].title}</h3>
+                    <p className="hidden lg:block text-gray-600 text-[18px] font-medium mt-3 leading-relaxed">
+                      {blogPosts[0].excerpt || blogPosts[0].content?.slice(0, 150) || 'Read more about this post.'}...
+                    </p>
+                  </Link>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Mobile-only divider between first and second posts */}
           <div className="block sm:hidden w-full border-t border-gray-200 my-4"></div>
 
           {/* Second Column - Aligned to right edge */}
           <div className="lg:ml-auto space-y-8">
-            {/* Second Blog Post */}
-            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <Link to="/blog/2" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img
-                  src="/images/Overview.png"
-                  alt="Marketing insights"
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                />
-              </Link>
-              <div className="flex-1 py-2">
-                <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
-                <Link to="/blog/2" className="block mt-1">
-                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Top 5 Event Marketing Strategies for 2024</h3>
-                </Link>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 my-6"></div>
-
-            {/* Third Blog Post */}
-            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <Link to="/blog/3" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img
-                  src="/images/Overview (2).png"
-                  alt="Amptive platform features"
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                />
-              </Link>
-              <div className="flex-1 py-2">
-                <span className="text-[15px] font-medium text-blue-600 uppercase">AMPTIVE</span>
-                <Link to="/blog/3" className="block mt-1">
-                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Essential Tips for Perfect Audio Quality</h3>
-                </Link>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 my-6"></div>
-
-            {/* Fourth Blog Post */}
-            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <Link to="/blog/4" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img
-                  src="/images/Overview.png"
-                  alt="Audio insights"
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                />
-              </Link>
-              <div className="flex-1 py-2">
-                <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
-                <Link to="/blog/4" className="block mt-1">
-                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">The Future of Live Audio Experiences</h3>
-                </Link>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 my-6"></div>
-
-            {/* Fifth Blog Post */}
-            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <Link to="/blog/5" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img
-                  src="/images/Overview.png"
-                  alt="Audience engagement insights"
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                />
-              </Link>
-              <div className="flex-1 py-2">
-                <span className="text-[15px] font-medium text-orange-500 uppercase">INSIGHTS</span>
-                <Link to="/blog/5" className="block mt-1">
-                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">How to Keep Your Audience Engaged</h3>
-                </Link>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 my-6"></div>
-
-            {/* Sixth Blog Post */}
-            <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
-              <Link to="/blog/6" className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
-                <img
-                  src="/images/Overview (2).png"
-                  alt="Amptive monetization"
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                />
-              </Link>
-              <div className="flex-1 py-2">
-                <span className="text-[15px] font-medium text-blue-600 uppercase">AMPTIVE</span>
-                <Link to="/blog/6" className="block mt-1">
-                  <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">Monetization Strategies for Creators</h3>
-                </Link>
-              </div>
-            </div>
+            {blogPosts.slice(1, 6).map((post, idx) => (
+              <React.Fragment key={post.id}>
+                {idx > 0 && <div className="border-t border-gray-200 my-6"></div>}
+                <div className="group w-full max-w-[600px] flex flex-col sm:flex-row-reverse gap-4 sm:gap-6 items-start">
+                  <Link to={`/blog/${post.slug || post.id}`} className="hidden md:block w-full sm:w-48 flex-shrink-0 overflow-hidden ml-4" style={{ aspectRatio: '16/9' }}>
+                    <img
+                      src={post.image}
+                      alt={post.title}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  </Link>
+                  <div className="flex-1 py-2">
+                    <span className="text-[15px] font-medium uppercase" style={{ color: post.color }}>{post.category}</span>
+                    <Link to={`/blog/${post.slug || post.id}`} className="block mt-1">
+                      <h3 className="text-[22px] leading-[28px] font-semibold text-gray-900 group-hover:text-gray-600 transition-colors line-clamp-2">{post.title}</h3>
+                    </Link>
+                  </div>
+                </div>
+              </React.Fragment>
+            ))}
           </div>
         </div>
       </div>

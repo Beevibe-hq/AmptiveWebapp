@@ -15,7 +15,13 @@ export default defineConfig({
   server: {
     port: 3001,
     strictPort: false,
-    open: true
+    open: true,
+    proxy: {
+      '/api': {
+        target: 'https://amptive-staging.getamptive.com',
+        changeOrigin: true,
+      },
+    },
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],

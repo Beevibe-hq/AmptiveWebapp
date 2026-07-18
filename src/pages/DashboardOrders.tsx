@@ -3,8 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye, X, XCircle, Clock, CheckCircle2, Ban, UserCheck, CircleSlash, Check, Scan } from 'lucide-react';
 import { getEventOrders, getEventsByUser } from '@/lib/api/events';
-import { getEventOwnerPurchases } from '@/lib/api/finance';
-import { getProfileByUserId } from '@/lib/api/profiles';
+import { getPaymentTransactions } from '@/lib/api/finance';
+import { getTicketsForEvent } from '@/lib/api/tickets';
 
 const BillIcon = ({ className, fill }: { className?: string, fill?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
@@ -128,6 +128,7 @@ const isTicketCheckedIn = (ticket: any) => {
 export default function DashboardOrders() {
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [upcomingCount, setUpcomingCount] = useState(0);
     const [searchParams, setSearchParams] = useSearchParams();
@@ -194,13 +195,14 @@ export default function DashboardOrders() {
         order?.ticket_status ||
         order?.status ||
         order?.payment_status ||
+        order?.transaction_status ||
         order?.purchase?.status ||
         'paid'
     ).toLowerCase();
 
     const normalizeStatus = (order: any) => {
         const status = getRawStatus(order);
-        if (['valid', 'completed', 'success', 'successful', 'paid'].includes(status)) return 'paid';
+        if (['valid', 'completed', 'success', 'successful', 'paid', 'issued'].includes(status)) return 'paid';
         if (['used', 'scanned', 'attended'].includes(status)) return 'attended';
         if (['cancelled', 'canceled'].includes(status)) return 'cancelled';
         if (status === 'refunded') return 'refunded';
@@ -259,45 +261,6 @@ export default function DashboardOrders() {
         ).trim();
     };
 
-    const enrichOrdersWithBuyerProfiles = async (orderRows: any[]) => {
-        const ids = Array.from(new Set(
-            orderRows
-                .map(order => order.buyer_user_id || order.profiles?.user_id)
-                .filter((id): id is string => Boolean(id))
-        ));
-
-        if (ids.length === 0) return orderRows;
-
-        const profiles = new Map<string, any>();
-        await Promise.all(ids.map(async id => {
-            const profile = await getProfileByUserId(id);
-            if (profile) profiles.set(id, profile);
-        }));
-
-        if (profiles.size === 0) return orderRows;
-
-        return orderRows.map(order => {
-            const buyerUserId = order.buyer_user_id || order.profiles?.user_id;
-            const profile = buyerUserId ? profiles.get(buyerUserId) : null;
-            if (!profile) return order;
-
-            const profileAvatar = profile.avatar_url || profile.profile_picture || (profile as any).profile_image_url || '';
-
-            return {
-                ...order,
-                profiles: {
-                    ...(order.profiles || {}),
-                    user_id: buyerUserId,
-                    display_name: order.profiles?.display_name || profile.name || profile.username || order.buyer_name,
-                    username: order.profiles?.username || profile.username,
-                    email: order.profiles?.email || profile.email || order.buyer_email,
-                    avatar_url: order.profiles?.avatar_url || profileAvatar,
-                    profile_picture: order.profiles?.profile_picture || profileAvatar,
-                },
-            };
-        });
-    };
-
     const normalizeOrder = (order: any) => {
         const purchase = order.purchase || {};
         const firstTicket = Array.isArray(order.tickets) ? order.tickets[0] : null;
@@ -319,7 +282,11 @@ export default function DashboardOrders() {
             order.customer?.name ||
             order.customer?.full_name ||
             order.profiles?.display_name ||
+            order.profiles?.full_name ||
+            order.profiles?.name ||
             order.profile?.display_name ||
+            order.profile?.full_name ||
+            order.profile?.name ||
             'Guest'
         );
         const buyerEmail = (
@@ -433,53 +400,130 @@ export default function DashboardOrders() {
         ].map(status => String(status || '').toLowerCase()).filter(Boolean);
 
         if (statuses.some(status => ['pending', 'cancelled', 'canceled', 'refunded', 'failed', 'void'].includes(status))) return false;
-        return statuses.some(status => ['paid', 'completed', 'valid', 'attended', 'used', 'scanned', 'success', 'successful'].includes(status));
+        return statuses.some(status => ['paid', 'completed', 'valid', 'issued', 'attended', 'used', 'scanned', 'success', 'successful'].includes(status));
     };
 
     const getOrdersFromOwnedEvents = async () => {
         const events = await getEventsByUser();
+        const failures: unknown[] = [];
         const rows = await Promise.all((events || []).map(async (event: any) => {
             const eventId = event.event_id || event.id;
             if (!eventId) return [];
-            const eventOrders = await getEventOrders(eventId).catch(() => []);
+            const eventOrders = await getEventOrders(eventId).catch((error) => {
+                failures.push(error);
+                return [];
+            });
             return (eventOrders || []).map((order: any) => normalizeOrder({
                 ...order,
                 event_id: order.event_id || eventId,
                 event_title: order.event_title || order.events?.title || order.event?.title || event.title,
             }));
         }));
-        return rows.flat();
+        return { rows: rows.flat(), events: events || [], failures };
+    };
+
+    // Fallback when the orders endpoint is down: build rows from successful event payments.
+    // These carry date, amount, and status, but no buyer details. Ticket type and quantity are
+    // inferred by matching the paid amount against the event's ticket prices — only when the
+    // match is unambiguous (exactly one ticket type divides the amount evenly).
+    const buildOrdersFromPayments = async (events: any[]) => {
+        const transactions = await getPaymentTransactions();
+        const singleEventTitle = events.length === 1 ? (events[0]?.title || '') : '';
+
+        const ticketTypes = (await Promise.all(events.map(async (event: any) => {
+            const eventId = event.event_id || event.id;
+            if (!eventId) return [];
+            return getTicketsForEvent(eventId).catch(() => []);
+        }))).flat();
+
+        const inferTickets = (amount: number) => {
+            if (!(amount > 0)) return null;
+            const matches = ticketTypes.filter((type: any) => {
+                const price = Number(type?.price) || 0;
+                return price > 0 && amount % price === 0;
+            });
+            if (matches.length !== 1) return null;
+            const type: any = matches[0];
+            const quantity = amount / Number(type.price);
+            return {
+                quantity,
+                tickets: Array.from({ length: quantity }, (_, i) => ({
+                    id: `inferred-${i}`,
+                    label: type.label || 'Ticket',
+                    price_paid: Number(type.price),
+                    color_theme: type.color_theme || 'silver',
+                    pending_details: true,
+                })),
+                ticket_label: type.label || 'Ticket',
+            };
+        };
+
+        return transactions
+            .filter(tx => (
+                tx.category === 'event_payment' &&
+                tx.transaction_type !== 'debit' &&
+                ['successful', 'success', 'completed', 'paid'].includes(String(tx.transaction_status || '').toLowerCase())
+            ))
+            .map(tx => {
+                const inferred = inferTickets(Number(tx.amount) || 0);
+                return normalizeOrder({
+                    id: tx.reference,
+                    transaction_id: tx.reference,
+                    created_at: tx.created_at,
+                    total_amount: tx.amount,
+                    status: tx.transaction_status,
+                    buyer_name: 'Ticket buyer',
+                    event_title: singleEventTitle,
+                    quantity: inferred?.quantity,
+                    ticket_label: inferred?.ticket_label,
+                    tickets: inferred?.tickets?.map(ticket => ({ ...ticket, created_at: tx.created_at })),
+                    profiles: tx.profile_picture
+                        ? { avatar_url: tx.profile_picture, profile_picture: tx.profile_picture }
+                        : {},
+                });
+            });
+    };
+
+    const fetchOrders = async () => {
+        setLoading(true);
+        setFetchError(null);
+        try {
+            const { rows, events, failures } = await getOrdersFromOwnedEvents();
+            let orderRows = rows;
+
+            if (failures.length > 0 && events.length > 0 && failures.length === events.length) {
+                // Every event's orders request failed — fall back to payment records so the page stays useful.
+                orderRows = await buildOrdersFromPayments(events).catch(() => []);
+                if (orderRows.length === 0) {
+                    throw failures[0];
+                }
+            }
+
+            // Deduplicate by order ID
+            const seenIds = new Set<string>();
+            const uniqueOrders = [];
+            for (const order of orderRows) {
+                const orderId = order.id || '';
+                if (!orderId || !seenIds.has(orderId)) {
+                    if (orderId) seenIds.add(orderId);
+                    uniqueOrders.push(order);
+                }
+            }
+
+            // Sort by date (descending)
+            uniqueOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+            setOrders(uniqueOrders);
+        } catch (error) {
+            console.error('Error fetching orders:', error);
+            setOrders([]);
+            setFetchError(error instanceof Error ? error.message : 'Failed to load orders. Please try again.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => {
-        const fetchOrders = async () => {
-            try {
-                const data = await getEventOwnerPurchases();
-                let mappedData = (data || [])
-                    .map(normalizeOrder)
-                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-                if (mappedData.length === 0) {
-                    mappedData = (await getOrdersFromOwnedEvents())
-                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                }
-
-                setOrders(await enrichOrdersWithBuyerProfiles(mappedData));
-            } catch (error) {
-                console.error('Error fetching owner purchase orders:', error);
-                try {
-                    const eventOrders = (await getOrdersFromOwnedEvents())
-                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                    setOrders(await enrichOrdersWithBuyerProfiles(eventOrders));
-                } catch (fallbackError) {
-                    console.error('Error fetching event orders:', fallbackError);
-                    setOrders([]);
-                }
-            } finally {
-                setLoading(false);
-            }
-        };
-
         const fetchStats = async () => {
             try {
                 const events = await getEventsByUser();
@@ -649,6 +693,25 @@ export default function DashboardOrders() {
                     </button>
                 </div>
             </div>
+
+            {fetchError && (
+                <div className="flex items-center justify-between gap-4 mb-8 px-5 py-4 bg-rose-50 border border-rose-200/60 rounded-2xl">
+                    <div className="flex items-center gap-3">
+                        <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
+                        <div>
+                            <p className="text-sm font-semibold text-rose-700">Couldn't load your orders</p>
+                            <p className="text-xs text-rose-600/80 mt-0.5">{fetchError}</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => fetchOrders()}
+                        className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-rose-700 bg-white border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors shrink-0"
+                    >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Retry
+                    </button>
+                </div>
+            )}
 
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -1263,6 +1326,8 @@ export default function DashboardOrders() {
                                                     const attendeeName = ticket.attendee_name || ticket.attendeeName || ticket.name || selectedOrder.profiles?.display_name || selectedOrder.buyer_name || 'Guest';
                                                     const attendeeEmail = ticket.attendee_email || ticket.attendeeEmail || ticket.email || selectedOrder.profiles?.email || selectedOrder.buyer_email || 'No email';
                                                     const attendeePhone = ticket.attendee_phone || ticket.attendeePhone || ticket.phone || ticket.phone_number || selectedOrder.profiles?.phone_number || 'Not provided';
+                                                    const purchasedAtRaw = ticket.created_at || selectedOrder.created_at;
+                                                    const purchasedAt = purchasedAtRaw && !Number.isNaN(new Date(purchasedAtRaw).getTime()) ? new Date(purchasedAtRaw) : null;
 
                                                     return (
                                                     <div key={ticket.id} className="relative">
@@ -1321,17 +1386,17 @@ export default function DashboardOrders() {
 
                                                             <div className="pt-3 border-t border-black/5">
                                                                 <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Ticket ID</p>
-                                                                <p className="text-[11px] font-mono text-black break-all leading-relaxed">{getDisplayTicketId(ticket).toUpperCase()}</p>
+                                                                <p className="text-[11px] font-mono text-black break-all leading-relaxed">{ticket.pending_details ? 'Unavailable' : getDisplayTicketId(ticket).toUpperCase()}</p>
                                                             </div>
 
                                                             <div className="grid grid-cols-2 gap-2 pt-3 border-t border-black/5">
                                                                 <div>
                                                                     <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Purchase Date</p>
-                                                                    <p className="text-[11px] font-medium text-black">{new Date(ticket.created_at).toLocaleDateString('en-GB')}</p>
+                                                                    <p className="text-[11px] font-medium text-black">{purchasedAt ? purchasedAt.toLocaleDateString('en-GB') : 'Unavailable'}</p>
                                                                 </div>
                                                                 <div>
                                                                     <p className="text-[9px] font-bold text-black/30 uppercase tracking-widest mb-1">Time</p>
-                                                                    <p className="text-[11px] font-medium text-black">{new Date(ticket.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                    <p className="text-[11px] font-medium text-black">{purchasedAt ? purchasedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'Unavailable'}</p>
                                                                 </div>
                                                             </div>
                                                         </div>

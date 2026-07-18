@@ -17,7 +17,8 @@ import {
     Ticket,
     Share2,
     ScanLine,
-    Download} from 'lucide-react';
+    Download,
+    FileText} from 'lucide-react';
 import { getSession } from '@/lib/api/auth';
 import { getEvent, getEventOrders, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
@@ -26,13 +27,13 @@ import DashboardFinance from './DashboardFinance';
 import DashboardOrders from './DashboardOrders';
 import DashboardVenues from './DashboardVenues';
 import DashboardCheckIn from './DashboardCheckIn';
+import DashboardBlog from './DashboardBlog';
 import CreateEvent from './CreateEvent';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
-import { getEventOwnerPurchases } from '@/lib/api/finance';
-import { getProfileByUserId } from '@/lib/api/profiles';
 
 const CHECK_IN_STORAGE_KEY = 'amptive.dashboard.checkins';
+const BLOG_ADMIN_EMAIL = 'jachilonu195@gmail.com';
 
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
@@ -261,7 +262,7 @@ const isPaidOrder = (order: any) => {
     ].map(value => String(value || '').toLowerCase()).filter(Boolean);
 
     if (statuses.some(status => ['cancelled', 'canceled', 'refunded', 'failed', 'void'].includes(status))) return false;
-    return statuses.some(status => ['valid', 'used', 'completed', 'paid', 'success', 'successful', 'attended', 'scanned'].includes(status));
+    return statuses.some(status => ['valid', 'used', 'completed', 'paid', 'success', 'successful', 'attended', 'scanned', 'issued'].includes(status));
 };
 
 const getBuyerName = (order: any, ticket?: any) => (
@@ -603,7 +604,6 @@ function DashboardHome({ displayName }: { displayName: string }) {
                 })
             );
 
-            const eventTitleMap = new Map(events.map(event => [getEventId(event), event.title]));
             const eventOrderRows = (await Promise.all(events.map(async event => {
                 const eventId = getEventId(event);
                 const rows = await getEventOrders(eventId).catch(() => []);
@@ -613,14 +613,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
                     __eventTitle: order.event_title || order.events?.title || order.event?.title || event.title || 'this event',
                 }));
             }))).flat();
-            const ownerPurchases = await getEventOwnerPurchases();
-            const ownerPurchaseRows = (ownerPurchases || []).map((order: any) => ({
-                ...order,
-                __eventId: order.event_id || order.purchase?.event_id,
-                __eventTitle: eventTitleMap.get(order.event_id || order.purchase?.event_id) || order.event_title || order.events?.title || order.event?.title || 'this event',
-            }));
             const seenOrders = new Set<string>();
-            const allOrders = [...eventOrderRows, ...ownerPurchaseRows].filter((order: any, index) => {
+            const allOrders = eventOrderRows.filter((order: any, index) => {
                 const identity = getOrderIdentity(order) || `${order.__eventId || order.event_id || 'event'}:${getOrderDate(order)}:${getOrderAmount(order)}:${index}`;
                 if (seenOrders.has(identity)) return false;
                 seenOrders.add(identity);
@@ -706,27 +700,14 @@ function DashboardHome({ displayName }: { displayName: string }) {
                 attendees: formatPercentChange(currentMonthAttendees.size + currentMonthTicketFallback, previousMonthAttendees.size),
             });
 
-            const buyerProfileIds = Array.from(new Set(
-                validOrders
-                    .flatMap(order => getOrderTickets(order).map((ticket: any) => getBuyerUserId(order, ticket)))
-                    .filter(Boolean)
-            ));
-            const buyerProfiles = new Map<string, any>();
-            await Promise.all(buyerProfileIds.map(async id => {
-                const profile = await getProfileByUserId(id);
-                if (profile) buyerProfiles.set(id, profile);
-            }));
-
             const checkedIns = getStoredCheckIns();
             const activity = validOrders
                 .flatMap(order => {
                     const tickets = getOrderTickets(order);
                     const firstTicket = tickets[0] || order;
-                    const buyerUserId = getBuyerUserId(order, firstTicket);
-                    const buyerProfile = buyerUserId ? buyerProfiles.get(buyerUserId) : null;
-                    const avatarUrl = getBuyerAvatarUrl(order, firstTicket) || buyerProfile?.avatar_url || buyerProfile?.profile_picture || '';
+                    const avatarUrl = getBuyerAvatarUrl(order, firstTicket) || '';
                     const eventTitle = getEventTitleFromOrder(order, order.__eventTitle);
-                    const subject = buyerProfile?.name || getBuyerName(order, firstTicket);
+                    const subject = getBuyerName(order, firstTicket);
                     const ticketLabel = getActivityTicketLabel(order, firstTicket);
                     const purchaseDate = getOrderDate(order);
                     const paidAmount = getOrderAmount(order);
@@ -750,7 +731,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                         if (checkedAt || ['used', 'attended', 'scanned', 'checked-in', 'checked_in', 'validated', 'redeemed'].includes(ticketStatus)) {
                             const scanDate = checkedAt || getOrderDate(ticket) || purchaseDate;
                             rows.push({
-                                subject: buyerProfile?.name || getBuyerName(order, ticket),
+                                subject: getBuyerName(order, ticket),
                                 action: 'checked into',
                                 target: eventTitle,
                                 avatarUrl: getBuyerAvatarUrl(order, ticket) || avatarUrl,
@@ -1432,6 +1413,7 @@ export default function Dashboard() {
     const [editingEventTitle, setEditingEventTitle] = useState<string | null>(null);
     const location = useLocation();
     const navigate = useNavigate();
+    const isBlogAdmin = profile?.email?.toLowerCase() === BLOG_ADMIN_EMAIL;
 
 
     // Fetch editing event title if in edit mode
@@ -1458,6 +1440,7 @@ export default function Dashboard() {
         { name: 'Orders', path: '/dashboard/orders', icon: null as any, customIcon: 'orders' },
         { name: 'Check-in', path: '/dashboard/check-in', icon: ScanLine, customIcon: null },
         { name: 'Finance', path: '/dashboard/finance', icon: null as any, customIcon: 'finance' },
+        ...(isBlogAdmin ? [{ name: 'Blog', path: '/dashboard/blog', icon: FileText, customIcon: null }] : []),
         { name: 'Help Center', path: '/help', icon: null as any, customIcon: 'help' },
     ];
 
@@ -1616,6 +1599,7 @@ export default function Dashboard() {
                     <Route path="/finance" element={<DashboardFinance />} />
                     <Route path="/orders" element={<DashboardOrders />} />
                     <Route path="/check-in" element={<DashboardCheckIn />} />
+                    <Route path="/blog" element={<DashboardBlog />} />
                 </Routes>
             </main>
         </div>

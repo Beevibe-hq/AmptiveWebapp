@@ -1,39 +1,103 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ChevronDown, Check, Filter } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { blogPosts as posts, blogCategories as categories } from '@/lib/blog-data';
+import { blogPosts as staticPosts, blogCategories as categories, BlogPost } from '@/lib/blog-data';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { getPublishedPosts, BlogPostFromAPI } from '@/lib/api/blog';
+import { format, parseISO } from 'date-fns';
+
+function mapAPIPostToBlogPost(apiPost: BlogPostFromAPI): BlogPost & { slug?: string } {
+  const category = apiPost.tags?.[0]?.name || 'General';
+  
+  const categoryColors: Record<string, string> = {
+    'Events': '#22c55e',
+    'Insights': '#f59e0b',
+    'Amptive': '#3b82f6',
+    'Product': '#8b5cf6',
+    'Community': '#ec4899',
+    'General': '#64748b'
+  };
+
+  let formattedDate = 'Recent';
+  try {
+    if (apiPost.created_at) {
+      formattedDate = format(parseISO(apiPost.created_at), 'MMM dd, yyyy');
+    }
+  } catch (e) {
+    console.error('Date parsing error:', e);
+  }
+
+  return {
+    id: apiPost.id,
+    slug: apiPost.slug,
+    title: apiPost.title,
+    category,
+    image: apiPost.featured_image_url || '/images/Overview.png',
+    date: formattedDate,
+    featured: false,
+    color: categoryColors[category] || '#3b82f6',
+    content: apiPost.content,
+    authors: apiPost.author ? [{
+      name: apiPost.author.display_name || apiPost.author.full_name || apiPost.author.name || apiPost.author.username || 'Amptive Team',
+      role: 'Author',
+      image: apiPost.author.profile_image_url || apiPost.author.avatar_url || undefined,
+      initials: (apiPost.author.display_name || apiPost.author.full_name || apiPost.author.name || apiPost.author.username || 'AT')
+        .split(' ')
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    }] : [{ name: 'Amptive Team', initials: 'AT' }]
+  };
+}
 
 const Blog = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTag, setActiveTag] = useState('All');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [posts, setPosts] = useState<(BlogPost & { slug?: string })[]>([]);
 
-  const featuredPosts = useMemo(() => {
-    return posts.filter(post => 
-      post.featured && post.title.toLowerCase().includes(searchQuery.toLowerCase())
-    ).slice(0, 3);
+  useEffect(() => {
+    const fetchPosts = async () => {
+      setIsLoading(true);
+      try {
+        const response = await getPublishedPosts({ search: searchQuery, page_size: 100 });
+        const apiPosts = response.posts || [];
+        
+        let mapped = apiPosts.map(mapAPIPostToBlogPost);
+        
+        if (mapped.length === 0 && !searchQuery) {
+          setPosts(staticPosts);
+        } else {
+          // Set first 3 posts as featured in the list
+          mapped = mapped.map((post, index) => ({
+            ...post,
+            featured: index < 3
+          }));
+          setPosts(mapped);
+        }
+      } catch (error) {
+        console.error('Error fetching blog posts:', error);
+        setPosts(staticPosts);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPosts();
   }, [searchQuery]);
 
-  const allPosts = useMemo(() => {
-    // We show all posts that are NOT in the featured list (filtered by search)
-    // AND match the active tag.
-    const featuredIds = new Set(featuredPosts.map(p => p.id));
-    return posts.filter(post => {
-      const matchesSearch = post.title.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesTag = activeTag === 'All' || post.category === activeTag;
-      const notFeatured = !featuredIds.has(post.id);
-      return matchesSearch && matchesTag && notFeatured;
-    });
-  }, [searchQuery, activeTag, featuredPosts]);
+  const featuredPosts = useMemo(() => {
+    return posts.filter(post => post.featured).slice(0, 3);
+  }, [posts]);
 
-  // Simulate loading state for filters
-  React.useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => setIsLoading(false), 600);
-    return () => clearTimeout(timer);
-  }, [searchQuery, activeTag]);
+  const allPosts = useMemo(() => {
+    // Featured posts stay in the main list too — with few posts, excluding them
+    // left "All Posts" empty with a misleading no-results message.
+    return posts.filter(post => activeTag === 'All' || post.category === activeTag);
+  }, [posts, activeTag]);
 
   return (
     <div className="bg-white min-h-screen font-sans antialiased text-gray-900 pb-20">
@@ -103,11 +167,15 @@ const Blog = () => {
         <section className="space-y-8 mb-24">
           <h2 className="text-2xl font-bold">Featured</h2>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {featuredPosts.length > 0 ? (
+            {isLoading ? (
+              <div className="col-span-1 lg:col-span-3 flex items-center justify-center py-24">
+                <AmptiveSpinner className="h-10 w-10 text-black" />
+              </div>
+            ) : featuredPosts.length > 0 ? (
               featuredPosts.map((post) => (
                 <Link 
                   key={post.id}
-                  to={`/blog/${post.id}`} 
+                  to={`/blog/${post.slug || post.id}`} 
                   className="resource-item group flex gap-4 lg:flex-col items-start text-left no-underline"
                 >
                   <div className="relative flex-none w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 lg:w-full lg:h-48 overflow-hidden rounded-xl bg-gray-100">
@@ -137,7 +205,8 @@ const Blog = () => {
           </div>
         </section>
 
-        {/* All Posts Section */}
+        {/* All Posts Section — hidden while loading; the featured area shows the logo loader */}
+        {!isLoading && (
         <section className="min-h-[60vh] mt-4">
           <div className="flex flex-col gap-4 mb-8 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-6">
             <h2 className="text-2xl font-bold flex items-center">
@@ -189,26 +258,11 @@ const Blog = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-12">
-            {isLoading ? (
-              // Skeleton cards
-              [...Array(6)].map((_, i) => (
-                <div key={i} className="flex flex-col items-start w-full">
-                  <div className="w-full aspect-[16/10] rounded-xl bg-gray-100 animate-pulse" />
-                  <div className="w-full mt-4 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-3 w-16 bg-gray-100 rounded animate-pulse" />
-                      <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
-                    </div>
-                    <div className="h-5 w-full bg-gray-100 rounded animate-pulse" />
-                    <div className="h-5 w-2/3 bg-gray-100 rounded animate-pulse" />
-                  </div>
-                </div>
-              ))
-            ) : allPosts.length > 0 ? (
+            {allPosts.length > 0 ? (
               allPosts.map((post) => (
                 <Link 
                   key={post.id}
-                  to={`/blog/${post.id}`} 
+                  to={`/blog/${post.slug || post.id}`} 
                   className="resource-item group flex flex-col items-start text-left no-underline"
                 >
                   <div className="relative w-full aspect-[16/10] overflow-hidden rounded-xl bg-gray-100">
@@ -250,6 +304,7 @@ const Blog = () => {
             )}
           </div>
         </section>
+        )}
       </div>
 
     </div>

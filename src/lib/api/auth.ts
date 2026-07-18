@@ -1,7 +1,7 @@
 import { api } from './client';
 import { normalizeUserProfile } from './profiles';
 import { $auth, $users } from './services';
-import type { LoginRequest, RegisterRequest, UserProfile } from './services';
+import type { LoginRequest, RegisterRequest, SetPinRequest, UserProfile } from './services';
 
 function decodeTokenExpiry(token: string): number | undefined {
   try {
@@ -228,6 +228,21 @@ export async function refreshSession(): Promise<AuthResponse> {
   } catch (error: any) {
     api.clearSessionTokens();
     return unsupportedAuthResponse(error.message);
+  }
+}
+
+export async function setWalletPin(data: SetPinRequest): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const response = await $auth.setPin(data);
+    return {
+      ok: response.status === true,
+      message: response.message || 'Wallet setup complete',
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      message: error.message || 'Could not set wallet PIN.',
+    };
   }
 }
 

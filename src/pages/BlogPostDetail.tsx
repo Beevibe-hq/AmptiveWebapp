@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Share2, Heart, Hash } from 'lucide-react';
+import { Share2, Heart, Hash, MessageSquare, Loader2, ArrowLeft, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { blogPosts } from '@/lib/blog-data';
+import { blogPosts as staticBlogPosts, BlogPost } from '@/lib/blog-data';
 import { useAuth } from '@/contexts/AuthContext';
 import { getPostLikeStatus, togglePostLike } from '@/lib/api/blog-likes';
+import { getPublishedPostBySlug, findPublishedPostBySlugFromList, getPostComments, createPostComment, BlogComment, BlogPostFromAPI } from '@/lib/api/blog';
+import { format, parseISO } from 'date-fns';
 
 const LikeButton = ({ isLiked, onToggle, isLiking }: { isLiked: boolean; onToggle: () => void; isLiking: boolean }) => {
   return (
@@ -53,32 +55,228 @@ const LikeButton = ({ isLiked, onToggle, isLiking }: { isLiked: boolean; onToggl
   );
 };
 
+interface CommentNodeProps {
+  comment: BlogComment;
+  onReply: (parentId: string, text: string) => Promise<void>;
+  replyingToId: string | null;
+  setReplyingToId: (id: string | null) => void;
+}
+
+const CommentNode: React.FC<CommentNodeProps> = ({ comment, onReply, replyingToId, setReplyingToId }) => {
+  const [replyText, setReplyText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmitReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!replyText.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await onReply(comment.id, replyText);
+      setReplyText('');
+      setReplyingToId(null);
+    } catch (e) {
+      toast.error('Failed to post reply');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const authorName = comment.author?.display_name || comment.author?.full_name || comment.author?.name || comment.author?.username || 'Anonymous';
+  const authorInitials = authorName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  return (
+    <div className="flex gap-4 mt-6">
+      <div className="flex-none w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border border-gray-200">
+        {(comment.author?.profile_image_url || comment.author?.avatar_url) ? (
+          <img src={comment.author.profile_image_url || comment.author.avatar_url} alt={authorName} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-xs font-semibold text-gray-500">{authorInitials || 'A'}</span>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="bg-gray-50 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-bold text-sm text-gray-900">{authorName}</span>
+            <span className="text-xs text-gray-400">
+              {comment.created_at ? new Date(comment.created_at).toLocaleDateString() : 'Just now'}
+            </span>
+          </div>
+          <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{comment.content}</p>
+        </div>
+        
+        <div className="flex items-center gap-4 mt-2 ml-2">
+          <button 
+            onClick={() => setReplyingToId(replyingToId === comment.id ? null : comment.id)}
+            className="text-xs font-bold text-gray-500 hover:text-black transition-colors"
+          >
+            {replyingToId === comment.id ? 'Cancel' : 'Reply'}
+          </button>
+        </div>
+
+        {replyingToId === comment.id && (
+          <form onSubmit={handleSubmitReply} className="mt-3 flex gap-3">
+            <input 
+              type="text"
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder={`Reply to ${authorName}...`}
+              className="flex-1 py-2 px-4 border border-gray-200 rounded-full text-sm focus:outline-none focus:border-blue-500"
+              disabled={isSubmitting}
+            />
+            <button 
+              type="submit"
+              disabled={isSubmitting}
+              className="px-4 py-2 bg-black text-white text-xs font-bold rounded-full hover:bg-gray-800 disabled:opacity-50"
+            >
+              Send
+            </button>
+          </form>
+        )}
+
+        {comment.replies && comment.replies.length > 0 && (
+          <div className="border-l border-gray-100 pl-4 mt-2">
+            {comment.replies.map(reply => (
+              <CommentNode 
+                key={reply.id} 
+                comment={reply} 
+                onReply={onReply}
+                replyingToId={replyingToId}
+                setReplyingToId={setReplyingToId}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+function mapAPIPostToBlogPost(apiPost: BlogPostFromAPI): BlogPost & { slug?: string } {
+  const category = apiPost.tags?.[0]?.name || 'General';
+  
+  const categoryColors: Record<string, string> = {
+    'Events': '#22c55e',
+    'Insights': '#f59e0b',
+    'Amptive': '#3b82f6',
+    'Product': '#8b5cf6',
+    'Community': '#ec4899',
+    'General': '#64748b'
+  };
+
+  let formattedDate = 'Recent';
+  try {
+    if (apiPost.created_at) {
+      formattedDate = format(parseISO(apiPost.created_at), 'MMM dd, yyyy');
+    }
+  } catch (e) {
+    console.error('Date parsing error:', e);
+  }
+
+  return {
+    id: apiPost.id,
+    slug: apiPost.slug,
+    title: apiPost.title,
+    category,
+    image: apiPost.featured_image_url || '/images/Overview.png',
+    date: formattedDate,
+    featured: false,
+    color: categoryColors[category] || '#3b82f6',
+    content: apiPost.content,
+    authors: apiPost.author ? [{
+      name: apiPost.author.display_name || apiPost.author.full_name || apiPost.author.name || apiPost.author.username || 'Amptive Team',
+      role: 'Author',
+      image: apiPost.author.profile_image_url || apiPost.author.avatar_url || undefined,
+      initials: (apiPost.author.display_name || apiPost.author.full_name || apiPost.author.name || apiPost.author.username || 'AT')
+        .split(' ')
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    }] : [{ name: 'Amptive Team', initials: 'AT' }]
+  };
+}
+
 const BlogPostDetail = () => {
   const { id } = useParams();
   const { user } = useAuth();
   
-  // Find the post by ID
-  const post = blogPosts.find(p => p.id.toString() === id);
+  const [post, setPost] = useState<(BlogPost & { slug?: string }) | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [contentUnavailable, setContentUnavailable] = useState(false);
+  const [fallbackExcerpt, setFallbackExcerpt] = useState('');
+  const [comments, setComments] = useState<BlogComment[]>([]);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
 
-  const [isLiked, setIsLiked] = React.useState(false);
-  const [isLiking, setIsLiking] = React.useState(false);
-  const [initialLoading, setInitialLoading] = React.useState(true);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+  const [likeLoading, setLikeLoading] = useState(true);
 
-  // Fetch like status from DB on mount
-  React.useEffect(() => {
-    const fetchLikeStatus = async () => {
-      if (!user || !id) {
-        setInitialLoading(false);
-        return;
+  useEffect(() => {
+    const fetchPostData = async () => {
+      if (!id) return;
+      setLoading(true);
+      try {
+        const apiPost = await getPublishedPostBySlug(id);
+        if (apiPost) {
+          setPost(mapAPIPostToBlogPost(apiPost));
+        } else {
+          // The detail endpoint may be failing server-side — the post can still be
+          // found in the list, minus its body.
+          const listPost = await findPublishedPostBySlugFromList(id);
+          if (listPost) {
+            setPost({ ...mapAPIPostToBlogPost(listPost), content: '' });
+            setFallbackExcerpt(listPost.excerpt || '');
+            setContentUnavailable(true);
+          } else {
+            // Check static posts fallback
+            const staticPost = staticBlogPosts.find(p => p.id.toString() === id);
+            setPost(staticPost || null);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching blog post:', err);
+        const staticPost = staticBlogPosts.find(p => p.id.toString() === id);
+        setPost(staticPost || null);
+      } finally {
+        setLoading(false);
       }
-      
-      const liked = await getPostLikeStatus(user.id, id);
-      setIsLiked(liked);
-      setInitialLoading(false);
     };
 
-    fetchLikeStatus();
-  }, [user, id]);
+    fetchPostData();
+  }, [id]);
+
+  useEffect(() => {
+    const fetchLikeStatusAndComments = async () => {
+      if (!post) return;
+      
+      // Fetch likes
+      if (user) {
+        setLikeLoading(true);
+        try {
+          const liked = await getPostLikeStatus(user.id, post.id.toString());
+          setIsLiked(liked);
+        } catch {
+          // ignore
+        } finally {
+          setLikeLoading(false);
+        }
+      } else {
+        setLikeLoading(false);
+      }
+
+      // Fetch comments
+      try {
+        const commentsData = await getPostComments(post.id.toString());
+        setComments(commentsData.comments || []);
+      } catch (err) {
+        console.error('Error fetching comments:', err);
+      }
+    };
+
+    fetchLikeStatusAndComments();
+  }, [post, user]);
 
   const copyPageLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -109,23 +307,67 @@ const BlogPostDetail = () => {
       return;
     }
 
-    if (!id || isLiking) return;
+    if (!post || isLiking) return;
 
     setIsLiking(true);
-    // Optimistic update
     const prevLiked = isLiked;
     setIsLiked(!prevLiked);
 
-    const success = await togglePostLike(user.id, id, prevLiked);
+    const success = await togglePostLike(user.id, post.id.toString(), prevLiked);
     
     if (!success) {
-      // Revert on failure
       setIsLiked(prevLiked);
       toast.error("Failed to update like status");
     }
     
     setIsLiking(false);
   };
+
+  const handleCreateComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      toast.error("Please log in to add a comment");
+      return;
+    }
+    if (!post || !newCommentText.trim() || isSubmittingComment) return;
+
+    setIsSubmittingComment(true);
+    try {
+      await createPostComment(post.id.toString(), newCommentText);
+      setNewCommentText('');
+      toast.success('Comment posted successfully');
+      
+      // Refresh comments
+      const commentsData = await getPostComments(post.id.toString());
+      setComments(commentsData.comments || []);
+    } catch (err) {
+      toast.error('Failed to post comment');
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleCreateReply = async (parentId: string, text: string) => {
+    if (!user) {
+      toast.error("Please log in to reply");
+      return;
+    }
+    if (!post) return;
+    await createPostComment(post.id.toString(), text, parentId);
+    toast.success('Reply posted successfully');
+
+    // Refresh comments
+    const commentsData = await getPostComments(post.id.toString());
+    setComments(commentsData.comments || []);
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white min-h-screen pt-32 flex flex-col items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   if (!post) {
     return (
@@ -140,6 +382,13 @@ const BlogPostDetail = () => {
     <div className="bg-white min-h-screen pt-20">
       <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6">
         <div className="flex flex-col gap-10">
+
+          <div className="self-start">
+            <Link to="/blog" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-black font-semibold transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+              Back to Blog
+            </Link>
+          </div>
 
           {/* Header */}
           <header className="space-y-6 text-center">
@@ -202,7 +451,7 @@ const BlogPostDetail = () => {
                 <Share2 className="w-4 h-4" />
                 Share Post
               </button>
-              {initialLoading ? (
+              {likeLoading ? (
                 <div className="w-32 h-10 bg-gray-50 rounded-full animate-pulse" />
               ) : (
                 <LikeButton isLiked={isLiked} onToggle={handleToggleLike} isLiking={isLiking} />
@@ -217,40 +466,56 @@ const BlogPostDetail = () => {
 
           {/* Content Body */}
           <article className="prose prose-slate prose-lg max-w-none pt-8 text-black prose-headings:text-black prose-p:text-black leading-relaxed">
-            <section id="overview" className="scroll-mt-32">
-              <h2 className="group flex items-center gap-2 text-2xl font-bold text-gray-900 border-b border-gray-100 pb-4 mb-6">
-                Overview
-                <a href="#overview" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Hash className="w-5 h-5 text-gray-400" />
-                </a>
-              </h2>
-              <p>
-                In this article, we explore the nuances of <strong>{post?.title}</strong> and how it impacts the ecosystem. 
-                This guide provides a comprehensive overview of the strategies and tips needed to master this topic.
-              </p>
-              <p className="mt-4">
-                Successful implementation requires a mix of technical rigor and creative problem-solving.
-                Whether you're just starting or looking to optimize your existing workflow, the following sections will provide valuable insights.
-              </p>
-            </section>
+            {contentUnavailable ? (
+              <div>
+                {fallbackExcerpt && <p className="text-lg">{fallbackExcerpt}</p>}
+                <div className="not-prose mt-6 flex items-start gap-3 px-5 py-4 bg-amber-50 border border-amber-200/60 rounded-2xl">
+                  <Clock className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-700">
+                    The full article couldn't be loaded right now. Please try again in a little while.
+                  </p>
+                </div>
+              </div>
+            ) : post.content ? (
+              <div className="whitespace-pre-wrap">{post.content}</div>
+            ) : (
+              <>
+                <section id="overview" className="scroll-mt-32">
+                  <h2 className="group flex items-center gap-2 text-2xl font-bold text-gray-900 border-b border-gray-100 pb-4 mb-6">
+                    Overview
+                    <a href="#overview" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Hash className="w-5 h-5 text-gray-400" />
+                    </a>
+                  </h2>
+                  <p>
+                    In this article, we explore the nuances of <strong>{post?.title}</strong> and how it impacts the ecosystem. 
+                    This guide provides a comprehensive overview of the strategies and tips needed to master this topic.
+                  </p>
+                  <p className="mt-4">
+                    Successful implementation requires a mix of technical rigor and creative problem-solving.
+                    Whether you're just starting or looking to optimize your existing workflow, the following sections will provide valuable insights.
+                  </p>
+                </section>
 
-            <section id="getting-started" className="scroll-mt-32 mt-12">
-              <h2 className="group flex items-center gap-2 text-2xl font-bold text-gray-900 border-b border-gray-100 pb-4 mb-6">
-                Getting Started
-                <a href="#getting-started" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Hash className="w-5 h-5 text-gray-400" />
-                </a>
-              </h2>
-              <p>
-                To begin with <strong>{post?.category}</strong> best practices, you first need to understand the underlying principles of the Amptive platform.
-              </p>
-              <p className="font-bold text-black mt-8 mb-4">Key Objectives:</p>
-              <ul className="list-disc pl-5 space-y-2 text-black mb-8">
-                <li>Analyze market trends in {post?.category}</li>
-                <li>Implement scalable solutions</li>
-                <li>Measure impact using standard metrics</li>
-              </ul>
-            </section>
+                <section id="getting-started" className="scroll-mt-32 mt-12">
+                  <h2 className="group flex items-center gap-2 text-2xl font-bold text-gray-900 border-b border-gray-100 pb-4 mb-6">
+                    Getting Started
+                    <a href="#getting-started" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Hash className="w-5 h-5 text-gray-400" />
+                    </a>
+                  </h2>
+                  <p>
+                    To begin with <strong>{post?.category}</strong> best practices, you first need to understand the underlying principles of the Amptive platform.
+                  </p>
+                  <p className="font-bold text-black mt-8 mb-4">Key Objectives:</p>
+                  <ul className="list-disc pl-5 space-y-2 text-black mb-8">
+                    <li>Analyze market trends in {post?.category}</li>
+                    <li>Implement scalable solutions</li>
+                    <li>Measure impact using standard metrics</li>
+                  </ul>
+                </section>
+              </>
+            )}
           </article>
 
         </div>

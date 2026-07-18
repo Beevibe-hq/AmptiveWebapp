@@ -72,7 +72,7 @@ export default function CommunityEvents() {
           <div className="absolute bottom-0 left-0 right-0">
             <div className="mx-auto w-full max-w-6xl px-4 pb-6 sm:px-6 sm:pb-8 lg:px-8">
               <h1 className="max-w-3xl text-3xl font-bold tracking-tight text-white sm:text-5xl">
-                {community?.name || (loading ? 'Loading community' : 'Community')}
+                {community?.name || 'Community'}
               </h1>
               {community?.description && (
                 <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-white/75 sm:text-base">

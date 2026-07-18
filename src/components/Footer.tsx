@@ -26,9 +26,9 @@ const Footer = () => {
           <div className="lg:col-span-3 min-h-0 lg:min-h-[240px] pb-6 md:pb-0">
             <h3 className="text-[22px] font-semibold mb-4 text-gray-900">Platform</h3>
             <ul className="space-y-3">
-              <li><Link to="/events" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Browse Events</Link></li>
+              <li><Link to="/explore" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Browse Events</Link></li>
               <li><Link to="/community" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Community Tasks</Link></li>
-              <li><Link to="/ai-tool" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Generate with AI</Link></li>
+              <li><Link to="/ai-chat" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Generate with AI</Link></li>
             </ul>
           </div>
 
@@ -37,9 +37,9 @@ const Footer = () => {
             <h3 className="text-[22px] font-semibold mb-4 text-gray-900">Resources</h3>
             <ul className="space-y-3">
               <li><Link to="/help" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Help Center</Link></li>
-              <li><Link to="/help#faq" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">FAQs</Link></li>
-              <li><a href="#" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Community Guidelines</a></li>
-              <li><a href="#" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Contact Us</a></li>
+              <li><Link to="/faqs" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">FAQs</Link></li>
+              <li><Link to="/community-guidelines" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Community Guidelines</Link></li>
+              <li><Link to="/help" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Contact Us</Link></li>
             </ul>
           </div>
 
@@ -47,9 +47,8 @@ const Footer = () => {
           <div className="lg:col-span-2 min-h-0 lg:min-h-[240px]">
             <h3 className="text-[22px] font-semibold mb-4 text-gray-900">Legal</h3>
             <ul className="space-y-3">
-              <li><a href="#" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Privacy Policy</a></li>
-              <li><a href="#" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Terms of Service</a></li>
-              <li><a href="#" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Cookie Policy</a></li>
+              <li><Link to="/privacy-policy" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Privacy Policy</Link></li>
+              <li><Link to="/terms-of-service" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Terms of Service</Link></li>
             </ul>
           </div>
         </div>

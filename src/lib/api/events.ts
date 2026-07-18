@@ -107,6 +107,21 @@ export interface EventListResponse {
   has_prev: boolean;
 }
 
+const HIDDEN_PUBLIC_EVENT_STATUSES = new Set([
+  'archived',
+  'cancelled',
+  'canceled',
+  'deleted',
+  'draft',
+  'inactive',
+  'removed',
+]);
+
+const isPubliclyVisibleEvent = (event: StandaloneEvent) => {
+  const status = String(event.status || '').trim().toLowerCase();
+  return !status || !HIDDEN_PUBLIC_EVENT_STATUSES.has(status);
+};
+
 export async function listEvents(params?: {
   status?: string;
   communityId?: string;
@@ -120,7 +135,8 @@ export async function listEvents(params?: {
   if (params?.page_size) query.page_size = String(params.page_size);
 
   const response = await $events.list(query);
-  return (response.events || []) as StandaloneEvent[];
+  const events = (response.events || []) as StandaloneEvent[];
+  return params?.status ? events : events.filter(isPubliclyVisibleEvent);
 }
 
 export async function getEvent(eventId: string): Promise<StandaloneEvent | null> {

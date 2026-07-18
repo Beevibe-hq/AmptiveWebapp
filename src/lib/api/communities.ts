@@ -36,7 +36,12 @@ export async function getCommunity(communityId: string): Promise<Community | nul
     const response = await $communities.getById(communityId) as Community;
     return response || null;
   } catch {
-    return null;
+    try {
+      const communities = await listCommunities({ page_size: 100 });
+      return communities.find((community) => String(community.community_id) === String(communityId)) || null;
+    } catch {
+      return null;
+    }
   }
 }
 

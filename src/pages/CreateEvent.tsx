@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, ChevronDown, Users, Search } from "lucide-react";
+import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, ChevronDown, Users, Search, Wallet } from "lucide-react";
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
@@ -121,10 +121,17 @@ const LUMA_GALLERY_CATEGORIES = [
   {
     name: 'Business',
     images: [
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/vt/318de18d-3cb8-4b4e-ae3b-60e03f671ee2.png',
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/qk/a33323fb-d69b-45c5-9362-3a49dc9b4cbc.png',
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/di/5eed6028-6641-4564-8544-731c4d29371e.png',
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/u1/3ad47c7f-bae0-4396-aa9f-29522aab4084.png',
+      '/images/gallery/business/money-flower.png',
+      '/images/gallery/business/watering-money-growth.png',
+      '/images/gallery/business/growth-chart-hands.png',
+      '/images/gallery/business/strategy-notes-head.png',
+      '/images/gallery/business/team-lightbulb.png',
+      '/images/gallery/business/team-pie-chart.png',
+      '/images/gallery/business/build-letters.png',
+      '/images/gallery/business/network-person.png',
+      '/images/gallery/business/upward-arrow-breakthrough.png',
+      '/images/gallery/business/strategy-mountain.png',
+      '/images/gallery/business/coin-stair-growth.png',
     ],
   },
   {
@@ -139,10 +146,10 @@ const LUMA_GALLERY_CATEGORIES = [
   {
     name: 'Party',
     images: [
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/px/7023a147-7a8e-428d-8f5f-ec1ac96946a2.png',
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/q7/df06078f-53c0-4ad1-a151-15dc8f3e8804.png',
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/fp/ea6ba574-ab98-4e50-96fb-854a8390d48a.png',
-      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/5g/e9610f9d-f711-4a87-a692-757aa04e66c0.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/vt/318de18d-3cb8-4b4e-ae3b-60e03f671ee2.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/qk/a33323fb-d69b-45c5-9362-3a49dc9b4cbc.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/di/5eed6028-6641-4564-8544-731c4d29371e.png',
+      'https://images.lumacdn.com/cdn-cgi/image/format=auto,fit=cover,dpr=2,anim=false,background=white,quality=75,width=600,height=600/gallery-images/u1/3ad47c7f-bae0-4396-aa9f-29522aab4084.png',
     ],
   },
   {
@@ -352,6 +359,7 @@ const CreateEvent = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const communityMenuRef = useRef<HTMLDivElement | null>(null);
   const filePreviewUrlRef = useRef<string | null>(null);
+  const [showWalletPrompt, setShowWalletPrompt] = useState(false);
   const coverInputId = useMemo(() => `cover-upload-${Math.random().toString(36).slice(2)}`, []);
 
 
@@ -561,6 +569,9 @@ const CreateEvent = () => {
         const user = await getCurrentUser();
         if (user) {
           setUserId(user.user_id);
+          if (!id && !user.is_wallet_setup) {
+            setShowWalletPrompt(true);
+          }
           setReady(true);
         } else {
           const refreshed = await refreshSession();
@@ -571,6 +582,9 @@ const CreateEvent = () => {
           } else {
             const u = await getCurrentUser()
             setUserId(u?.user_id || '');
+            if (u && !id && !u.is_wallet_setup) {
+              setShowWalletPrompt(true);
+            }
             setReady(true);
           }
         }
@@ -1053,6 +1067,43 @@ const CreateEvent = () => {
 
   const isPublished = !!id && eventStatus.toLowerCase() !== 'draft';
   const selectedCommunity = communities.find(community => community.community_id === form.communityId);
+
+  if (showWalletPrompt) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-100/90 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white rounded-[32px] w-full max-w-[440px] p-10 shadow-[0_8px_30px_rgb(0,0,0,0.08)] animate-in zoom-in-95 duration-200 flex flex-col items-center text-center">
+          
+          <div className="mb-8">
+            <img
+              src="/images/finance/wallet-setup-illustration.svg"
+              alt="Wallet Setup"
+              className="mx-auto h-[120px] w-auto object-contain"
+            />
+          </div>
+          
+          <h2 className="text-[28px] leading-[1.2] tracking-tight mb-8">
+            <span className="text-gray-500 font-medium">Seamless payouts for your events. </span>
+            <span className="text-black font-bold">Set up your wallet.</span>
+          </h2>
+          
+          <button
+            onClick={() => navigate('/dashboard/finance')}
+            className="w-full flex items-center justify-center gap-2 rounded-full bg-black px-6 py-4 text-[15px] font-bold text-white hover:bg-gray-800 transition-all hover:scale-[1.02] active:scale-[0.98] mb-6"
+          >
+            <svg width="24" height="24" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path fillRule="evenodd" clipRule="evenodd" d="M27.5 19.7727C27.5 22.9107 24.9562 25.4545 21.8182 25.4545H8.18182C5.04384 25.4545 2.5 22.9107 2.5 19.7727V10.6818C2.5 7.54384 5.04384 5 8.18182 5H21.8182C24.9562 5 27.5 7.54384 27.5 10.6818V19.7727ZM8.18182 7.03409H21.8182C23.8328 7.03409 25.4659 8.66723 25.4659 10.6818V11.8182H21.8182C19.9354 11.8182 18.4091 13.3445 18.4091 15.2273C18.4091 17.1101 19.9354 18.6364 21.8182 18.6364H25.4659V19.7727C25.4659 21.7873 23.8328 23.4205 21.8182 23.4205H8.18182C6.16723 23.4205 4.53409 21.7873 4.53409 19.7727V10.6818C4.53409 8.66723 6.16723 7.03409 8.18182 7.03409ZM25.4659 16.6023V13.8523H21.8182C21.0588 13.8523 20.4432 14.4679 20.4432 15.2273C20.4432 15.9867 21.0588 16.6023 21.8182 16.6023H25.4659Z" fill="white"/>
+            </svg>
+            Set up Wallet
+          </button>
+          
+          <p className="text-[11px] text-gray-400 leading-relaxed px-4">
+            By clicking "Set up Wallet", you will be redirected to the finance dashboard. Or you can <button onClick={() => navigate(-1)} className="underline hover:text-gray-600 transition-colors">Go back</button>.
+          </p>
+          
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">

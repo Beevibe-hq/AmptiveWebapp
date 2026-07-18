@@ -22,6 +22,7 @@ export interface UserProfile {
   following_count?: number;
   has_hosted_shows?: boolean;
   has_hosted_events?: boolean;
+  is_wallet_setup?: boolean;
   support_enabled?: boolean;
   accept_tips?: boolean;
   support_message?: string | null;
@@ -69,6 +70,13 @@ export interface RefreshTokenResponse {
   access_token: string;
   refresh_token: string;
   expires_in?: number;
+}
+
+export interface SetPinRequest {
+  new_pin: string;
+  confirm_new_pin: string;
+  security_question: string;
+  security_question_answer: string;
 }
 
 export interface AuthResponse {
@@ -147,6 +155,9 @@ export const $auth = {
 
   checkAvailability: (data: AvailabilityRequest) =>
     api.post<AvailabilityResponse>(`${AUTH_PREFIX}/check-availability`, data),
+
+  setPin: (data: SetPinRequest) =>
+    api.post<StandardResponse<string>>(`${AUTH_PREFIX}/set-pin`, data),
 };
 
 // ============================================
@@ -194,7 +205,7 @@ export const $communities = {
   },
 
   getById: (communityId: string) =>
-    api.get<unknown>(`${COMMUNITIES_PREFIX}/${communityId}`),
+    api.get<unknown>(`${COMMUNITIES_PREFIX}/${communityId}`, { skipAuth: true }),
 
   getMembers: (communityId: string) =>
     api.get<unknown[]>(`${COMMUNITIES_PREFIX}/${communityId}/members`),

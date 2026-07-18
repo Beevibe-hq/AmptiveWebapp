@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2, Trash2 } from 'lucide-react';
+import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2, Trash2, ShieldCheck, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getSession } from '@/lib/api/auth';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { getSession, setWalletPin } from '@/lib/api/auth';
 import {
     createPaymentBankAccount,
     deletePaymentBankAccount,
-    getBuyerProfiles,
     getPaymentBankAccounts,
     getPaymentBanks,
     getPaymentTransactions,
-    getWalletBalance,
+    getWalletBalanceStatus,
+    requestWithdrawal,
     resolvePaymentBankAccount,
     setDefaultPaymentBankAccount,
     type PaymentBankAccount,
@@ -45,7 +46,18 @@ const BANK_BRANDS: Record<string, { label: string; className: string }> = {
 };
 
 const BANK_DETAILS_STORAGE_KEY = 'amptive_payout_bank_details';
+// Bank details are cached per user so one account's payout details never render for another
+// user on a shared browser. The un-scoped legacy key is cleared on load.
+const getBankDetailsStorageKey = (userKey: string) => `${BANK_DETAILS_STORAGE_KEY}.${userKey}`;
 const WITHDRAWALS_STORAGE_KEY = 'amptive_withdrawal_requests';
+const WALLET_SECURITY_QUESTION_KEY = 'amptive_wallet_security_question';
+const SECURITY_QUESTIONS = [
+    'In what city were you born?',
+    'What was the name of your first pet?',
+    'What is your childhood nickname?',
+    'What was the name of your first school?',
+    "What is your mother's maiden name?",
+];
 
 const getUserScopedWithdrawalKey = (userId?: string) => (
     userId ? `${WITHDRAWALS_STORAGE_KEY}:${userId}` : WITHDRAWALS_STORAGE_KEY
@@ -58,6 +70,74 @@ const readSavedWithdrawals = (userId?: string) => {
     } catch {
         return [];
     }
+};
+
+const readWalletSecurityQuestion = () => {
+    try {
+        return localStorage.getItem(WALLET_SECURITY_QUESTION_KEY) || SECURITY_QUESTIONS[2];
+    } catch {
+        return SECURITY_QUESTIONS[2];
+    }
+};
+
+const PinInput = ({ value, onChange, length = 4, autoFocus = false }: { value: string, onChange: (v: string) => void, length?: number, autoFocus?: boolean }) => {
+    const inputs = React.useRef<(HTMLInputElement | null)[]>([]);
+
+    React.useEffect(() => {
+        if (autoFocus && inputs.current[0] && !value) {
+            inputs.current[0].focus();
+        }
+    }, [autoFocus]);
+
+    const handleChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value.replace(/\D/g, '');
+        if (!val) return;
+        
+        let newArr = value.split('').slice(0, length);
+        while (newArr.length < length) newArr.push('');
+        
+        newArr[index] = val.slice(-1); 
+        const newValue = newArr.join('');
+        onChange(newValue);
+        if (index < length - 1) {
+            inputs.current[index + 1]?.focus();
+        }
+    };
+
+    const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Backspace') {
+            e.preventDefault();
+            let newArr = value.split('').slice(0, length);
+            while (newArr.length < length) newArr.push('');
+            
+            if (!newArr[index] && index > 0) {
+                inputs.current[index - 1]?.focus();
+                newArr[index - 1] = '';
+                onChange(newArr.join(''));
+            } else {
+                newArr[index] = '';
+                onChange(newArr.join(''));
+            }
+        }
+    };
+
+    return (
+        <div className="flex w-full justify-between max-w-[320px]">
+            {Array.from({ length }).map((_, i) => (
+                <input
+                    key={i}
+                    ref={el => inputs.current[i] = el}
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={value[i] || ''}
+                    onChange={e => handleChange(i, e)}
+                    onKeyDown={e => handleKeyDown(i, e)}
+                    className="w-[60px] h-[72px] sm:w-[64px] sm:h-[76px] text-center text-[28px] font-semibold text-gray-900 bg-white border border-gray-200 rounded-[16px] focus:border-black focus:ring-1 focus:ring-black outline-none transition-all shadow-[0_2px_10px_rgb(0,0,0,0.04)]"
+                />
+            ))}
+        </div>
+    );
 };
 
 export default function DashboardFinance() {
@@ -106,8 +186,20 @@ export default function DashboardFinance() {
     const [purchases, setPurchases] = useState<any[]>([]);
     const [paymentTransactions, setPaymentTransactions] = useState<any[]>([]);
     const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);
+    const [walletSetupRequired, setWalletSetupRequired] = useState(false);
+    const [walletSetupError, setWalletSetupError] = useState('');
+    const [isWalletSetupOpen, setIsWalletSetupOpen] = useState(false);
+    const [isSettingWalletPin, setIsSettingWalletPin] = useState(false);
+    const [walletSetupStep, setWalletSetupStep] = useState<'intro' | 'pin' | 'security' | 'creating' | 'result'>('intro');
+    const [walletSetupSuccess, setWalletSetupSuccess] = useState(false);
+    const [selectedWalletSecurityQuestion, setSelectedWalletSecurityQuestion] = useState(readWalletSecurityQuestion);
+    const [walletPinForm, setWalletPinForm] = useState({
+        new_pin: '',
+        confirm_new_pin: '',
+        security_question: selectedWalletSecurityQuestion,
+        security_question_answer: '',
+    });
     const [loading, setLoading] = useState(true);
-    const [profileMap, setProfileMap] = useState<Record<string, any>>({});
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [historySearchQuery, setHistorySearchQuery] = useState('');
     const [isSearchingHistory, setIsSearchingHistory] = useState(false);
@@ -135,9 +227,10 @@ export default function DashboardFinance() {
         };
     };
 
-    const readConfirmedBankDetails = () => {
+    const readConfirmedBankDetails = (userKey: string) => {
+        if (!userKey) return null;
         try {
-            const stored = localStorage.getItem(BANK_DETAILS_STORAGE_KEY);
+            const stored = localStorage.getItem(getBankDetailsStorageKey(userKey));
             if (!stored) return null;
             const parsed = JSON.parse(stored);
             if (!parsed?.backendConfirmed || !parsed?.bankName || !parsed?.accountNumber) return null;
@@ -151,16 +244,18 @@ export default function DashboardFinance() {
         }
     };
 
-    const [bankDetails, setBankDetails] = useState({
-        ...(readConfirmedBankDetails() || emptyBankDetails)
-    });
+    const [bankDetails, setBankDetails] = useState({ ...emptyBankDetails });
     const [isEditingBank, setIsEditingBank] = useState(false);
     const [tempBankDetails, setTempBankDetails] = useState({ ...bankDetails });
     const [isCheckingAccount, setIsCheckingAccount] = useState(false);
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [withdrawalAmount, setWithdrawalAmount] = useState('');
+    const [withdrawalPin, setWithdrawalPin] = useState('');
+    const [withdrawalSecurityAnswer, setWithdrawalSecurityAnswer] = useState('');
     const [withdrawalError, setWithdrawalError] = useState('');
     const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
+    const [isWithdrawing, setIsWithdrawing] = useState(false);
+    const [withdrawStep, setWithdrawStep] = useState<'amount' | 'confirm'>('amount');
     const [currentUserKey, setCurrentUserKey] = useState('');
     const [withdrawals, setWithdrawals] = useState<any[]>([]);
 
@@ -221,7 +316,7 @@ export default function DashboardFinance() {
             const nextBankDetails = toBankDetails(createdAccount);
             setBankDetails(nextBankDetails);
             setTempBankDetails(nextBankDetails);
-            localStorage.setItem(BANK_DETAILS_STORAGE_KEY, JSON.stringify(nextBankDetails));
+            if (currentUserKey) localStorage.setItem(getBankDetailsStorageKey(currentUserKey), JSON.stringify(nextBankDetails));
             if (nextBankDetails.id) {
                 await setDefaultPaymentBankAccount(nextBankDetails.id);
             }
@@ -244,7 +339,7 @@ export default function DashboardFinance() {
                 };
                 setBankDetails(existingAccount);
                 setTempBankDetails(existingAccount);
-                localStorage.setItem(BANK_DETAILS_STORAGE_KEY, JSON.stringify(existingAccount));
+                if (currentUserKey) localStorage.setItem(getBankDetailsStorageKey(currentUserKey), JSON.stringify(existingAccount));
                 setBankSaveError('');
                 setIsEditingBank(false);
                 return;
@@ -255,7 +350,7 @@ export default function DashboardFinance() {
         }
     };
 
-    const loadBankAccounts = async () => {
+    const loadBankAccounts = async (userKey = currentUserKey) => {
         try {
             const accounts = await getPaymentBankAccounts();
             const defaultAccount = accounts.find(account => account.is_default) || accounts[0];
@@ -264,26 +359,22 @@ export default function DashboardFinance() {
                 setBankDetails(nextBankDetails);
                 setTempBankDetails(nextBankDetails);
                 setBankDeleteError('');
-                localStorage.setItem(BANK_DETAILS_STORAGE_KEY, JSON.stringify(nextBankDetails));
+                if (userKey) localStorage.setItem(getBankDetailsStorageKey(userKey), JSON.stringify(nextBankDetails));
                 return true;
             } else {
-                const savedAccount = readConfirmedBankDetails();
-                if (savedAccount) {
-                    setBankDetails(savedAccount);
-                    setTempBankDetails(savedAccount);
-                    return true;
-                }
                 setBankDetails({ ...emptyBankDetails });
                 setTempBankDetails({ ...emptyBankDetails });
                 setBankDeleteError('');
-                localStorage.removeItem(BANK_DETAILS_STORAGE_KEY);
+                if (userKey) localStorage.removeItem(getBankDetailsStorageKey(userKey));
                 return false;
             }
         } catch (error) {
             console.error('Error loading bank accounts:', error);
-            setBankDetails({ ...emptyBankDetails });
-            setTempBankDetails({ ...emptyBankDetails });
-            return false;
+            // Backend unavailable — keep whatever this user's cache had rather than wiping the card.
+            const savedAccount = readConfirmedBankDetails(userKey);
+            setBankDetails(savedAccount || { ...emptyBankDetails });
+            setTempBankDetails(savedAccount || { ...emptyBankDetails });
+            return Boolean(savedAccount);
         }
     };
 
@@ -314,12 +405,23 @@ export default function DashboardFinance() {
         setIsDeletingBank(true);
         setBankDeleteError('');
         try {
-            if (bankDetails.id) {
-                await deletePaymentBankAccount(bankDetails.id);
+            // The cached details may lack an id (older saves) — resolve it from the backend
+            // list so the account is actually deleted server-side, not just hidden locally.
+            let accountId = bankDetails.id;
+            if (!accountId) {
+                const accounts = await getPaymentBankAccounts().catch(() => []);
+                const match = accounts.find(account =>
+                    account.account_number === bankDetails.accountNumber ||
+                    (account.account_number || '').slice(-4) === (bankDetails.accountNumber || '').slice(-4)
+                );
+                accountId = match?.id || '';
+            }
+            if (accountId) {
+                await deletePaymentBankAccount(accountId);
             }
             setBankDetails({ ...emptyBankDetails });
             setTempBankDetails({ ...emptyBankDetails });
-            localStorage.removeItem(BANK_DETAILS_STORAGE_KEY);
+            if (currentUserKey) localStorage.removeItem(getBankDetailsStorageKey(currentUserKey));
         } catch (error) {
             const message = error instanceof Error ? error.message : '';
             setBankDeleteError(message || 'Could not delete this bank account. Please try again.');
@@ -383,33 +485,28 @@ export default function DashboardFinance() {
             setCurrentUserKey(userKey);
             setWithdrawals(readSavedWithdrawals(userKey));
 
-            await loadBankAccounts();
-            const [balance, transactions] = await Promise.all([
-                getWalletBalance(),
+            // Drop the legacy un-scoped cache so it can never leak across accounts.
+            localStorage.removeItem(BANK_DETAILS_STORAGE_KEY);
+            // Seed from this user's cache for an instant render; backend result overwrites it.
+            const cachedBankDetails = readConfirmedBankDetails(userKey);
+            if (cachedBankDetails) {
+                setBankDetails(cachedBankDetails);
+                setTempBankDetails(cachedBankDetails);
+            }
+
+            await loadBankAccounts(userKey);
+            const [balanceResult, transactions] = await Promise.all([
+                getWalletBalanceStatus(),
                 getPaymentTransactions(100),
             ]);
-            setWalletBalance(balance);
+            setWalletBalance(balanceResult.balance);
+            setWalletSetupRequired(balanceResult.walletMissing);
+            setWalletSetupError(balanceResult.walletMissing ? 'Set up your wallet PIN to create your wallet and view your balance.' : '');
             setPaymentTransactions(transactions);
 
-            // 1. Build ticket purchase rows from the event/ticket APIs that exist today.
-            const financeRows = await buildTicketSalesFallback();
+            // Build ticket purchase rows from the event/ticket APIs that exist today.
+            const financeRows = await buildTicketSalesFallback(transactions);
             setPurchases(financeRows);
-
-            // 2. Fetch buyer profiles for avatars
-            const buyerIds = [...new Set((financeRows || [])
-                .map(p => p.buyer_id)
-                .filter(id => !!id))];
-
-            if (buyerIds.length > 0) {
-                const profiles = await getBuyerProfiles(buyerIds);
-                if (profiles) {
-                    const pMap: Record<string, any> = {};
-                    profiles.forEach(p => {
-                        pMap[p.user_id] = p;
-                    });
-                    setProfileMap(pMap);
-                }
-            }
         } catch (error) {
             console.error('Error fetching finance data:', error);
         } finally {
@@ -501,7 +598,7 @@ export default function DashboardFinance() {
         if (item.source === 'ticket_summary') return true;
         const status = getOrderStatus(item);
         if (['cancelled', 'canceled', 'refunded', 'failed', 'void'].includes(status)) return false;
-        if (['valid', 'used', 'paid', 'completed', 'success', 'successful', 'attended', 'scanned'].includes(status)) return true;
+        if (['valid', 'used', 'paid', 'completed', 'success', 'successful', 'attended', 'scanned', 'issued'].includes(status)) return true;
         return getOrderAmount(item) > 0 && !status;
     };
 
@@ -540,14 +637,40 @@ export default function DashboardFinance() {
         });
     };
 
-    const buildTicketSalesFallback = async () => {
+    // Rows built from successful event payments — used while the orders endpoint is failing
+    // server-side, so history still shows real purchase dates and references.
+    const buildEventPaymentRows = (events: any[], transactions: any[]) => {
+        const singleEventTitle = events.length === 1 ? (events[0]?.title || '') : '';
+        return (transactions || [])
+            .filter((tx: any) => (
+                tx.category === 'event_payment' &&
+                tx.transaction_type !== 'debit' &&
+                ['successful', 'success', 'completed', 'paid'].includes(String(tx.transaction_status || '').toLowerCase())
+            ))
+            .map((tx: any) => ({
+                ...tx,
+                source: 'payment_transaction',
+                id: tx.reference,
+                event_title: singleEventTitle,
+                buyer_name: tx.buyer_name || 'Ticket buyer',
+                total_amount: toNumber(tx.amount),
+                status: tx.transaction_status,
+                created_at: tx.created_at || new Date().toISOString(),
+            }));
+    };
+
+    const buildTicketSalesFallback = async (transactions: any[] = []) => {
         try {
             const events = await getEventsByUser();
+            const failures: unknown[] = [];
             const rows = await Promise.all((events || []).map(async (event: any) => {
                 const eventId = event.event_id || event.id;
                 if (!eventId) return [];
 
-                const eventOrders = await getEventOrders(eventId).catch(() => []);
+                const eventOrders = await getEventOrders(eventId).catch((error) => {
+                    failures.push(error);
+                    return [];
+                });
                 if (eventOrders.length > 0) {
                     return eventOrders.map((order: any) => {
                         const purchase = order.purchase || {};
@@ -611,6 +734,13 @@ export default function DashboardFinance() {
                     .filter(Boolean);
             }));
 
+            // If every event's orders request failed, prefer per-payment rows (real dates and
+            // references) over the aggregated ticket-summary rows built above.
+            if (failures.length > 0 && failures.length === (events || []).length) {
+                const paymentRows = buildEventPaymentRows(events || [], transactions);
+                if (paymentRows.length > 0) return paymentRows;
+            }
+
             return rows.flat();
         } catch (error) {
             console.error('Error building finance fallback data:', error);
@@ -631,10 +761,116 @@ export default function DashboardFinance() {
     const availableBalance = walletBalance?.available_balance ?? 0;
 
     const openWithdrawDrawer = () => {
+        if (walletSetupRequired) {
+            setWalletSetupStep('intro');
+            setWalletSetupSuccess(false);
+            setIsWalletSetupOpen(true);
+            return;
+        }
         setWithdrawalError('');
         setWithdrawalSuccess(false);
         setWithdrawalAmount('');
+        setWithdrawalPin('');
+        setWithdrawalSecurityAnswer('');
+        setWithdrawStep('amount');
         setIsWithdrawOpen(true);
+    };
+
+    const continueWithdrawal = () => {
+        const amount = toNumber(withdrawalAmount.replace(/,/g, ''));
+        if (!hasBankAccount) {
+            setWithdrawalError('Add a payout bank account before withdrawing.');
+            return;
+        }
+        if (amount <= 0) {
+            setWithdrawalError('Enter a valid withdrawal amount.');
+            return;
+        }
+        if (amount > availableBalance) {
+            setWithdrawalError('Amount is higher than your available balance.');
+            return;
+        }
+        setWithdrawalError('');
+        setWithdrawStep('confirm');
+    };
+
+    const handleWalletPinChange = (field: keyof typeof walletPinForm, value: string) => {
+        const nextValue = field.includes('pin') ? value.replace(/\D/g, '').slice(0, 4) : value;
+        setWalletSetupError('');
+        setWalletPinForm(prev => ({ ...prev, [field]: nextValue }));
+    };
+
+    const openWalletSetup = () => {
+        setWalletSetupStep('intro');
+        setWalletSetupSuccess(false);
+        setWalletSetupError('');
+        setIsWalletSetupOpen(true);
+    };
+
+    const closeWalletSetup = () => {
+        if (isSettingWalletPin) return;
+        setIsWalletSetupOpen(false);
+    };
+
+    const submitWalletSetup = async (event?: React.FormEvent) => {
+        event?.preventDefault();
+        if (isSettingWalletPin) return;
+
+        if (walletPinForm.new_pin.length !== 4) {
+            setWalletSetupStep('pin');
+            setWalletSetupError('Enter a 4-digit wallet PIN.');
+            return;
+        }
+
+        if (walletPinForm.new_pin !== walletPinForm.confirm_new_pin) {
+            setWalletSetupStep('pin');
+            setWalletSetupError('The PIN confirmation does not match.');
+            return;
+        }
+
+        if (!walletPinForm.security_question.trim()) {
+            setWalletSetupStep('security');
+            setWalletSetupError('Select a security question.');
+            return;
+        }
+
+        if (!walletPinForm.security_question_answer.trim()) {
+            setWalletSetupStep('security');
+            setWalletSetupError('Answer your security question. This answer is case sensitive.');
+            return;
+        }
+
+        setIsSettingWalletPin(true);
+        setWalletSetupError('');
+        setWalletSetupStep('creating');
+        try {
+            const result = await setWalletPin({
+                new_pin: walletPinForm.new_pin,
+                confirm_new_pin: walletPinForm.confirm_new_pin,
+                security_question: walletPinForm.security_question.trim(),
+                security_question_answer: walletPinForm.security_question_answer.trim(),
+            });
+
+            if (!result.ok) {
+                setWalletSetupSuccess(false);
+                setWalletSetupStep('result');
+                setWalletSetupError(result.message || 'Could not set up your wallet.');
+                return;
+            }
+
+            const balanceResult = await getWalletBalanceStatus();
+            setWalletBalance(balanceResult.balance);
+            setWalletSetupRequired(balanceResult.walletMissing);
+            setWalletSetupSuccess(!balanceResult.walletMissing);
+            setWalletSetupStep('result');
+            setWalletSetupError(balanceResult.walletMissing ? 'Wallet PIN saved, but the wallet balance is still not available. Please refresh and try again.' : '');
+            if (!balanceResult.walletMissing) {
+                setSelectedWalletSecurityQuestion(walletPinForm.security_question);
+                localStorage.setItem(WALLET_SECURITY_QUESTION_KEY, walletPinForm.security_question);
+            }
+        } finally {
+            setIsSettingWalletPin(false);
+        }
     };
 
     const formatAmountInput = (value: string) => {
@@ -656,7 +892,8 @@ export default function DashboardFinance() {
         setWithdrawalError('');
     };
 
-    const submitWithdrawal = () => {
+    const submitWithdrawal = async () => {
+        if (isWithdrawing) return;
         const amount = toNumber(withdrawalAmount.replace(/,/g, ''));
 
         if (!hasBankAccount) {
@@ -674,52 +911,98 @@ export default function DashboardFinance() {
             return;
         }
 
-        const request = {
-            id: `wd-${Date.now()}`,
-            type: 'withdrawal',
-            amount,
-            bankName: bankDetails.bankName,
-            accountNumber: bankDetails.accountNumber,
-            accountHolder: bankDetails.accountHolder,
-            status: 'pending',
-            created_at: new Date().toISOString(),
-        };
-        const nextWithdrawals = [request, ...withdrawals];
-        setWithdrawals(nextWithdrawals);
-        localStorage.setItem(getUserScopedWithdrawalKey(currentUserKey), JSON.stringify(nextWithdrawals));
-        setWithdrawalSuccess(true);
+        if (withdrawalPin.length !== 4) {
+            setWithdrawalError('Enter your 4-digit wallet PIN.');
+            return;
+        }
+
+        if (!withdrawalSecurityAnswer) {
+            setWithdrawalError('Enter your security answer exactly as you created it.');
+            return;
+        }
+
+        setIsWithdrawing(true);
         setWithdrawalError('');
-        setWithdrawalAmount('');
+        try {
+            const result = await requestWithdrawal({
+                amount,
+                bank_account_id: bankDetails.id || undefined,
+            });
+
+            if (!result.ok) {
+                setWithdrawalError(result.error || 'Withdrawal request failed. Please try again.');
+                return;
+            }
+
+            // Keep a local record for the activity feed until the backend transaction appears.
+            const request = {
+                id: `wd-${Date.now()}`,
+                type: 'withdrawal',
+                amount,
+                bankName: bankDetails.bankName,
+                accountNumber: bankDetails.accountNumber,
+                accountHolder: bankDetails.accountHolder,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+            };
+            const nextWithdrawals = [request, ...withdrawals];
+            setWithdrawals(nextWithdrawals);
+            localStorage.setItem(getUserScopedWithdrawalKey(currentUserKey), JSON.stringify(nextWithdrawals));
+
+            const balanceResult = await getWalletBalanceStatus();
+            setWalletBalance(balanceResult.balance);
+
+            setWithdrawalSuccess(true);
+            setWithdrawalAmount('');
+        } finally {
+            setIsWithdrawing(false);
+        }
     };
 
-    const backendActivityItems = paymentTransactions
+    const backendWithdrawals = paymentTransactions
+        .filter((item) => item.transaction_type === 'debit' || item.category === 'withdrawal')
         .map((item) => ({
             ...item,
             source: 'payment_transaction',
-            type: item.transaction_type === 'debit' || item.category === 'withdrawal' ? 'withdrawal' : 'purchase',
+            type: 'withdrawal',
             status: item.transaction_status,
             created_at: item.created_at || new Date().toISOString(),
-        }))
+        }));
+
+    const backendNonEventPayments = paymentTransactions
         .filter((item) => {
-            if (item.type === 'withdrawal') return true;
+            if (item.transaction_type === 'debit' || item.category === 'withdrawal') return false;
+            if (item.category === 'event_payment') return false;
             return ['successful', 'success', 'paid', 'completed'].includes(String(item.transaction_status || item.status || '').toLowerCase());
-        });
-
-    const fallbackActivityItems = [
-        ...withdrawals.map((item) => ({
+        })
+        .map((item) => ({
             ...item,
-            type: 'withdrawal',
+            source: 'payment_transaction',
+            type: 'purchase',
+            status: item.transaction_status,
             created_at: item.created_at || new Date().toISOString(),
-        })),
-        ...purchases.map((item) => ({
-            ...item,
-            type: item.type || 'purchase',
-            created_at: getItemDate(item),
-        })).filter(isPaidOrder),
-    ];
+        }));
 
-    const activityItems = (backendActivityItems.length > 0 ? backendActivityItems : fallbackActivityItems)
-        .sort((a, b) => new Date(getItemDate(b)).getTime() - new Date(getItemDate(a)).getTime());
+    const ticketPurchaseItems = purchases.map((item) => ({
+        ...item,
+        type: item.type || 'purchase',
+        created_at: getItemDate(item),
+    })).filter(isPaidOrder);
+
+    const localWithdrawalItems = withdrawals.map((item) => ({
+        ...item,
+        type: 'withdrawal',
+        created_at: item.created_at || new Date().toISOString(),
+    }));
+
+    // Merge: ticket purchase data (richest source for event orders) + backend withdrawals + local withdrawals + other backend transactions
+    const allWithdrawals = backendWithdrawals.length > 0 ? backendWithdrawals : localWithdrawalItems;
+
+    const activityItems = [
+        ...ticketPurchaseItems,
+        ...allWithdrawals,
+        ...backendNonEventPayments,
+    ].sort((a, b) => new Date(getItemDate(b)).getTime() - new Date(getItemDate(a)).getTime());
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount);
@@ -822,19 +1105,29 @@ export default function DashboardFinance() {
                                 <div className="text-4xl font-bold tracking-tight text-black flex items-center h-[40px]">
                                     {loading ? (
                                         <div className="h-8 w-32 bg-black/5 animate-pulse rounded-lg" />
+                                    ) : walletSetupRequired ? (
+                                        <span className="text-[24px] leading-none">Set up wallet</span>
                                     ) : (
                                         showBalances ? formatCurrency(availableBalance) : '••••••••'
                                     )}
                                 </div>
+                                {walletSetupRequired && !loading && (
+                                    <p className="mt-2 text-[12px] font-medium text-amber-700">
+                                        Set up your wallet to receive payments from events, gifts, and subscriptions.
+                                    </p>
+                                )}
                                 {pendingBalance > 0 && !loading && (
                                     <p className="mt-2 text-[12px] font-medium text-black/40">
                                         {formatCurrency(pendingBalance)} pending
                                     </p>
                                 )}
                                 <div className="flex flex-row md:flex-col min-[1285px]:flex-row items-center md:items-stretch min-[1285px]:items-center gap-3 mt-6">
-                                    <button className="flex-1 flex items-center justify-center gap-2 py-3 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
-                                        <Plus className="w-4 h-4" />
-                                        Fund Wallet
+                                    <button
+                                        onClick={() => walletSetupRequired && openWalletSetup()}
+                                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-black text-white rounded-full text-sm font-medium hover:bg-gray-800 transition-colors"
+                                    >
+                                        {walletSetupRequired ? <ShieldCheck className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                                        {walletSetupRequired ? 'Set Up Wallet' : 'Fund Wallet'}
                                     </button>
                                     <button
                                         onClick={openWithdrawDrawer}
@@ -874,8 +1167,7 @@ export default function DashboardFinance() {
                                         ))
                                     ) : activityItems.length > 0 ? (
                                         activityItems.slice(0, 4).map((item) => {
-                                            const profile = profileMap[item.buyer_id];
-                                            const buyerName = getBuyerName(item, profile);
+                                            const buyerName = getBuyerName(item);
                                             const amount = getOrderAmount(item);
                                             const eventTitle = getEventTitle(item);
                                             const isWithdrawal = item.type === 'withdrawal';
@@ -1145,6 +1437,305 @@ export default function DashboardFinance() {
 
             </div>
 
+            {/* Wallet Setup Drawer */}
+            <AnimatePresence>
+                {isWalletSetupOpen && (
+                    <div className="fixed inset-0 z-[190] flex justify-end overflow-hidden">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.25 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            onClick={closeWalletSetup}
+                        />
+                        <motion.form
+                            onSubmit={submitWalletSetup}
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 32, stiffness: 320, mass: 0.8 }}
+                            className="relative h-full w-full md:w-[420px] md:h-[95vh] bg-white flex flex-col overflow-y-auto no-scrollbar md:rounded-2xl md:mt-[2.5vh] md:mr-4 md:drop-shadow-[-10px_0_25px_rgba(0,0,0,0.15)] z-10"
+                        >
+                            <div className="px-6 py-4 border-b border-black/5 flex items-center justify-between bg-white sticky top-0 z-10">
+                                <div>
+                                    <p className="text-sm font-semibold text-black tracking-tighter">Set Up Wallet</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={closeWalletSetup}
+                                    className="p-2 hover:bg-black/5 rounded-full transition-colors group"
+                                    title="Close"
+                                >
+                                    <X className="w-5 h-5 text-black/40 group-hover:text-black transition-colors" />
+                                </button>
+                            </div>
+
+                            <div className="p-6 flex-1">
+                                <AnimatePresence mode="wait">
+                                    {walletSetupStep === 'intro' && (
+                                        <motion.div
+                                            key="wallet-intro"
+                                            initial={{ opacity: 0, y: 12 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -12 }}
+                                            className="min-h-[500px] flex flex-col justify-center text-center"
+                                        >
+                                            <img
+                                                src="/images/finance/wallet-setup-illustration.svg"
+                                                alt=""
+                                                className="mx-auto h-[150px] w-auto object-contain"
+                                            />
+                                            <h2 className="mt-6 text-[24px] font-bold tracking-tight text-black">Setup your Amptive wallet</h2>
+                                            <p className="mx-auto mt-3 max-w-[300px] text-[14px] leading-relaxed text-black/45">
+                                                Your Wallet, Your Way
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setWalletSetupStep('pin')}
+                                                className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-black px-6 py-4 text-[15px] font-bold text-white hover:bg-gray-800 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                            >
+                                                Begin Setup
+                                            </button>
+                                        </motion.div>
+                                    )}
+
+                                    {walletSetupStep === 'pin' && (
+                                        <motion.div
+                                            key="wallet-pin"
+                                            initial={{ opacity: 0, x: 18 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            exit={{ opacity: 0, x: -18 }}
+                                            className="space-y-6"
+                                        >
+                                            {walletPinForm.new_pin.length < 4 ? (
+                                                <motion.div
+                                                    key="create-pin"
+                                                    initial={{ opacity: 0, x: 18 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: -18 }}
+                                                    className="space-y-6"
+                                                >
+                                                    <div>
+                                                        <p className="text-[12px] font-semibold uppercase tracking-wide text-black/35">Step 1 of 2</p>
+                                                        <h2 className="mt-2 text-[22px] font-bold tracking-tight text-black">Create your PIN</h2>
+                                                        <p className="mt-2 text-[13px] leading-relaxed text-black/45">
+                                                            Use a 4-digit PIN. You will enter this PIN when making withdrawals.
+                                                        </p>
+                                                    </div>
+                                                    <div className="pt-2">
+                                                        <PinInput 
+                                                            value={walletPinForm.new_pin} 
+                                                            onChange={(v) => {
+                                                                handleWalletPinChange('new_pin', v);
+                                                                setWalletSetupError('');
+                                                            }} 
+                                                            autoFocus
+                                                        />
+                                                    </div>
+                                                </motion.div>
+                                            ) : (
+                                                <motion.div
+                                                    key="confirm-pin"
+                                                    initial={{ opacity: 0, x: 18 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: -18 }}
+                                                    className="space-y-6"
+                                                >
+                                                    <div>
+                                                        <p className="text-[12px] font-semibold uppercase tracking-wide text-black/35">Step 1 of 2</p>
+                                                        <h2 className="mt-2 text-[22px] font-bold tracking-tight text-black">Confirm your PIN</h2>
+                                                        <p className="mt-2 text-[13px] leading-relaxed text-black/45">
+                                                            Please enter your 4-digit PIN again to confirm.
+                                                        </p>
+                                                    </div>
+                                                    <div className="pt-2">
+                                                        <PinInput 
+                                                            value={walletPinForm.confirm_new_pin} 
+                                                            onChange={(v) => {
+                                                                handleWalletPinChange('confirm_new_pin', v);
+                                                                setWalletSetupError('');
+                                                            }} 
+                                                            autoFocus
+                                                        />
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                handleWalletPinChange('new_pin', '');
+                                                                handleWalletPinChange('confirm_new_pin', '');
+                                                                setWalletSetupError('');
+                                                            }}
+                                                            className="text-[13px] font-semibold text-black/40 hover:text-black transition-colors"
+                                                        >
+                                                            Start over
+                                                        </button>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+
+                                            {walletSetupError && (
+                                                <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
+                                                    {walletSetupError}
+                                                </p>
+                                            )}
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (walletPinForm.new_pin.length !== 4) {
+                                                        setWalletSetupError('Enter a 4-digit wallet PIN.');
+                                                        return;
+                                                    }
+                                                    if (walletPinForm.new_pin !== walletPinForm.confirm_new_pin) {
+                                                        setWalletSetupError('The PIN confirmation does not match.');
+                                                        return;
+                                                    }
+                                                    setWalletSetupError('');
+                                                    setWalletSetupStep('security');
+                                                }}
+                                                className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-black px-6 py-4 text-[15px] font-bold text-white hover:bg-gray-800 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                            >
+                                                Continue
+                                            </button>
+                                        </motion.div>
+                                    )}
+
+                                    {walletSetupStep === 'security' && (
+                                        <motion.div
+                                            key="wallet-security"
+                                            initial={{ opacity: 0, x: 18 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            exit={{ opacity: 0, x: -18 }}
+                                            className="space-y-6"
+                                        >
+                                            <div>
+                                                <p className="text-[12px] font-semibold uppercase tracking-wide text-black/35">Step 2 of 2</p>
+                                                <h2 className="mt-2 text-[22px] font-bold tracking-tight text-black">Security question</h2>
+                                                <p className="mt-2 text-[13px] leading-relaxed text-black/45">
+                                                    Pick one question and answer it carefully. Your answer is case sensitive.
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <label className="block text-[13px] font-medium text-gray-700 ml-1">Security Question</label>
+                                                <div className="relative">
+                                                    <select
+                                                        value={walletPinForm.security_question}
+                                                        onChange={(e) => handleWalletPinChange('security_question', e.target.value)}
+                                                        className="block w-full rounded-2xl px-3.5 py-3 pr-11 text-base font-medium text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5 appearance-none cursor-pointer"
+                                                    >
+                                                        <option value="" disabled>Select a security question</option>
+                                                        {SECURITY_QUESTIONS.map((question) => (
+                                                            <option key={question} value={question}>{question}</option>
+                                                        ))}
+                                                    </select>
+                                                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/35" />
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <label className="block text-[13px] font-medium text-gray-700 ml-1">Answer</label>
+                                                <input
+                                                    type="text"
+                                                    value={walletPinForm.security_question_answer}
+                                                    onChange={(e) => handleWalletPinChange('security_question_answer', e.target.value)}
+                                                    className="block w-full rounded-2xl px-3.5 py-3 text-base font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                                                    placeholder="Case-sensitive answer"
+                                                />
+                                            </div>
+
+                                            {walletSetupError && (
+                                                <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
+                                                    {walletSetupError}
+                                                </p>
+                                            )}
+
+                                            <div className="flex gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setWalletSetupError('');
+                                                        setWalletSetupStep('pin');
+                                                    }}
+                                                    className="flex-1 rounded-full bg-black/5 px-5 py-3 text-sm font-semibold text-black hover:bg-black/10 transition-colors"
+                                                >
+                                                    Back
+                                                </button>
+                                                <button
+                                                    type="submit"
+                                                    className="flex-1 rounded-full bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
+                                                >
+                                                    Create wallet
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    )}
+
+                                    {walletSetupStep === 'creating' && (
+                                        <motion.div
+                                            key="wallet-creating"
+                                            initial={{ opacity: 0, y: 12 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -12 }}
+                                            className="min-h-[500px] flex flex-col items-center justify-center text-center"
+                                        >
+                                            <h2 className="text-[22px] font-bold tracking-tight text-black">Creating your wallet</h2>
+                                            <AmptiveSpinner className="mt-5 h-12 w-12 text-black animate-pulse" />
+                                        </motion.div>
+                                    )}
+
+                                    {walletSetupStep === 'result' && (
+                                        <motion.div
+                                            key="wallet-result"
+                                            initial={{ opacity: 0, y: 12 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -12 }}
+                                            className="min-h-[500px] flex flex-col items-center justify-center text-center"
+                                        >
+                                            {walletSetupSuccess ? (
+                                                <img
+                                                    src="/images/finance/wallet-success-illustration.svg"
+                                                    alt=""
+                                                    className="h-[150px] w-auto object-contain"
+                                                />
+                                            ) : (
+                                                <div className="h-16 w-16 rounded-2xl flex items-center justify-center bg-red-50 text-red-600 border border-red-100">
+                                                    <CircleSlash className="h-8 w-8" />
+                                                </div>
+                                            )}
+                                            <h2 className="mt-6 text-[22px] font-bold tracking-tight text-black">
+                                                {walletSetupSuccess ? 'Wallet created' : 'Wallet setup failed'}
+                                            </h2>
+                                            <p className="mx-auto mt-2 max-w-[300px] text-[13px] leading-relaxed text-black/45">
+                                                {walletSetupSuccess
+                                                    ? 'Your wallet is ready. You can now view balances and continue with payouts.'
+                                                    : walletSetupError || 'We could not create your wallet. Please try again.'}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (walletSetupSuccess) {
+                                                        setIsWalletSetupOpen(false);
+                                                        return;
+                                                    }
+                                                    setWalletSetupError('');
+                                                    setWalletSetupStep('security');
+                                                }}
+                                                className="mt-8 inline-flex items-center justify-center rounded-full bg-black px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
+                                            >
+                                                {walletSetupSuccess ? 'Open Wallet' : 'Try Again'}
+                                            </button>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        </motion.form>
+                    </div>
+                )}
+            </AnimatePresence>
+
             {/* Withdrawal Drawer */}
             <AnimatePresence>
                 {isWithdrawOpen && (
@@ -1167,6 +1758,11 @@ export default function DashboardFinance() {
                             <div className="px-6 py-4 border-b border-black/5 flex items-center justify-between bg-white sticky top-0 z-10">
                                 <div>
                                     <p className="text-sm font-semibold text-black tracking-tighter">Withdraw Funds</p>
+                                    {!withdrawalSuccess && (
+                                        <p className="text-[11px] font-medium text-black/40 mt-0.5">
+                                            {withdrawStep === 'amount' ? 'Step 1 of 2 · Amount' : 'Step 2 of 2 · Confirm'}
+                                        </p>
+                                    )}
                                 </div>
                                 <button
                                     onClick={() => setIsWithdrawOpen(false)}
@@ -1185,7 +1781,7 @@ export default function DashboardFinance() {
                                         </div>
                                         <h3 className="text-[18px] font-semibold text-black tracking-tight">Withdrawal requested</h3>
                                         <p className="mt-2 text-[13px] leading-relaxed text-black/45 max-w-[300px]">
-                                            Your withdrawal has been marked as pending. Once the backend payout endpoint is connected, this will move money to your bank account.
+                                            Your withdrawal request has been submitted and is being processed. Funds typically arrive in your bank account within 2 business days.
                                         </p>
                                         <button
                                             onClick={() => setIsWithdrawOpen(false)}
@@ -1194,7 +1790,7 @@ export default function DashboardFinance() {
                                             Done
                                         </button>
                                     </div>
-                                ) : (
+                                ) : withdrawStep === 'amount' ? (
                                     <div className="space-y-6">
                                         <div className="rounded-2xl border border-black/5 bg-gray-50/70 p-5">
                                             <p className="text-[12px] font-medium text-black/40">Available to withdraw</p>
@@ -1261,24 +1857,99 @@ export default function DashboardFinance() {
                                             </p>
                                         )}
                                     </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        <div className="rounded-2xl border border-black/5 bg-gray-50/70 p-5">
+                                            <p className="text-[12px] font-medium text-black/40">You're withdrawing</p>
+                                            <p className="mt-1 text-[32px] font-bold tracking-tight text-black">
+                                                ₦{withdrawalAmount || '0'}
+                                            </p>
+                                            {hasBankAccount && (
+                                                <p className="mt-1 text-[12px] font-medium text-black/40">
+                                                    to {bankDetails.bankName} •••• {bankDetails.accountNumber.slice(-4)}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <p className="text-[13px] leading-relaxed text-black/45">
+                                            Confirm it's you to complete this withdrawal.
+                                        </p>
+
+                                        <div className="space-y-1.5">
+                                            <label className="block text-[13px] font-medium text-gray-700 ml-1">Wallet PIN</label>
+                                            <PinInput
+                                                value={withdrawalPin}
+                                                onChange={(v) => {
+                                                    setWithdrawalError('');
+                                                    setWithdrawalPin(v.slice(0, 4));
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="block text-[13px] font-medium text-gray-700 ml-1">Security Answer</label>
+                                            <p className="ml-1 text-[12px] leading-relaxed text-black/40">{selectedWalletSecurityQuestion}</p>
+                                            <input
+                                                type="password"
+                                                autoComplete="off"
+                                                value={withdrawalSecurityAnswer}
+                                                onChange={(e) => {
+                                                    setWithdrawalError('');
+                                                    setWithdrawalSecurityAnswer(e.target.value);
+                                                }}
+                                                className="block w-full rounded-2xl px-3.5 py-3 text-base font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
+                                                placeholder="Case-sensitive answer"
+                                            />
+                                        </div>
+
+                                        {withdrawalError && (
+                                            <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
+                                                {withdrawalError}
+                                            </p>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 
                             {!withdrawalSuccess && (
                                 <div className="px-6 py-5 border-t border-black/5 bg-gray-50/50 sticky bottom-0 flex items-center justify-end gap-3 mt-auto">
-                                    <button
-                                        onClick={() => setIsWithdrawOpen(false)}
-                                        className="px-5 py-2.5 rounded-xl text-sm font-semibold text-black/60 hover:text-black hover:bg-black/5 transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={submitWithdrawal}
-                                        disabled={!hasBankAccount || availableBalance <= 0}
-                                        className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
-                                    >
-                                        Request Withdrawal
-                                    </button>
+                                    {withdrawStep === 'amount' ? (
+                                        <>
+                                            <button
+                                                onClick={() => setIsWithdrawOpen(false)}
+                                                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-black/60 hover:text-black hover:bg-black/5 transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={continueWithdrawal}
+                                                disabled={!hasBankAccount || availableBalance <= 0 || toNumber(withdrawalAmount.replace(/,/g, '')) <= 0}
+                                                className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
+                                            >
+                                                Continue
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    setWithdrawalError('');
+                                                    setWithdrawStep('amount');
+                                                }}
+                                                disabled={isWithdrawing}
+                                                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-black/60 hover:text-black hover:bg-black/5 transition-colors disabled:opacity-50"
+                                            >
+                                                Back
+                                            </button>
+                                            <button
+                                                onClick={submitWithdrawal}
+                                                disabled={isWithdrawing || !hasBankAccount || availableBalance <= 0 || withdrawalPin.length !== 4 || !withdrawalSecurityAnswer}
+                                                className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
+                                            >
+                                                {isWithdrawing ? 'Processing…' : 'Request Withdrawal'}
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </motion.div>
@@ -1398,8 +2069,7 @@ export default function DashboardFinance() {
                                     ) : (() => {
                                         const filteredPurchases = activityItems.filter(item => {
                                             const query = historySearchQuery.toLowerCase();
-                                            const profile = profileMap[item.buyer_id];
-                                            const buyerName = getBuyerName(item, profile).toLowerCase();
+                                            const buyerName = getBuyerName(item).toLowerCase();
                                             const buyerEmail = (item.buyer_email || item.customer_email || '').toLowerCase();
                                             const transId = (item.id || '').toLowerCase();
                                             const eventTitle = getEventTitle(item).toLowerCase();
@@ -1446,8 +2116,7 @@ export default function DashboardFinance() {
                                         if (filteredPurchases.length > 0) {
                                             let lastDateHeader = '';
                                             return filteredPurchases.map((item) => {
-                                                const profile = profileMap[item.buyer_id];
-                                                const buyerName = getBuyerName(item, profile);
+                                                const buyerName = getBuyerName(item);
                                                 const amount = getOrderAmount(item);
                                                 const eventTitle = getEventTitle(item);
                                                 const isWithdrawal = item.type === 'withdrawal';

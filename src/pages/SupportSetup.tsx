@@ -63,7 +63,7 @@ const MOCK_CARDS = [
     {
         name: "Sarah Jenkins",
         username: "sarahj",
-        avatarUrl: "https://gjkvrllwtjktcarnikus.supabase.co/storage/v1/object/public/avatars/avatars/5f395bf7-ca2d-44a4-8203-519e9a933d3d-0.7536191962551382.jpg",
+        avatarUrl: "",
         message: "Support my next creative video project!",
         profileType: "creator" as const,
         variant: 0,
@@ -72,7 +72,7 @@ const MOCK_CARDS = [
     {
         name: "Lumina Cafe",
         username: "luminacafe",
-        avatarUrl: "https://gjkvrllwtjktcarnikus.supabase.co/storage/v1/object/public/avatars/avatars/5f395bf7-ca2d-44a4-8203-519e9a933d3d-0.7536191962551382.jpg",
+        avatarUrl: "",
         message: "Buy us a coffee to keep the espresso flowing!",
         profileType: "business" as const,
         variant: 1,
@@ -81,7 +81,7 @@ const MOCK_CARDS = [
     {
         name: "Tech Meetup",
         username: "techmeetup",
-        avatarUrl: "https://gjkvrllwtjktcarnikus.supabase.co/storage/v1/object/public/avatars/avatars/5f395bf7-ca2d-44a4-8203-519e9a933d3d-0.7536191962551382.jpg",
+        avatarUrl: "",
         message: "Help fund our next community tech event!",
         profileType: "organizer" as const,
         variant: 2,
@@ -90,7 +90,7 @@ const MOCK_CARDS = [
     {
         name: "Mia's Bakery",
         username: "miasbakery",
-        avatarUrl: "https://gjkvrllwtjktcarnikus.supabase.co/storage/v1/object/public/avatars/avatars/5f395bf7-ca2d-44a4-8203-519e9a933d3d-0.7536191962551382.jpg",
+        avatarUrl: "",
         message: "A little tip for a lot of sweetness!",
         profileType: "business" as const,
         variant: 3,
@@ -99,7 +99,7 @@ const MOCK_CARDS = [
     {
         name: "Dev Tutorials",
         username: "devtutorials",
-        avatarUrl: "https://gjkvrllwtjktcarnikus.supabase.co/storage/v1/object/public/avatars/avatars/5f395bf7-ca2d-44a4-8203-519e9a933d3d-0.7536191962551382.jpg",
+        avatarUrl: "",
         message: "Support free coding education!",
         profileType: "creator" as const,
         variant: 4,
@@ -108,7 +108,7 @@ const MOCK_CARDS = [
     {
         name: "Indie Game Fest",
         username: "indiefest",
-        avatarUrl: "https://gjkvrllwtjktcarnikus.supabase.co/storage/v1/object/public/avatars/avatars/5f395bf7-ca2d-44a4-8203-519e9a933d3d-0.7536191962551382.jpg",
+        avatarUrl: "",
         message: "Help us bring more indie games to life!",
         profileType: "organizer" as const,
         variant: 5,
@@ -339,6 +339,10 @@ export default function SupportSetup() {
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [existingProfile, setExistingProfile] = useState<SupportProfile | null>(null);
 
+    const getSupportPageSlug = (profile?: SupportProfile | null) => (
+        (profile?.support_slug as string) || profile?.username || profile?.user_id || user?.username || user?.user_id || user?.id
+    );
+
     // Auth Check & Data Fetch
     useEffect(() => {
         const checkAuth = async () => {
@@ -415,6 +419,18 @@ export default function SupportSetup() {
 
             const { ok, error } = await updateSupportProfile(updates);
             if (!ok) throw new Error(error || 'Failed to update support settings');
+            const refreshedProfile = await getMySupportProfile();
+            if (refreshedProfile) {
+                setExistingProfile(refreshedProfile);
+                setSupportEnabled(refreshedProfile.support_enabled ?? refreshedProfile.accept_tips ?? supportEnabled);
+                setSupportMessage(refreshedProfile.support_message || refreshedProfile.support_tagline || supportMessage);
+                setSupportButtonText(refreshedProfile.support_button_text || supportButtonText);
+                setSupportAmounts(refreshedProfile.support_amounts || supportAmounts);
+                setFlutterwaveSubaccountId(refreshedProfile.flutterwave_subaccount_id || flutterwaveSubaccountId);
+                setProfileType((refreshedProfile.profile_type as typeof profileType) || profileType);
+                setAvatarUrl(refreshedProfile.avatar_url || avatarUrl);
+                setSocials(refreshedProfile.support_socials || socials);
+            }
             await refreshUser();
 
             toastSuccess('Support settings updated successfully!');
@@ -444,7 +460,7 @@ export default function SupportSetup() {
     };
 
     const getSupportLinkUrl = () => {
-        const base = existingProfile?.username || user?.id || '';
+        const base = (existingProfile?.support_slug as string) || existingProfile?.username || user?.id || '';
         if (profileType === 'business') return `https://supportmybusiness.getamptive.com/${base}`;
         if (profileType === 'organizer') return `https://supportmyevents.getamptive.com/${base}`;
         return `https://supportmywork.getamptive.com/${base}`;
@@ -462,13 +478,14 @@ export default function SupportSetup() {
         <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB]">
 
             <div className="container relative z-10 mx-auto px-4 py-8 pt-16 md:pt-24 min-h-screen flex items-center justify-center">
-                <AnimatePresence mode="wait">
+                {/* Steps swap directly (entry animations only) — an exit-gated AnimatePresence
+                    here never finished its exit, leaving the page stuck on the old step. */}
+                <>
                     {step === 'welcome' ? (
                         <motion.div
                             key="welcome"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            exit={{ opacity: 0, x: -100 }}
                             className="w-full max-w-7xl flex flex-col md:flex-row items-center gap-12 md:gap-20 pt-4 pb-12 md:py-20"
                         >
                             {/* Left Column: Media */}
@@ -533,7 +550,6 @@ export default function SupportSetup() {
                             key="selection"
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
                             transition={{ duration: 0.4 }}
                             className="max-w-md w-full mx-auto"
                         >
@@ -605,7 +621,6 @@ export default function SupportSetup() {
                             key="settings"
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
                             transition={{ duration: 0.4 }}
                             className="max-w-4xl w-full mx-auto"
                         >
@@ -965,7 +980,7 @@ export default function SupportSetup() {
 
                             <div className="mt-12 text-center space-y-8">
                                 <button
-                                    onClick={() => navigate(`/support/${existingProfile?.username || user?.id}`)}
+                                    onClick={() => navigate(`/support/${getSupportPageSlug(existingProfile)}`)}
                                     className="group relative px-12 py-4 rounded-full bg-black text-white font-bold text-lg overflow-hidden transition-transform hover:scale-[1.05] active:scale-[0.95]"
                                 >
                                     <span className="relative z-10 flex items-center gap-3">
@@ -975,7 +990,7 @@ export default function SupportSetup() {
                             </div>
                         </motion.div>
                     )}
-                </AnimatePresence>
+                </>
             </div>
         </div>
     );

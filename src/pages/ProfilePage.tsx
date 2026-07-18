@@ -8,6 +8,7 @@ import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
 import { useAuth } from '@/contexts/AuthContext';
+import { getMySupportProfile } from '@/lib/api/support';
 
 type EventStatus = 'upcoming' | 'live' | 'past';
 
@@ -270,6 +271,25 @@ const ProfilePage = () => {
           }
         } else {
           profileData = user;
+          const supportProfile = await getMySupportProfile();
+          if (supportProfile) {
+            profileData = {
+              ...profileData,
+              support_enabled: supportProfile.support_enabled ?? supportProfile.accept_tips ?? profileData?.support_enabled,
+              accept_tips: supportProfile.accept_tips ?? supportProfile.support_enabled ?? profileData?.accept_tips,
+              support_message: supportProfile.support_message ?? supportProfile.support_tagline ?? profileData?.support_message,
+              support_tagline: supportProfile.support_tagline ?? supportProfile.support_message ?? profileData?.support_tagline,
+              support_button_text: supportProfile.support_button_text ?? profileData?.support_button_text,
+              support_amounts: supportProfile.support_amounts ?? profileData?.support_amounts,
+              support_card_variant: supportProfile.support_card_variant ?? profileData?.support_card_variant,
+              profile_type: supportProfile.profile_type ?? profileData?.profile_type,
+              support_socials: supportProfile.support_socials ?? profileData?.support_socials,
+              support_slug: (supportProfile as any).support_slug ?? (profileData as any)?.support_slug,
+              username: supportProfile.username || profileData?.username || '',
+              user_id: supportProfile.user_id || profileData?.user_id || profileData?.id || '',
+              id: supportProfile.user_id || profileData?.id || profileData?.user_id || '',
+            } as UserProfile;
+          }
         }
 
         if (!cancelled) {
@@ -1029,7 +1049,7 @@ const ProfilePage = () => {
                   onClick={() => {
                     const hasEnabledTips = profile?.support_enabled === true || (profile as any)?.accept_tips === true;
                     if (hasEnabledTips) {
-                      navigate(`/support/${profile.username || profile.user_id}`);
+                      navigate(`/support/${(profile as any).support_slug || profile.username || profile.user_id}`);
                     } else {
                       navigate('/profile/support-setup');
                     }

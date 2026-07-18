@@ -121,7 +121,7 @@ export default function PurchaseConfirmed() {
                     <button
                         onClick={() => {
                             sessionStorage.removeItem('guest-purchase');
-                            navigate('/', { replace: true });
+                            navigate('/explore', { replace: true });
                         }}
                         className="flex-1 px-8 py-3 rounded-full bg-black text-white font-bold hover:bg-gray-900 transition-colors flex items-center justify-center gap-2"
                     >

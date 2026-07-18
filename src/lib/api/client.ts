@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://amptive-staging.getamptive.com/api/v1';
+// In dev, go through the Vite proxy (same-origin) so real HTTP errors aren't masked as CORS failures.
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api/v1' : 'https://amptive-staging.getamptive.com/api/v1');
 const ACCESS_TOKEN_KEY = 'amptive.auth_token';
 const REFRESH_TOKEN_KEY = 'amptive.refresh_token';
 const ACCESS_TOKEN_EXPIRY_KEY = 'amptive.auth_token_expiry';
@@ -134,8 +135,10 @@ async function executeRequest<T>(
 
   const response = await fetch(url, {
     ...fetchOptions,
+    cache: fetchOptions.method === 'GET' ? 'no-store' : fetchOptions.cache,
     headers: {
       ...headers,
+      ...(fetchOptions.method === 'GET' ? { 'Cache-Control': 'no-cache' } : {}),
       ...fetchOptions.headers,
     },
   });
