@@ -4,13 +4,25 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-// Load bundled Inter 800 TTF font buffer once at module load
-let fontBuffer = null;
-try {
-  fontBuffer = readFileSync(join(process.cwd(), 'netlify', 'functions', 'fonts', 'inter-800.ttf'));
-} catch (err) {
-  console.error('Failed to load inter-800.ttf:', err);
+// Helper function to resolve and load bundled font buffer in serverless Lambda
+function getFontBuffer() {
+  const possiblePaths = [
+    join(process.cwd(), 'netlify', 'functions', 'fonts', 'inter-800.ttf'),
+    join(process.cwd(), 'fonts', 'inter-800.ttf'),
+    join(process.cwd(), 'inter-800.ttf'),
+    './netlify/functions/fonts/inter-800.ttf',
+    './fonts/inter-800.ttf'
+  ];
+
+  for (const p of possiblePaths) {
+    try {
+      const buf = readFileSync(p);
+      if (buf && buf.length > 0) return buf;
+    } catch (_) {}
+  }
+  return null;
 }
+
 
 function escapeXml(str) {
   return String(str || '')
@@ -144,13 +156,14 @@ export async function handler(event) {
 
   try {
     // 3. Render text + SVG graphics using Resvg WASM engine
+    const fontBuf = getFontBuffer();
     const resvgOpts = {
       font: {
         defaultFontFamily: 'Inter',
       },
     };
-    if (fontBuffer) {
-      resvgOpts.font.fontBuffers = [fontBuffer];
+    if (fontBuf) {
+      resvgOpts.font.fontBuffers = [fontBuf];
     }
 
     const resvg = new Resvg(baseSvg, resvgOpts);
