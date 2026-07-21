@@ -23,10 +23,11 @@ const THUMBNAIL_URL = null; // Put a URL here to test with an event cover image
 
 const OUTPUT_FILE = path.join(__dirname, 'preview-og-output.png');
 
-function fetchBuffer(url) {
+function fetchBuffer(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
-    client.get(url, { headers: { 'User-Agent': 'AmptivePreviewBot/1.0' } }, (res) => {
+    const options = { headers: { 'User-Agent': 'AmptivePreviewBot/1.0', ...headers } };
+    client.get(url, options, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve(Buffer.concat(chunks)));
@@ -82,7 +83,11 @@ async function getFontBase64() {
   console.log('⏳ Fetching Inter font from Google Fonts...');
   try {
     const css = (await fetchBuffer(
-      'https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap'
+      'https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap',
+      {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
     )).toString();
     const urlMatch = css.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/);
     if (!urlMatch) throw new Error('Could not find font URL in CSS');

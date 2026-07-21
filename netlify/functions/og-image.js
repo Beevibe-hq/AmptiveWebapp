@@ -6,7 +6,12 @@ async function getInterFontBase64() {
   try {
     const cssRes = await fetch(
       'https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap',
-      { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      }
     );
     const css = await cssRes.text();
     const urlMatch = css.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/);

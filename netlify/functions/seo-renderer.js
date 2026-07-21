@@ -70,7 +70,7 @@ export async function handler(event, context) {
               .slice(0, 150);
             
             const thumb = eventData.thumbnail_url;
-            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(eventData.title)}&description=${encodeURIComponent(seoDesc)}${thumb ? `&image=${encodeURIComponent(thumb)}` : ''}`;
+            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(eventData.title)}${thumb ? `&image=${encodeURIComponent(thumb)}` : ''}`;
             seoType = 'event';
           }
         }
@@ -89,7 +89,7 @@ export async function handler(event, context) {
               .slice(0, 150);
             
             const featImg = postData.featured_image_url;
-            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(postData.title)}&description=${encodeURIComponent(seoDesc)}${featImg ? `&image=${encodeURIComponent(featImg)}` : ''}`;
+            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(postData.title)}${featImg ? `&image=${encodeURIComponent(featImg)}` : ''}`;
             seoType = 'article';
           }
         }
@@ -107,7 +107,7 @@ export async function handler(event, context) {
             seoDesc = (profileData.support_message || profileData.support_tagline || 'Support my creative work on Amptive.');
             
             const avatar = profileData.support_avatar_url || profileData.avatar_url;
-            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(displayName)}&description=${encodeURIComponent(seoDesc)}${avatar ? `&image=${encodeURIComponent(avatar)}` : ''}`;
+            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(displayName)}${avatar ? `&image=${encodeURIComponent(avatar)}` : ''}`;
             seoType = 'profile';
           }
         }
