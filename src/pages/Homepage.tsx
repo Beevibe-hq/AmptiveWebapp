@@ -537,8 +537,8 @@ const SLIDES: SlideData[] = [
 
 const Homepage: React.FC = () => {
   useSEO({
-    title: 'Amptive - Live, Connect, Earn | The Creator Economy Platform',
-    description: 'Amptive is the ultimate platform for creators, events, and communities to connect, sell tickets, and receive support.',
+    title: 'Amptive - From Ticket to Tip$ | Create, Stream, Earn',
+    description: 'More than live audio sessions. Create engaging shows, events, and meetings with built-in ticketing and tipping. Grow your audience and earn from every session.',
     keywords: 'amptive, creators, events, communities, support, tickets, connect, invest',
   });
 

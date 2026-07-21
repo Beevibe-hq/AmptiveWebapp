@@ -47,8 +47,8 @@ export async function handler(event, context) {
   }
 
   // 2. Crawler detected — parse route parameters and fetch metadata
-  let seoTitle = 'Amptive - Live, Connect, Earn | The Creator Economy Platform';
-  let seoDesc = 'Amptive is the ultimate platform for creators, events, and communities to connect, sell tickets, and receive support.';
+  let seoTitle = 'Amptive - From Ticket to Tip$ | Create, Stream, Earn';
+  let seoDesc = 'More than live audio sessions. Create engaging shows, events, and meetings with built-in ticketing and tipping. Grow your audience and earn from every session.';
   let seoImage = `https://${host}/og-image.png`;
   let seoUrl = `https://${host}${path}`;
   let seoType = 'website';
