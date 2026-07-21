@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar, MapPin, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
 import { listEvents, StandaloneEvent } from '@/lib/api/events';
 import EventCard, { EventCardSkeleton } from '../components/EventCard';
+import { useSEO } from '@/hooks/useSEO';
 
 const filters = [
   { id: 'all', name: 'All' },
@@ -48,6 +49,12 @@ const getEventDateLabel = (date?: string | null) => {
 const isSoldOut = (event: StandaloneEvent) => Boolean((event as any).is_sold_out);
 
 export default function Events() {
+  useSEO({
+    title: 'Events',
+    description: 'Discover and book tickets for live shows, workshops, and creative events happening on Amptive.',
+    keywords: 'amptive events, live shows, workshops, creative meetups, ticket sales',
+  });
+
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');

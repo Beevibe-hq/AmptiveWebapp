@@ -6,6 +6,7 @@ import { blogPosts as staticPosts, blogCategories as categories, BlogPost } from
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import { getPublishedPosts, BlogPostFromAPI } from '@/lib/api/blog';
 import { format, parseISO } from 'date-fns';
+import { useSEO } from '@/hooks/useSEO';
 
 function mapAPIPostToBlogPost(apiPost: BlogPostFromAPI): BlogPost & { slug?: string } {
   const category = apiPost.tags?.[0]?.name || 'General';
@@ -53,6 +54,12 @@ function mapAPIPostToBlogPost(apiPost: BlogPostFromAPI): BlogPost & { slug?: str
 }
 
 const Blog = () => {
+  useSEO({
+    title: 'Blog',
+    description: 'Read the latest stories, news, and insights from the Amptive creator community.',
+    keywords: 'amptive blog, creator stories, news, insights, events, communities',
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTag, setActiveTag] = useState('All');
   const [isFilterOpen, setIsFilterOpen] = useState(false);

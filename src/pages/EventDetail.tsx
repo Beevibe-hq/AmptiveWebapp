@@ -12,6 +12,7 @@ import { getEvent, getRelatedEvents, publishEvent, StandaloneEvent } from '@/lib
 import { getProfileByUserId } from '@/lib/api/profiles';
 import { getTicketEarlyBirdRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '@/lib/api/tickets';
 import { getVenue } from '@/lib/api/venues';
+import { useSEO } from '@/hooks/useSEO';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -186,6 +187,14 @@ const EventDetail = () => {
 
   const [event, setEvent] = useState<StandaloneEvent | null>(null);
   const [tickets, setTickets] = useState<EventTicket[]>([]);
+
+  useSEO({
+    title: event ? event.title : 'Loading Event...',
+    description: event ? (event.description?.replace(/<[^>]*>/g, '').slice(0, 155) || 'Join this live experience on Amptive.') : 'Join our live experiences and community gatherings.',
+    image: event?.thumbnail_url,
+    type: 'event',
+  });
+
   const [organizerProfile, setOrganizerProfile] = useState<any | null>(null);
   const [relatedEvents, setRelatedEvents] = useState<StandaloneEvent[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);

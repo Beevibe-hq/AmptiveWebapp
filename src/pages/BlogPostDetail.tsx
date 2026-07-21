@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getPostLikeStatus, togglePostLike } from '@/lib/api/blog-likes';
 import { getPublishedPostBySlug, findPublishedPostBySlugFromList, getPostComments, createPostComment, BlogComment, BlogPostFromAPI } from '@/lib/api/blog';
 import { format, parseISO } from 'date-fns';
+import { useSEO } from '@/hooks/useSEO';
 
 const LikeButton = ({ isLiked, onToggle, isLiking }: { isLiked: boolean; onToggle: () => void; isLiking: boolean }) => {
   return (
@@ -212,6 +213,13 @@ const BlogPostDetail = () => {
   const [isLiked, setIsLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
   const [likeLoading, setLikeLoading] = useState(true);
+
+  useSEO({
+    title: post ? post.title : 'Loading Post...',
+    description: post ? (post.content?.slice(0, 155) || 'Read this post on Amptive.') : 'Read the latest stories and posts on Amptive.',
+    image: post?.image,
+    type: 'article',
+  });
 
   useEffect(() => {
     const fetchPostData = async () => {

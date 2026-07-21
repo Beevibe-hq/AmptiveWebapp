@@ -12,6 +12,7 @@ import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { playSwoosh, playSuccessChime } from '@/utils/audio';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { useSEO } from '@/hooks/useSEO';
 
 export default function SupportProfile() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +26,14 @@ export default function SupportProfile() {
   const [supporterCount, setSupporterCount] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'activity' | 'tip-card'>('activity');
   const [payments, setPayments] = useState<any[]>([]);
+
+  useSEO({
+    title: profile ? (profile.full_name || profile.name || profile.username || 'Creator Profile') : 'Loading Profile...',
+    description: profile ? (profile.support_message || profile.support_tagline || 'Support my creative work on Amptive.') : 'Support creators on Amptive.',
+    image: profile?.support_avatar_url || profile?.avatar_url,
+    type: 'profile',
+  });
+
   const [selectedTier, setSelectedTier] = useState<number | 'custom' | null>(null);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [supportMessage, setSupportMessage] = useState<string>('');

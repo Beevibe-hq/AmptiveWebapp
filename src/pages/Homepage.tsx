@@ -11,6 +11,7 @@ import { listCommunities, Community } from '@/lib/api/communities';
 import { useAuth } from '@/contexts/AuthContext';
 import { getPublishedPosts } from '@/lib/api/blog';
 import { blogPosts as staticBlogPosts } from '@/lib/blog-data';
+import { useSEO } from '@/hooks/useSEO';
 
 
 // Type definition for Trending Card
@@ -535,6 +536,12 @@ const SLIDES: SlideData[] = [
 ];
 
 const Homepage: React.FC = () => {
+  useSEO({
+    title: 'Amptive - Live, Connect, Earn',
+    description: 'Amptive is the ultimate platform for creators, event organizers, and communities to connect, share content, sell tickets, and receive audience support.',
+    keywords: 'amptive, creators, events, communities, support, tickets, connect, invest',
+  });
+
   // Add styles for tech-conference-card
   useEffect(() => {
     const styleTag = document.createElement('style');
