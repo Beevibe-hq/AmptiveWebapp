@@ -1,27 +1,21 @@
-// Cache font in memory across warm invocations
-let cachedFontBase64 = null;
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { readFileSync } from 'fs';
 
-async function getInterFontBase64() {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Read bundled Inter-800 font once at module load time
+let cachedFontBase64 = null;
+function getInterFontBase64() {
   if (cachedFontBase64) return cachedFontBase64;
   try {
-    const cssRes = await fetch(
-      'https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap',
-      {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      }
-    );
-    const css = await cssRes.text();
-    const urlMatch = css.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/);
-    if (!urlMatch) return null;
-    const fontRes = await fetch(urlMatch[1]);
-    const fontBuffer = await fontRes.arrayBuffer();
-    cachedFontBase64 = Buffer.from(fontBuffer).toString('base64');
+    const fontPath = join(__dirname, 'fonts', 'inter-800.woff2');
+    cachedFontBase64 = readFileSync(fontPath).toString('base64');
     return cachedFontBase64;
   } catch (err) {
-    console.error('Font fetch failed:', err);
+    console.error('Font file read failed:', err);
     return null;
   }
 }
@@ -62,13 +56,13 @@ export async function handler(event) {
   const width = 1200;
   const height = 630;
 
-  // Load font
-  const fontBase64 = await getInterFontBase64();
+  // Load bundled font (synchronous, no network call)
+  const fontBase64 = getInterFontBase64();
   const fontFaceBlock = fontBase64
     ? `@font-face {
         font-family: 'Inter';
         font-style: normal;
-        font-weight: 400 900;
+        font-weight: 800;
         src: url('data:font/woff2;base64,${fontBase64}') format('woff2');
       }`
     : '';
@@ -76,9 +70,10 @@ export async function handler(event) {
   // Dominant color defaults (neutral)
   let bgColorLight = '#FAFAFA';
   let bgColorDark  = '#F0F0F2';
-  let textColor    = '#111111';
-  let btnColor     = '#111111';
-  const btnText    = '#FFFFFF';
+  // Button is always black
+  const btnColor = '#111111';
+  const btnText  = '#FFFFFF';
+  const textColor = '#111111';
 
   const composites = [];
 
@@ -103,14 +98,6 @@ export async function handler(event) {
 
         bgColorLight = `rgb(${mix(r)},${mix(g)},${mix(b)})`;
         bgColorDark  = `rgb(${mix(r,240,0.75)},${mix(g,240,0.75)},${mix(b,240,0.75)})`;
-
-        // Derive button color from dominant (darker shade)
-        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-        if (brightness < 80) {
-          btnColor = `rgb(${Math.min(r+40,255)},${Math.min(g+40,255)},${Math.min(b+40,255)})`;
-        } else {
-          btnColor = `rgb(${Math.round(r*0.5)},${Math.round(g*0.5)},${Math.round(b*0.5)})`;
-        }
 
         // Resize and rounded-corner mask the thumbnail
         const resized = await sharp(imgBuffer)

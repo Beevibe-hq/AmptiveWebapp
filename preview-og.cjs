@@ -118,12 +118,12 @@ async function main() {
       }`
     : '';
 
-  // Extract dominant color from thumbnail if provided
+  // Button is always black regardless of dominant color
   let bgColorLight = '#FAFAFA';
   let bgColorDark  = '#F0F0F2';
-  let textColor    = '#111111';
-  let btnColor     = '#111111';
-  let btnText      = '#FFFFFF';
+  const textColor  = '#111111';
+  const btnColor   = '#111111';
+  const btnText    = '#FFFFFF';
 
   const composites = [];
 
@@ -148,15 +148,6 @@ async function main() {
 
       bgColorLight = `rgb(${lr},${lg},${lb})`;
       bgColorDark  = `rgb(${dr},${dg},${db})`;
-
-      // Use dark button color based on perceived brightness of dominant
-      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-      if (brightness < 80) {
-        // Very dark dominant - use lighter button
-        btnColor = `rgb(${Math.min(r+40,255)},${Math.min(g+40,255)},${Math.min(b+40,255)})`;
-      } else {
-        btnColor = `rgb(${Math.round(r*0.5)},${Math.round(g*0.5)},${Math.round(b*0.5)})`;
-      }
 
       const resized = await sharp(imgBuffer)
         .resize(480, 480, { fit: 'cover', position: 'centre' })
