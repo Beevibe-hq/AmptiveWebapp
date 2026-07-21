@@ -79,23 +79,12 @@ function wrapDesc(text, maxChars = 42) {
   return lines.slice(0, 3);
 }
 
-async function getFontBase64() {
-  console.log('⏳ Fetching Inter font from Google Fonts...');
+function getFontBase64() {
   try {
-    const css = (await fetchBuffer(
-      'https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap',
-      {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    )).toString();
-    const urlMatch = css.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/);
-    if (!urlMatch) throw new Error('Could not find font URL in CSS');
-    const fontBuffer = await fetchBuffer(urlMatch[1]);
-    console.log('✅ Font loaded');
-    return fontBuffer.toString('base64');
+    const fontPath = path.join(__dirname, 'netlify/functions/fonts/inter-800.ttf');
+    return fs.readFileSync(fontPath).toString('base64');
   } catch (err) {
-    console.warn('⚠️  Font fetch failed, text may render as boxes:', err.message);
+    console.warn('⚠️ Font file read failed:', err.message);
     return null;
   }
 }
@@ -108,13 +97,11 @@ async function main() {
   const width = 1200;
   const height = 630;
 
-  const fontBase64 = await getFontBase64();
+  const fontBase64 = getFontBase64();
   const fontFaceBlock = fontBase64
     ? `@font-face {
         font-family: 'Inter';
-        font-style: normal;
-        font-weight: 400 900;
-        src: url('data:font/woff2;base64,${fontBase64}') format('woff2');
+        src: url('data:font/ttf;charset=utf-8;base64,${fontBase64}') format('truetype');
       }`
     : '';
 
@@ -180,7 +167,7 @@ async function main() {
 
   const titleSvgLines = titleLines
     .map((line, i) =>
-      `<text x="80" y="${titleStartY + i * titleLineHeight}" font-family="Inter, sans-serif" font-weight="800" font-size="52" fill="${textColor}" letter-spacing="-2">${escapeXml(line)}</text>`
+      `<text x="80" y="${titleStartY + i * titleLineHeight}" font-family="Inter" font-weight="800" font-size="52" fill="${textColor}" letter-spacing="-2">${escapeXml(line)}</text>`
     ).join('\n');
 
   const baseSvg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -209,11 +196,11 @@ async function main() {
 
   <!-- GET TICKETS button -->
   <rect x="80" y="${btnY}" width="200" height="52" rx="26" fill="${btnColor}"/>
-  <text x="180" y="${btnY + 32}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="700" font-size="14" fill="${btnText}" letter-spacing="1.5">GET TICKETS</text>
+  <text x="180" y="${btnY + 32}" text-anchor="middle" font-family="Inter" font-weight="700" font-size="14" fill="${btnText}" letter-spacing="1.5">GET TICKETS</text>
 
   <!-- Right image placeholder background -->
   <rect x="650" y="75" width="480" height="480" rx="28" fill="#E2E2E8"/>
-  ${!THUMBNAIL_URL ? `<text x="890" y="330" text-anchor="middle" font-family="Inter, sans-serif" font-weight="600" font-size="18" fill="#BBBBBB">Event Cover</text>` : ''}
+  ${!THUMBNAIL_URL ? `<text x="890" y="330" text-anchor="middle" font-family="Inter" font-weight="600" font-size="18" fill="#BBBBBB">Event Cover</text>` : ''}
 </svg>`;
 
   const outputBuffer = await sharp(Buffer.from(baseSvg))
