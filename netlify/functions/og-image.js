@@ -28,8 +28,56 @@ function wrapText(text, maxChars = 15) {
   return lines.slice(0, 3);
 }
 
+// Parse the embedded font once per warm container. opentype's default text shaper crashes
+// on this font's GSUB (ccmp) table, so text is rendered glyph-by-glyph via charToGlyph,
+// which is a plain cmap lookup with no ligature substitution.
+let _fontPromise = null;
+function getFont() {
+  if (!_fontPromise) {
+    _fontPromise = (async () => {
+      const opentype = (await import('opentype.js')).default;
+      const buf = Buffer.from(getInterFontBase64(), 'base64');
+      return opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    })();
+  }
+  return _fontPromise;
+}
+
+// Render text as an SVG <path>. librsvg (used by sharp) has no system fonts in the Lambda
+// and ignores @font-face data URIs, which is why <text> rendered as tofu boxes. Paths need
+// no font resolution at render time.
+function textToPath(font, text, x, y, fontSize, { anchor = 'start', letterSpacing = 0, fill = '#000' } = {}) {
+  const upm = font.unitsPerEm;
+  const advance = (ch) => (font.charToGlyph(ch).advanceWidth / upm) * fontSize + letterSpacing;
+
+  let width = 0;
+  for (const ch of String(text)) width += advance(ch);
+  if (letterSpacing) width -= letterSpacing;
+
+  let cursor = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
+  let d = '';
+  for (const ch of String(text)) {
+    d += font.charToGlyph(ch).getPath(cursor, y, fontSize).toPathData(2) + ' ';
+    cursor += advance(ch);
+  }
+  return `<path d="${d.trim()}" fill="${fill}"/>`;
+}
+
 export async function handler(event) {
   const { default: sharp } = await import('sharp');
+
+  // Load the font up front; if it ever fails, fall back to <text> so the image still renders.
+  let font = null;
+  try {
+    font = await getFont();
+  } catch (err) {
+    console.error('Font load failed, falling back to <text>:', err);
+  }
+  const T = (text, x, y, size, opts = {}) => {
+    if (font) return textToPath(font, text, x, y, size, opts);
+    const anchor = opts.anchor === 'middle' ? ' text-anchor="middle"' : '';
+    return `<text x="${x}" y="${y}"${anchor} font-family="sans-serif" font-weight="800" font-size="${size}" fill="${opts.fill || '#000'}">${escapeXml(text)}</text>`;
+  };
 
   const query = event.queryStringParameters || {};
   const title = query.title || 'Live, Connect, Earn';
@@ -113,13 +161,17 @@ export async function handler(event) {
 
   const titleSvgLines = titleLines
     .map((line, i) =>
-      `<text x="80" y="${titleStartY + i * titleLineHeight}" font-family="Inter, sans-serif" font-weight="800" font-size="52" fill="${textColor}" letter-spacing="-2">${escapeXml(line)}</text>`
+      T(line, 80, titleStartY + i * titleLineHeight, 52, { fill: textColor, letterSpacing: -2 })
     )
     .join('\n');
 
+  const buttonLabel = T('GET TICKETS', 180, btnY + 32, 14, { anchor: 'middle', letterSpacing: 1.5, fill: btnText });
+  const coverPlaceholder = !thumbnailUrl
+    ? T('Event Cover', 890, 330, 18, { anchor: 'middle', fill: '#BBBBBB' })
+    : '';
+
   const baseSvg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <style>${fontFaceBlock}</style>
     <linearGradient id="bg" x1="0" y1="0" x2="${width}" y2="${height}" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="${bgColorLight}"/>
       <stop offset="100%" stop-color="${bgColorDark}"/>
@@ -143,11 +195,11 @@ export async function handler(event) {
 
   <!-- GET TICKETS button -->
   <rect x="80" y="${btnY}" width="200" height="52" rx="26" fill="${btnColor}"/>
-  <text x="180" y="${btnY + 32}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="700" font-size="14" fill="${btnText}" letter-spacing="1.5">GET TICKETS</text>
+  ${buttonLabel}
 
   <!-- Right image placeholder background -->
   <rect x="650" y="75" width="480" height="480" rx="28" fill="#E2E2E8"/>
-  ${!thumbnailUrl ? `<text x="890" y="330" text-anchor="middle" font-family="Inter, sans-serif" font-weight="600" font-size="18" fill="#BBBBBB">Event Cover</text>` : ''}
+  ${coverPlaceholder}
 </svg>`;
 
   try {
