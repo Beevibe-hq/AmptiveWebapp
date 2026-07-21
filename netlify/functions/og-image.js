@@ -4,13 +4,10 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
 // Load bundled Inter 800 TTF font buffer once at module load
 let fontBuffer = null;
 try {
-  fontBuffer = readFileSync(join(__dirname, 'fonts', 'inter-800.ttf'));
+  fontBuffer = readFileSync(join(process.cwd(), 'netlify', 'functions', 'fonts', 'inter-800.ttf'));
 } catch (err) {
   console.error('Failed to load inter-800.ttf:', err);
 }
