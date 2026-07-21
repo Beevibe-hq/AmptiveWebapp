@@ -68,9 +68,9 @@ export async function handler(event, context) {
             seoDesc = (eventData.description || 'Join this live experience on Amptive.')
               .replace(/<[^>]*>/g, '')
               .slice(0, 150);
-            if (eventData.thumbnail_url) {
-              seoImage = eventData.thumbnail_url;
-            }
+            
+            const thumb = eventData.thumbnail_url;
+            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(eventData.title)}&description=${encodeURIComponent(seoDesc)}${thumb ? `&image=${encodeURIComponent(thumb)}` : ''}`;
             seoType = 'event';
           }
         }
@@ -87,9 +87,9 @@ export async function handler(event, context) {
             seoDesc = (postData.excerpt || postData.content || 'Read this post on Amptive.')
               .replace(/<[^>]*>/g, '')
               .slice(0, 150);
-            if (postData.featured_image_url) {
-              seoImage = postData.featured_image_url;
-            }
+            
+            const featImg = postData.featured_image_url;
+            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(postData.title)}&description=${encodeURIComponent(seoDesc)}${featImg ? `&image=${encodeURIComponent(featImg)}` : ''}`;
             seoType = 'article';
           }
         }
@@ -102,11 +102,12 @@ export async function handler(event, context) {
           const json = await res.json();
           const profileData = json.data || json;
           if (profileData) {
-            seoTitle = `${profileData.full_name || profileData.username || 'Creator'} | Amptive`;
+            const displayName = profileData.full_name || profileData.username || 'Creator';
+            seoTitle = `${displayName} | Amptive`;
             seoDesc = (profileData.support_message || profileData.support_tagline || 'Support my creative work on Amptive.');
-            if (profileData.support_avatar_url || profileData.avatar_url) {
-              seoImage = profileData.support_avatar_url || profileData.avatar_url;
-            }
+            
+            const avatar = profileData.support_avatar_url || profileData.avatar_url;
+            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(displayName)}&description=${encodeURIComponent(seoDesc)}${avatar ? `&image=${encodeURIComponent(avatar)}` : ''}`;
             seoType = 'profile';
           }
         }
