@@ -3,9 +3,6 @@
   publish = "dist"
   functions = "netlify/functions"
 
-[functions]
-  included_files = ["netlify/functions/fonts/**"]
-
 [build.environment]
   NODE_VERSION = "20"
   NPM_FLAGS = "--legacy-peer-deps"

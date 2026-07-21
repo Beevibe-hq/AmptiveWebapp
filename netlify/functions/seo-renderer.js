@@ -1,3 +1,15 @@
+// Escape a value for safe insertion into an HTML attribute. Without this, a raw `&`
+// (always present in the dynamic og:image query string) or a `"`/`<` in an event title
+// produces invalid markup that strict OG parsers (Facebook/WhatsApp/Twitter) reject —
+// they then drop the tag and fall back to the site favicon.
+function escapeHtmlAttr(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export async function handler(event, context) {
   const path = event.path;
   const userAgent = (event.headers['user-agent'] || '').toLowerCase();
@@ -117,32 +129,48 @@ export async function handler(event, context) {
     console.error('Error fetching dynamic seo data:', err);
   }
 
-  // 3. Inject the dynamic meta tags into the index.html template
+  // 3. Inject the dynamic meta tags into the index.html template.
+  // All values are HTML-attribute-escaped so a raw `&`/`"`/`<` can't corrupt the markup.
   let renderedHtml = htmlTemplate;
 
+  const titleAttr = escapeHtmlAttr(seoTitle);
+  const descAttr = escapeHtmlAttr(seoDesc);
+  const imageAttr = escapeHtmlAttr(seoImage);
+  const urlAttr = escapeHtmlAttr(seoUrl);
+  const typeAttr = escapeHtmlAttr(seoType);
+
   // Replace Title
-  renderedHtml = renderedHtml.replace(/<title>.*?<\/title>/gi, `<title>${seoTitle}</title>`);
-  renderedHtml = renderedHtml.replace(/<meta property="og:title" content=".*?" \/>/gi, `<meta property="og:title" content="${seoTitle}" />`);
-  renderedHtml = renderedHtml.replace(/<meta name="twitter:title" content=".*?" \/>/gi, `<meta name="twitter:title" content="${seoTitle}" />`);
+  renderedHtml = renderedHtml.replace(/<title>.*?<\/title>/gi, `<title>${titleAttr}</title>`);
+  renderedHtml = renderedHtml.replace(/<meta property="og:title" content=".*?" \/>/gi, `<meta property="og:title" content="${titleAttr}" />`);
+  renderedHtml = renderedHtml.replace(/<meta name="twitter:title" content=".*?" \/>/gi, `<meta name="twitter:title" content="${titleAttr}" />`);
 
   // Replace Description
-  renderedHtml = renderedHtml.replace(/<meta name="description" content=".*?" \/>/gi, `<meta name="description" content="${seoDesc}" />`);
-  renderedHtml = renderedHtml.replace(/<meta property="og:description" content=".*?" \/>/gi, `<meta property="og:description" content="${seoDesc}" />`);
-  renderedHtml = renderedHtml.replace(/<meta name="twitter:description" content=".*?" \/>/gi, `<meta name="twitter:description" content="${seoDesc}" />`);
+  renderedHtml = renderedHtml.replace(/<meta name="description" content=".*?" \/>/gi, `<meta name="description" content="${descAttr}" />`);
+  renderedHtml = renderedHtml.replace(/<meta property="og:description" content=".*?" \/>/gi, `<meta property="og:description" content="${descAttr}" />`);
+  renderedHtml = renderedHtml.replace(/<meta name="twitter:description" content=".*?" \/>/gi, `<meta name="twitter:description" content="${descAttr}" />`);
 
-  // Replace Image
-  renderedHtml = renderedHtml.replace(/<meta property="og:image" content=".*?" \/>/gi, `<meta property="og:image" content="${seoImage}" />`);
-  renderedHtml = renderedHtml.replace(/<meta name="twitter:image" content=".*?" \/>/gi, `<meta name="twitter:image" content="${seoImage}" />`);
+  // Replace Image — and append dimension/type hints that WhatsApp and others need to
+  // render the large_image card reliably. The dynamic og-image function always emits a
+  // 1200x630 PNG, and the static fallback uses the same standard size.
+  const ogImageBlock =
+    `<meta property="og:image" content="${imageAttr}" />` +
+    `\n    <meta property="og:image:secure_url" content="${imageAttr}" />` +
+    `\n    <meta property="og:image:type" content="image/png" />` +
+    `\n    <meta property="og:image:width" content="1200" />` +
+    `\n    <meta property="og:image:height" content="630" />` +
+    `\n    <meta property="og:image:alt" content="${titleAttr}" />`;
+  renderedHtml = renderedHtml.replace(/<meta property="og:image" content=".*?" \/>/gi, ogImageBlock);
+  renderedHtml = renderedHtml.replace(/<meta name="twitter:image" content=".*?" \/>/gi, `<meta name="twitter:image" content="${imageAttr}" />`);
 
   // Replace URL
-  renderedHtml = renderedHtml.replace(/<meta property="og:url" content=".*?" \/>/gi, `<meta property="og:url" content="${seoUrl}" />`);
-  renderedHtml = renderedHtml.replace(/<link rel="canonical" href=".*?" \/>/gi, `<link rel="canonical" href="${seoUrl}" />`);
+  renderedHtml = renderedHtml.replace(/<meta property="og:url" content=".*?" \/>/gi, `<meta property="og:url" content="${urlAttr}" />`);
+  renderedHtml = renderedHtml.replace(/<link rel="canonical" href=".*?" \/>/gi, `<link rel="canonical" href="${urlAttr}" />`);
 
   // Replace Type
-  renderedHtml = renderedHtml.replace(/<meta property="og:type" content=".*?" \/>/gi, `<meta property="og:type" content="${seoType}" />`);
+  renderedHtml = renderedHtml.replace(/<meta property="og:type" content=".*?" \/>/gi, `<meta property="og:type" content="${typeAttr}" />`);
 
   // Replace Hidden H1
-  renderedHtml = renderedHtml.replace(/<h1 style=".*?">.*?<\/h1>/gi, `<h1 style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;">${seoTitle}</h1>`);
+  renderedHtml = renderedHtml.replace(/<h1 style=".*?">.*?<\/h1>/gi, `<h1 style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;">${titleAttr}</h1>`);
 
   return {
     statusCode: 200,
