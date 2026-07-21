@@ -7,6 +7,25 @@
   NODE_VERSION = "20"
   NPM_FLAGS = "--legacy-peer-deps"
 
+# Dynamic SEO rewrite rules
+[[redirects]]
+  from = "/events/:id"
+  to = "/.netlify/functions/seo-renderer"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/blog/:id"
+  to = "/.netlify/functions/seo-renderer"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/support/:id"
+  to = "/.netlify/functions/seo-renderer"
+  status = 200
+  force = true
+
 # Redirect all requests to index.html for client-side routing
 [[redirects]]
   from = "/*"
