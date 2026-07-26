@@ -1218,7 +1218,7 @@ export default function Explore() {
 
                     {/* MOBILE BOTTOM SHEET FILTER MODAL BACKDROP (MOBILE ONLY) */}
                     <div
-                        className={`fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs transition-opacity duration-300 sm:hidden ${
+                        className={`fixed inset-0 z-[100] bg-black/50 transition-opacity duration-300 sm:hidden ${
                             showFloatingFilters ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                         }`}
                         onClick={() => setShowFloatingFilters(false)}
@@ -1226,7 +1226,7 @@ export default function Explore() {
 
                     {/* MOBILE BOTTOM SHEET FILTER MODAL CONTAINER (MOBILE ONLY) */}
                     <div
-                        className={`fixed bottom-0 inset-x-0 z-[100] w-full max-h-[85vh] bg-[#f4f7f2] rounded-t-3xl p-6 overflow-y-auto space-y-5 text-gray-900 shadow-2xl transition-transform duration-300 ease-out sm:hidden ${
+                        className={`fixed bottom-0 inset-x-0 z-[100] w-full max-h-[85vh] bg-[#f4f7f2] rounded-t-3xl p-6 overflow-y-auto space-y-5 text-gray-900 shadow-2xl transition-transform duration-300 ease-out will-change-transform sm:hidden ${
                             showFloatingFilters ? 'translate-y-0 pointer-events-auto' : 'translate-y-full pointer-events-none'
                         }`}
                     >
