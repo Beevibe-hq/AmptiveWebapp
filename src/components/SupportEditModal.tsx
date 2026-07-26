@@ -205,22 +205,20 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
         support_socials: formData.support_socials,
       };
 
+      // Name and avatar now persist on the support profile itself (PATCH /support/),
+      // so no /users/me sync is needed — and no first-and-last-name rule applies.
       const { ok, error } = await updateSupportProfile(updates);
       if (!ok) {
-        console.error('updateProfile error:', error);
+        console.error('updateSupportProfile error:', error);
         throw new Error(error);
       }
 
-      // Persist the name, cover photo and avatar in the user's main profile record so they
-      // don't disappear on refresh. Only send fields that have values — nulls would clear
-      // (or get rejected by) the backend record.
-      const profileResult = await updateProfile({
-        ...(formData.full_name ? { name: formData.full_name } : {}),
-        ...(formData.support_avatar_url ? { avatar_url: formData.support_avatar_url } : {}),
-        ...(formData.support_banner_url ? { cover_photo: formData.support_banner_url } : {}),
-      });
-      if (!profileResult.ok) {
-        throw new Error(profileResult.error || 'Could not save your name. Please try again.');
+      // Banners aren't part of the support schema; keep them on the user's cover photo.
+      if (formData.support_banner_url) {
+        const profileResult = await updateProfile({ cover_photo: formData.support_banner_url });
+        if (!profileResult.ok) {
+          throw new Error(profileResult.error || 'Could not save your banner. Please try again.');
+        }
       }
 
       onSave({ ...profile, ...updates });
@@ -228,12 +226,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
       onClose();
     } catch (error: any) {
       console.error('handleSave error:', error);
-      const message = String(error?.message || '');
-      toast.error(
-        /first and last name/i.test(message)
-          ? 'The server currently requires a first and last name.'
-          : 'Error saving profile: ' + message
-      );
+      toast.error('Error saving profile: ' + String(error?.message || ''));
     } finally {
       setLoading(false);
     }

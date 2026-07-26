@@ -139,11 +139,8 @@ export default function RichTextEditor({
             {uploading && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/50 backdrop-blur-[1px] rounded-2xl">
                     <div className="flex flex-col items-center gap-3">
-                        <span className="relative flex h-8 w-8">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <AmptiveSpinner className="relative inline-flex h-8 w-8 text-blue-500 animate-spin" />
-                        </span>
-                        <span className="text-sm font-medium text-blue-600 animate-pulse">Processing file...</span>
+                        <AmptiveSpinner className="text-black" />
+                        <span className="text-sm font-medium text-black/50">Processing file...</span>
                     </div>
                 </div>
             )}

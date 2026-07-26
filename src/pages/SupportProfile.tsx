@@ -11,7 +11,7 @@ import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { playSwoosh, playSuccessChime } from '@/utils/audio';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { useSEO } from '@/hooks/useSEO';
 
 export default function SupportProfile() {
@@ -300,9 +300,7 @@ export default function SupportProfile() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <AmptiveSpinner className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
+      <AmptiveSplash />
     );
   }
 
@@ -341,18 +339,26 @@ export default function SupportProfile() {
         <div className="fixed top-0 left-0 right-0 h-80 md:h-96 lg:h-[28rem] z-0 pointer-events-none" style={topTintStyle}></div>
       )}
       
-      {/* Blurred Avatar Background (Only on success page) */}
+      {/* Ambient blurred avatar wash (success page only).
+          `filter` (not `backdrop-filter`) is what blurs this layer's own background image;
+          backdrop-filter only blurs what sits behind the element, which left the photo
+          sharp. The scale hides the soft transparent edges the blur creates, and the scrim
+          on top keeps page and footer text readable over any avatar. */}
       {paymentStatus === 'success' && (
-        <div
-          className="fixed inset-0 -z-10"
-          style={{
-            backdropFilter: 'blur(140px)',
-            backgroundImage: profileAvatarUrl ? `url("${profileAvatarUrl}")` : 'none',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-          }}
-        ></div>
+        <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
+          <div
+            className="absolute inset-0"
+            style={{
+              filter: 'blur(140px)',
+              transform: 'scale(1.3)',
+              backgroundImage: profileAvatarUrl ? `url("${profileAvatarUrl}")` : 'none',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+          <div className="absolute inset-0 bg-white/70" />
+        </div>
       )}
       {viewAs === 'public' && currentUserId === profile.user_id && (
         <div className="bg-indigo-600 text-white py-3 px-4 flex items-center justify-center gap-6 sticky top-0 z-[100] shadow-lg animate-in slide-in-from-top duration-300">

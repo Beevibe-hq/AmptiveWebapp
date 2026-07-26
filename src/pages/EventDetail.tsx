@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { MapPin, Share2, Ticket, Check, Globe, X, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import amptiveLogo from '@/assets/amptivelogo.svg';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { QRCodeSVG } from 'qrcode.react';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
@@ -359,11 +359,7 @@ const EventDetail = () => {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-white">
-        <div className="flex h-24 w-24 items-center justify-center">
-          <AmptiveSpinner className="h-full w-full text-black" />
-        </div>
-      </div>
+      <AmptiveSplash />
     );
   }
 

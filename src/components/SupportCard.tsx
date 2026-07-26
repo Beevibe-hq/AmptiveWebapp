@@ -37,8 +37,8 @@ const SupportAvatar = ({ url, name, username, className }: { url?: string; name:
 };
 
 const SupportCard: React.FC<SupportCardProps> = ({
-  name = "Achilonu Joseph",
-  username = "jachilonu2",
+  name = "Amptive Creator",
+  username = "amptive",
   avatarUrl = "",
   message = "Create. Share. Grow. Support. Repeat.",
   isDisplayOnly = false,
@@ -910,7 +910,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           <SupportAvatar url={avatarUrl} name={name} username={username} className="w-full h-full object-cover" />
                         </div>
                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full border border-white text-[9px] font-black uppercase tracking-widest bg-[#064E3B] text-white whitespace-nowrap">
-                          {username}
+                          {name}
                         </div>
                       </div>
 
@@ -999,7 +999,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           <SupportAvatar url={avatarUrl} name={name} username={username} className="w-full h-full object-cover" />
                         </div>
                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full border border-white text-[9px] font-black uppercase tracking-widest bg-[#312E81] text-white whitespace-nowrap">
-                          {username}
+                          {name}
                         </div>
                       </div>
 

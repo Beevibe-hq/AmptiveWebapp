@@ -130,7 +130,7 @@ function MainLayout() {
           <Route path="/events/:id" element={<EventDetail />} />
           <Route path="/events/:id/checkout" element={<CheckoutPage />} />
           <Route path="/invest" element={<Invest />} />
-          <Route path="/shop" element={<Shop />} />
+          <Route path="/store" element={<Shop />} />
           <Route path="/community" element={<Community />} />
           <Route path="/community/:id" element={<CommunityEvents />} />
           <Route path="/help" element={<Help />} />

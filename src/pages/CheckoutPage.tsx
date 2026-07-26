@@ -10,7 +10,7 @@ import { getEvent } from '@/lib/api/events';
 import { EventTicket, getTicketEarlyBirdRemaining, getTicketLineTotal, getTicketRemaining, getTicketsForEvent, getTicketUnitPrice, isTicketSoldOut } from '@/lib/api/tickets';
 import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 
 type EventRecord = {
     id: string;
@@ -381,9 +381,7 @@ export default function CheckoutPage() {
 
     if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-white">
-                <AmptiveSpinner className="h-8 w-8 animate-spin text-gray-900" />
-            </div>
+            <AmptiveSplash />
         );
     }
 

@@ -120,6 +120,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
       name: 'More',
       hasDropdown: true,
       dropdownItems: [
+        { name: 'Store', path: '/store' },
         { name: 'Community Task', path: '/community' },
         { name: 'Help Center', path: '/help' }
       ]

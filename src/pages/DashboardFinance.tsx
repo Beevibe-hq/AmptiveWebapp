@@ -1682,7 +1682,7 @@ export default function DashboardFinance() {
                                             className="min-h-[500px] flex flex-col items-center justify-center text-center"
                                         >
                                             <h2 className="text-[22px] font-bold tracking-tight text-black">Creating your wallet</h2>
-                                            <AmptiveSpinner className="mt-5 h-12 w-12 text-black animate-pulse" />
+                                            <AmptiveSpinner className="mt-5 text-black" />
                                         </motion.div>
                                     )}
 

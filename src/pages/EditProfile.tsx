@@ -7,7 +7,7 @@ import Navbar from '@/components/Navbar';
 import { useAuth } from '@/contexts/AuthContext';
 import { uploadImage } from '@/lib/api/storage';
 import { UserProfile } from '@/lib/api/services';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 
 export default function EditProfile() {
     const navigate = useNavigate();
@@ -181,11 +181,7 @@ export default function EditProfile() {
 
     if (initialLoading) {
         return (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-white">
-                <div className="flex h-24 w-24 items-center justify-center">
-                    <AmptiveSpinner className="h-full w-full text-black" />
-                </div>
-            </div>
+            <AmptiveSplash />
         );
     }
 

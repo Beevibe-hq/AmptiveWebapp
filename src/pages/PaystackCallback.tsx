@@ -60,7 +60,7 @@ export default function PaystackCallback() {
             <div className="space-y-4 max-w-md">
                 {status === 'verifying' && (
                     <>
-                        <AmptiveSpinner className="h-12 w-12 animate-spin text-gray-900 mx-auto" />
+                        <AmptiveSpinner className="mx-auto text-black" />
                         <h2 className="text-2xl font-bold text-gray-900">Verifying Payment</h2>
                         <p className="text-gray-500">{message}</p>
                     </>

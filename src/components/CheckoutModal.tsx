@@ -252,7 +252,7 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                 <div className="p-6">
                     {step === 'processing' ? (
                         <div className="flex flex-col items-center justify-center py-12 space-y-4">
-                            <AmptiveSpinner className="h-12 w-12 animate-spin text-black" />
+                            <AmptiveSpinner className="text-black" />
                             <p className="text-lg font-medium text-gray-600">Processing Payment...</p>
                             <p className="text-sm text-gray-400">Secure simulated transaction</p>
                         </div>

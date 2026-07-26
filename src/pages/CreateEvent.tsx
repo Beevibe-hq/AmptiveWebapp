@@ -13,7 +13,7 @@ import VenueSelector from '@/components/VenueSelector';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api/client';
 import { uploadImage } from '@/lib/api/storage';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 
 
 const TICKET_THEMES: Record<TicketTheme, {
@@ -1059,9 +1059,7 @@ const CreateEvent = () => {
 
   if (!ready || loadingEvent) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <AmptiveSpinner className="h-8 w-8 animate-spin text-gray-400" aria-label="Loading" />
-      </div>
+      <AmptiveSplash />
     );
   }
 

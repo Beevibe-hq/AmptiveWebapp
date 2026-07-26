@@ -101,7 +101,12 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     // Divider item (hidden, only used for visual separation)
     { name: 'divider', path: '#' },
 
-    // Second group (bottom 3 items)
+    // Second group (bottom items)
+    {
+      name: 'Store',
+      path: '/store',
+      icon: <ShoppingBag className="w-7 h-7 mr-4" />
+    },
     {
       name: 'Community Task',
       path: '/community',

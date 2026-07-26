@@ -6,7 +6,7 @@ import { Calendar, MapPin, Ticket as TicketIcon, X, ChevronDown, User, Edit2 } f
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPurchasesByUser, transferTicket, type TicketPurchase } from '@/lib/api/purchases';
 import { getEvent } from '@/lib/api/events';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { TICKET_THEMES } from '@/lib/constants';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import amptiveLogo from '@/assets/amptivelogo.svg';
@@ -689,9 +689,7 @@ const MyTickets = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <AmptiveSpinner className="h-8 w-8 text-black" />
-            </div>
+            <AmptiveSplash />
         );
     }
 

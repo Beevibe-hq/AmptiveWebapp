@@ -176,7 +176,7 @@ const Blog = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {isLoading ? (
               <div className="col-span-1 lg:col-span-3 flex items-center justify-center py-24">
-                <AmptiveSpinner className="h-10 w-10 text-black" />
+                <AmptiveSpinner className="text-black" />
               </div>
             ) : featuredPosts.length > 0 ? (
               featuredPosts.map((post) => (

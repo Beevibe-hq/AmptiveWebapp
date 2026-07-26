@@ -7,7 +7,7 @@ import {  ArrowLeft, Check, Heart, Save, Sparkles, Wallet, Gift, ArrowRight, Use
 import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from '@/components/Navbar';
 import SupportCard from '@/components/SupportCard';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { getEmojiFallback } from '@/utils/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -62,8 +62,8 @@ function CharacterProgress({ current, max }: CharacterProgressProps) {
 const MOCK_CARDS = [
     {
         name: "Sarah Jenkins",
-        username: "sarahj",
-        avatarUrl: "",
+        username: "ACHIDON",
+        avatarUrl: "/images/IMG_6053 2.JPG",
         message: "Support my next creative video project!",
         profileType: "creator" as const,
         variant: 0,
@@ -71,8 +71,8 @@ const MOCK_CARDS = [
     },
     {
         name: "Lumina Cafe",
-        username: "luminacafe",
-        avatarUrl: "",
+        username: "ACHIDON",
+        avatarUrl: "/images/IMG_6053 2.JPG",
         message: "Buy us a coffee to keep the espresso flowing!",
         profileType: "business" as const,
         variant: 1,
@@ -80,8 +80,8 @@ const MOCK_CARDS = [
     },
     {
         name: "Tech Meetup",
-        username: "techmeetup",
-        avatarUrl: "",
+        username: "ACHIDON",
+        avatarUrl: "/images/IMG_6053 2.JPG",
         message: "Help fund our next community tech event!",
         profileType: "organizer" as const,
         variant: 2,
@@ -89,8 +89,8 @@ const MOCK_CARDS = [
     },
     {
         name: "Mia's Bakery",
-        username: "miasbakery",
-        avatarUrl: "",
+        username: "ACHIDON",
+        avatarUrl: "/images/IMG_6053 2.JPG",
         message: "A little tip for a lot of sweetness!",
         profileType: "business" as const,
         variant: 3,
@@ -98,8 +98,8 @@ const MOCK_CARDS = [
     },
     {
         name: "Dev Tutorials",
-        username: "devtutorials",
-        avatarUrl: "",
+        username: "ACHIDON",
+        avatarUrl: "/images/IMG_6053 2.JPG",
         message: "Support free coding education!",
         profileType: "creator" as const,
         variant: 4,
@@ -107,8 +107,8 @@ const MOCK_CARDS = [
     },
     {
         name: "Indie Game Fest",
-        username: "indiefest",
-        avatarUrl: "",
+        username: "ACHIDON",
+        avatarUrl: "/images/IMG_6053 2.JPG",
         message: "Help us bring more indie games to life!",
         profileType: "organizer" as const,
         variant: 5,
@@ -116,10 +116,13 @@ const MOCK_CARDS = [
     }
 ];
 
-function HeroCardAnimation({ userAvatar }: { userAvatar?: string | null }) {
+function HeroCardAnimation({ userAvatar, userName }: { userAvatar?: string | null; userName?: string | null }) {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [index, setIndex] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
+
+    // If logged in with avatar, show user's username in CAPS. Otherwise fallback to "ACHIDON".
+    const cardUsername = (userAvatar && userName) ? userName.toUpperCase() : "ACHIDON";
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -204,7 +207,7 @@ function HeroCardAnimation({ userAvatar }: { userAvatar?: string | null }) {
                             <div className="w-[300px] origin-center rounded-[2rem] shadow-xl pointer-events-none">
                                 <SupportCard
                                     name={card.name}
-                                    username={card.username}
+                                    username={cardUsername}
                                     avatarUrl={userAvatar || card.avatarUrl}
                                     message={card.message}
                                     profileType={card.profileType}
@@ -283,7 +286,7 @@ function HeroCardAnimation({ userAvatar }: { userAvatar?: string | null }) {
                     <div className="w-[420px] scale-[0.8] origin-center">
                     <SupportCard
                         name={card.name}
-                        username={card.username}
+                        username={cardUsername}
                         avatarUrl={userAvatar || card.avatarUrl}
                         message={card.message}
                         profileType={card.profileType}
@@ -468,9 +471,7 @@ export default function SupportSetup() {
 
     if (initialLoading) {
         return (
-            <div className="flex h-screen items-center justify-center bg-white">
-                <AmptiveSpinner className="h-8 w-8 animate-spin text-gray-400" />
-            </div>
+            <AmptiveSplash />
         );
     }
 
@@ -500,7 +501,10 @@ export default function SupportSetup() {
                                     <div className="hidden md:block absolute -inset-4 bg-blue-500/5 rounded-[2.5rem] blur-2xl group-hover:bg-blue-500/10 transition-all duration-700" />
                                     {/* Remove border, shadow, and overflow on mobile, and break out to screen edges */}
                                     <div className="relative h-[360px] md:h-auto w-screen left-1/2 -translate-x-1/2 md:static md:w-auto md:translate-x-0 md:aspect-square md:overflow-hidden md:rounded-[2rem] md:border md:border-gray-200 shadow-none md:max-w-none">
-                                        <HeroCardAnimation userAvatar={avatarUrl || user?.avatar_url || user?.profile_picture} />
+                                        <HeroCardAnimation 
+                                            userAvatar={avatarUrl || user?.avatar_url || user?.profile_picture} 
+                                            userName={user?.username || user?.name || existingProfile?.username}
+                                        />
                                     </div>
                                 </div>
                             </motion.div>
@@ -902,7 +906,7 @@ export default function SupportSetup() {
                                     <div className="bg-white pt-12 pb-6 px-4 md:p-8 rounded-[32px] border border-black/5 shadow-sm overflow-hidden">
                                         <div className="max-w-md mx-auto">
                                             <SupportCard
-                                                name={existingProfile?.full_name || user?.email?.split('@')[0] || 'Member'}
+                                                name={existingProfile?.full_name || existingProfile?.username || user?.username || 'Member'}
                                                 username={existingProfile?.username || user?.email?.split('@')[0] || 'member'}
                                                 avatarUrl={avatarUrl || user?.avatar_url || user?.profile_picture || ''}
                                                 message={supportMessage || "Create. Share. Grow. Support. Repeat."}
@@ -969,7 +973,7 @@ export default function SupportSetup() {
                             </div>
 
                             <SupportCard
-                                name={existingProfile?.full_name || user?.email?.split('@')[0] || 'Member'}
+                                name={existingProfile?.full_name || existingProfile?.username || user?.username || 'Member'}
                                 username={existingProfile?.username || user?.email?.split('@')[0] || 'member'}
                                 avatarUrl={avatarUrl || user?.avatar_url || user?.profile_picture || ''}
                                 message={supportMessage}

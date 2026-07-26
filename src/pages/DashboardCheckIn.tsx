@@ -762,7 +762,7 @@ export default function DashboardCheckIn() {
     if (loading) {
         return (
             <div className="flex min-h-full items-center justify-center">
-                <AmptiveSpinner className="h-8 w-8 text-black" />
+                <AmptiveSpinner className="text-black" />
             </div>
         );
     }
@@ -923,7 +923,7 @@ export default function DashboardCheckIn() {
                             <div className="flex items-center gap-3">
                                 {ordersLoading && (
                                     <span className="inline-flex items-center gap-2 text-sm font-medium text-black/40">
-                                        <AmptiveSpinner className="h-4 w-4 text-black" />
+                                        <AmptiveSpinner size={18} className="text-black" />
                                         Loading tickets
                                     </span>
                                 )}

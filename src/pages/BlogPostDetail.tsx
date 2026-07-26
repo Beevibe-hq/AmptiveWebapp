@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Share2, Heart, Hash, MessageSquare, Loader2, ArrowLeft, Clock } from 'lucide-react';
+import { Share2, Heart, Hash, MessageSquare, ArrowLeft, Clock } from 'lucide-react';
+import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { blogPosts as staticBlogPosts, BlogPost } from '@/lib/blog-data';
@@ -371,9 +372,7 @@ const BlogPostDetail = () => {
 
   if (loading) {
     return (
-      <div className="bg-white min-h-screen pt-32 flex flex-col items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-      </div>
+      <AmptiveSplash />
     );
   }
 

@@ -49,13 +49,11 @@ function unwrapSupportProfile(response: unknown): SupportProfile | null {
   if (!response || typeof response !== 'object') return null;
 
   const candidate = response as any;
-  const profile =
-    candidate.profile ??
-    candidate.user ??
-    candidate.data?.profile ??
-    candidate.data?.user ??
-    candidate.data ??
-    candidate;
+  // Unwrap a StandardResponse envelope if present, then a `profile` wrapper. Never unwrap
+  // into `.user` — on the current schema that's the record's nested identity block, and
+  // mistaking it for the profile drops the slug, avatar, and support fields.
+  const root = candidate.data && typeof candidate.data === 'object' ? candidate.data : candidate;
+  const profile = root.profile && typeof root.profile === 'object' ? root.profile : root;
 
   if (!profile || typeof profile !== 'object') return null;
   return profile as SupportProfile;
@@ -122,12 +120,12 @@ function mapSupportProfilePayload(data: Partial<SupportProfile>): Record<string,
       : data.support_card_variant;
 
   return {
-    full_name: data.full_name,
-    support_avatar_url: data.support_avatar_url,
-    support_banner_url: data.support_banner_url,
+    // The support display name and avatar live on the support profile itself — no more
+    // syncing through PATCH /users/me (which enforced unrelated name rules).
+    name: data.full_name ?? data.name,
+    avatar_url: data.support_avatar_url ?? data.avatar_url,
     support_enabled: supportEnabled,
     profile_type: profileType,
-    support_message: data.support_message ?? data.support_tagline,
     support_tagline: data.support_tagline ?? data.support_message,
     support_amounts: data.support_amounts,
     support_card_variant: supportCardVariant,
@@ -146,22 +144,38 @@ function compactPayload(payload: Record<string, unknown>): Record<string, unknow
   );
 }
 
-// The backend stores the card variant as a name ("Prism Shard") and the profile type as
-// "event_organizer"; the UI works with a numeric variant index and "organizer".
+// Normalize a backend support record for the UI. The backend stores the card variant as a
+// name ("Prism Shard") and the profile type as "event_organizer"; the UI works with a
+// numeric variant index and "organizer". Responses use `support_profile_type` /
+// `is_support_enabled` (requests still use `profile_type` / `support_enabled`), carry the
+// support display name and avatar as top-level `name` / `avatar_url`, and include a nested
+// `user` identity block.
 function normalizeSupportRecord(record: SupportProfile | null): SupportProfile | null {
   if (!record) return null;
   const rawVariant = record.support_card_variant as unknown;
   const variantIndex = typeof rawVariant === 'number'
     ? rawVariant
     : Math.max(0, SUPPORT_CARD_VARIANTS.indexOf(String(rawVariant ?? '')));
-  
-  const fullName = record.full_name || record.name || (record as any).display_name || '';
+
+  const user = (record as any).user || {};
+  // Card display name: the custom name set on the support page wins; otherwise fall back
+  // to the username. Never derive it from the account's full name.
+  const fullName = record.name || user.username || record.username || '';
+  const avatarUrl = record.avatar_url || user.profile_picture || undefined;
+
+  const rawProfileType = (record as any).support_profile_type ?? record.profile_type;
+  const supportEnabled = (record as any).is_support_enabled ?? record.support_enabled ?? record.accept_tips;
 
   return {
     ...record,
+    user_id: record.user_id || user.id || '',
     full_name: fullName,
     name: fullName,
-    profile_type: record.profile_type === 'event_organizer' ? 'organizer' : record.profile_type,
+    avatar_url: avatarUrl,
+    support_avatar_url: record.support_avatar_url || avatarUrl,
+    support_enabled: supportEnabled,
+    accept_tips: supportEnabled,
+    profile_type: rawProfileType === 'event_organizer' ? 'organizer' : rawProfileType,
     support_card_variant: variantIndex,
     support_message: (record.support_message as string) || record.support_tagline || '',
     support_socials: {
@@ -180,12 +194,10 @@ export function mergeSupportProfileIdentity(
   if (!identity) return record;
 
   const identityId = String(identity.user_id || identity.id || '');
+  // Custom support name first, then username — never the account's full name.
   const fullName = String(
     record.full_name ||
     record.name ||
-    identity.full_name ||
-    identity.name ||
-    identity.display_name ||
     identity.username ||
     ''
   );
@@ -273,12 +285,17 @@ export async function updateSupportProfile(data: Partial<SupportProfile>): Promi
     await api.patch<SupportProfile>(`${SUPPORT_PREFIX}/`, payload);
     return { ok: true };
   } catch (patchError: any) {
-    // Only attempt POST creation if the record is explicitly not found (404)
-    const isNotFound = patchError?.status === 404 || 
-                       patchError?.status_code === 404 ||
-                       String(patchError?.message || '').toLowerCase().includes('not found');
-    
-    if (isNotFound) {
+    // Fall back to POST creation when the backend says there's no profile yet.
+    // The current backend returns 400 "Support profile does not exist for this user."
+    // (older builds used 404 "not found") — treat both as "create it".
+    const message = String(patchError?.message || '').toLowerCase();
+    const isMissingProfile =
+      patchError?.status === 404 ||
+      patchError?.status_code === 404 ||
+      message.includes('not found') ||
+      message.includes('does not exist');
+
+    if (isMissingProfile) {
       try {
         await api.post<SupportProfile>(`${SUPPORT_PREFIX}/`, {
           profile_type: 'creator',
