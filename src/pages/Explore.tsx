@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, X, Sliders, RotateCcw } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -237,6 +237,17 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
     // True when the dial was just spun, so the trailing click is ignored.
     const dialDraggedRef = useRef(false);
 
+    // The callbacks are read through refs so their identity never lands in the effect's
+    // dependencies. Previously an inline arrow from the parent changed on every render,
+    // which tore down and rebuilt every marker (and re-ran fitBounds) each time any
+    // unrelated state changed — the source of the multi-second filter lag on mobile.
+    const onSelectEventRef = useRef(onSelectEvent);
+    const onMapMovedRef = useRef(onMapMoved);
+    useEffect(() => {
+        onSelectEventRef.current = onSelectEvent;
+        onMapMovedRef.current = onMapMoved;
+    });
+
     useEffect(() => {
         if (!mapRef.current) return;
 
@@ -282,8 +293,8 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
                 }).addTo(map);
             }
 
-            map.on('dragstart', () => onMapMoved?.(true));
-            map.on('zoomstart', () => onMapMoved?.(true));
+            map.on('dragstart', () => onMapMovedRef.current?.(true));
+            map.on('zoomstart', () => onMapMovedRef.current?.(true));
             map.on('rotate', () => setBearing((map as any).getBearing?.() ?? 0));
 
             // leaflet-rotate rotates on shift+wheel but reads only deltaY. macOS turns
@@ -576,7 +587,7 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
                 marker.on('popupopen', () => {
                     const btn = document.getElementById(`btn-explore-${event.event_id}`);
                     if (btn) {
-                        btn.onclick = () => onSelectEvent(event.event_id);
+                        btn.onclick = () => onSelectEventRef.current(event.event_id);
                     }
                 });
             }
@@ -611,7 +622,7 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
             clearTimeout(timer);
             resizeObserver.disconnect();
         };
-    }, [events, locFilter, isLoading, userCoords, onSelectEvent]);
+    }, [events, locFilter, isLoading, userCoords]);
 
     return (
         <div className="relative h-full w-full rounded-none overflow-hidden bg-gray-50">
@@ -716,7 +727,7 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
                     }
                 }
             `}</style>
-            <div ref={mapRef} onPointerDown={() => onMapMoved?.(true)} className="absolute inset-0 h-full w-full z-10" />
+            <div ref={mapRef} onPointerDown={() => onMapMovedRef.current?.(true)} className="absolute inset-0 h-full w-full z-10" />
             <div
                 role="button"
                 tabIndex={0}
@@ -891,6 +902,11 @@ export default function Explore() {
     }, [viewMode, searchQuery, dateFilter, locFilter, communityFilter, priceFilter, maxPrice, customStartDate, customEndDate]);
 
     const navigate = useNavigate();
+
+    // Stable identities so the map isn't handed new props on every render — an inline
+    // arrow here forced a full marker rebuild on every keystroke and filter click.
+    const handleSelectEvent = useCallback((eventId: string) => navigate(`/events/${eventId}`), [navigate]);
+    const handleMapMoved = useCallback((moved: boolean) => setHasMovedMap(moved), []);
 
     useEffect(() => {
         let cancelled = false;
@@ -1175,8 +1191,8 @@ export default function Explore() {
                         isLoading={loading}
                         userCoords={userCoords}
                         viewMode={viewMode}
-                        onSelectEvent={(eventId) => navigate(`/events/${eventId}`)}
-                        onMapMoved={(moved) => setHasMovedMap(moved)}
+                        onSelectEvent={handleSelectEvent}
+                        onMapMoved={handleMapMoved}
                     />
 
                     {/* Top-Left Floating Filter Events Button */}
