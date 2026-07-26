@@ -171,6 +171,8 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   const isOtpPage = location.pathname === '/verify-otp' || location.pathname === '/verify-otp/';
   const isSupportPage = location.pathname.startsWith('/support/');
 
+  const isExplorePage = location.pathname === '/explore' || location.pathname === '/explore/';
+
   return (
     <nav
       className={`fixed top-0 w-full z-50 ${isCompleteProfilePage
@@ -179,14 +181,18 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
           ? 'bg-white lg:bg-transparent lg:backdrop-blur-0 lg:shadow-none lg:border-none'
           : isAIChatPage
             ? 'bg-transparent backdrop-blur-0 shadow-none border-none'
-            : isScrolled || isBlogPage
-              ? 'bg-white backdrop-blur-md shadow-sm border-b border-gray-100'
-              : (isProfilePage ? 'bg-transparent' : 'bg-transparent')
+            : isExplorePage
+              ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200/80'
+              : isScrolled || isBlogPage
+                ? 'bg-white backdrop-blur-md shadow-sm border-b border-gray-100'
+                : (isProfilePage ? 'bg-transparent' : 'bg-transparent')
         } transition-colors duration-300`}
       style={{
-        backgroundColor: !isCompleteProfilePage && !isChatModePage && !isAIChatPage && !isProfilePage && (isScrolled || isBlogPage)
+        backgroundColor: isExplorePage
           ? 'rgba(255, 255, 255, 0.95)'
-          : undefined
+          : (!isCompleteProfilePage && !isChatModePage && !isAIChatPage && !isProfilePage && (isScrolled || isBlogPage)
+            ? 'rgba(255, 255, 255, 0.95)'
+            : undefined)
       }}
     >
       <div className="px-4 sm:px-6 lg:px-8">

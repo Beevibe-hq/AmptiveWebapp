@@ -60,9 +60,9 @@ const formatEventTimeLabel = (iso?: string | null) => {
 };
 
 const buildLocationLabel = (venue?: string | null, city?: string | null, type?: string | null) => {
-  if (type === 'online') return 'Online';
+  if (type === 'online' || type === 'virtual') return 'Amptive App';
   const parts = [venue, city].filter(Boolean);
-  return parts.length ? parts.join(', ') : 'TBA';
+  return parts.length && !parts.includes('TBD') && !parts.includes('TBA') ? parts.join(', ') : 'Amptive App';
 };
 
 type EventTicket = {

@@ -757,7 +757,7 @@ const Homepage: React.FC = () => {
           return {
             id: event.event_id,
             title: event.title,
-            location: event.venue?.name || event.location?.venue || event.location?.city || 'Online',
+            location: (event.venue?.venue_type === 'virtual' || event.location?.type === 'online' || (event as any).is_online || (event as any).is_virtual || !(event.venue?.name || event.location?.venue || event.location?.city) || event.venue?.name === 'TBD' || event.location?.venue === 'TBD') ? 'Amptive App' : (event.venue?.name || event.location?.venue || event.location?.city),
             country: event.venue?.city || event.location?.city || 'Nigeria',
             ticket_status: isSoldOut ? 'Sold Out' : 'On Sale',
             price: finalPrice,

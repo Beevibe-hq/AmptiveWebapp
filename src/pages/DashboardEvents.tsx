@@ -223,7 +223,11 @@ export default function DashboardEvents() {
                                 <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{event.title}</h3>
                                 <div className="flex flex-col mb-2 mt-1">
                                     <span className="text-xs text-gray-500">Location</span>
-                                    <span className="font-medium text-sm text-gray-600 line-clamp-1">{event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city || 'TBA'}</span>
+                                    <span className="font-medium text-sm text-gray-600 line-clamp-1">
+                                        {event.venue?.venue_type === 'virtual' || event.location?.type === 'online' || (event as any).is_online || (event as any).is_virtual || !(event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city) || event.venue?.name === 'TBD' || event.location?.venue === 'TBD' || event.venue?.name === 'TBA'
+                                            ? 'Amptive App'
+                                            : (event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city)}
+                                    </span>
                                 </div>
                                 <div className="mt-1.5 w-full">
                                     <div className="rounded-lg py-1.5 px-3 text-center w-full bg-[#F1F7FE] group-hover:bg-blue-100 transition-colors">

@@ -647,14 +647,23 @@ const EventDetail = () => {
                       ) : (
                         <>
                           <h3 className="text-base font-semibold text-gray-900 leading-tight">
-                            {event.location?.type === 'online' ? 'Online Event' : (event.location?.venue || 'TBA')}
+                            <span className="inline-flex items-center gap-2">
+                              On the Amptive App
+                              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wider">Virtual</span>
+                            </span>
                           </h3>
-                          {event.location?.type !== 'online' && event.location?.city && (
-                            <p className="text-sm text-gray-500 mt-1">{event.location?.city}</p>
-                          )}
-                          {event.location?.type === 'online' && (
-                            <p className="text-sm text-gray-500 mt-1">Link visible to attendees</p>
-                          )}
+                          <div className="mt-2 max-w-md space-y-2">
+                            <p className="text-sm leading-6 text-gray-500">
+                              This event happens inside the Amptive app. Download the app before the event starts so you can join smoothly, access the live event, and use your ticket from your account.
+                            </p>
+                            <Link
+                              to="/download"
+                              className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-700"
+                            >
+                              Download Amptive app
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Link>
+                          </div>
                         </>
                       )}
                     </div>

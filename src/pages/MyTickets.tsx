@@ -365,7 +365,7 @@ const MyTickets = () => {
 
                                 {/* Location */}
                                 <p className="mt-1 text-xs sm:text-base font-medium text-gray-700">
-                                    {group.event?.location_type === 'online' ? 'Online' : group.event?.venue || group.event?.city || 'Venue TBA'}
+                                    {group.event?.location_type === 'online' || group.event?.location_type === 'virtual' || !group.event?.venue || group.event?.venue === 'TBD' || group.event?.venue === 'Venue TBA' || group.event?.venue === 'TBA' ? 'Amptive App' : (group.event?.venue || group.event?.city || 'Amptive App')}
                                 </p>
 
                                 {/* Ticket count + tiers + total paid */}
@@ -1005,7 +1005,7 @@ const MyTickets = () => {
                                                             <li className="leading-snug flex items-center gap-2">
                                                                 <MapPin className="w-4 h-4" />
                                                                 <span className="truncate">
-                                                                    {event?.location_type === 'online' ? 'Online' : event?.venue || event?.city || 'Venue TBA'}
+                                                                    {event?.location_type === 'online' || event?.location_type === 'virtual' || !event?.venue || event?.venue === 'TBD' || event?.venue === 'Venue TBA' || event?.venue === 'TBA' ? 'Amptive App' : (event?.venue || event?.city || 'Amptive App')}
                                                                 </span>
                                                             </li>
                                                         </ul>

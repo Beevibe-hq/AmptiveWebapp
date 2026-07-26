@@ -30,6 +30,7 @@
     "html2canvas": "^1.4.1",
     "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
+    "leaflet-rotate": "^0.2.8",
     "lucide-react": "^0.344.0",
     "motion": "^12.19.2",
     "opentype.js": "^2.0.0",

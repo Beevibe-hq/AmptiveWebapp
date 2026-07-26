@@ -133,7 +133,9 @@ export default function CommunityEvents() {
                       {event.title}
                     </h3>
                     <p className="mt-1 truncate text-sm font-medium text-gray-500">
-                      {event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city || 'Location TBA'}
+                      {event.venue?.venue_type === 'virtual' || event.location?.type === 'online' || !(event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city) || event.venue?.name === 'TBD' || event.venue?.name === 'TBA'
+                        ? 'Amptive App'
+                        : (event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city)}
                     </p>
                   </div>
                 </Link>

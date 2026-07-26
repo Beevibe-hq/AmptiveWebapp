@@ -364,6 +364,9 @@ const getEventTicketTypes = (event: StandaloneEvent) => {
 };
 
 const getEventLocationLabel = (event: StandaloneEvent) => {
+    const isVirtual = event.venue?.venue_type === 'virtual' || event.location?.type === 'online' || (event as any).is_online || (event as any).is_virtual;
+    if (isVirtual) return 'Amptive App';
+
     const parts = [
         event.location?.venue,
         event.venue?.name,
@@ -373,7 +376,9 @@ const getEventLocationLabel = (event: StandaloneEvent) => {
         event.venue?.country,
     ].filter(Boolean);
 
-    return [...new Set(parts)].slice(0, 2).join(', ') || 'TBA';
+    const loc = [...new Set(parts)].slice(0, 2).join(', ');
+    if (!loc || loc === 'TBD' || loc === 'TBA') return 'Amptive App';
+    return loc;
 };
 
 const toNumber = (value: unknown) => {

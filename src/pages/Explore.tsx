@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, X } from 'lucide-react';
+import { Search, Map as MapIcon, List, Calendar, MapPin, ChevronDown, X, Sliders, RotateCcw } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+// Adds bearing support to Leaflet (core Leaflet cannot rotate), so the compass can behave
+// like Apple Maps: rotate the map and the needle follows; tap the needle to snap north.
+import 'leaflet-rotate';
 import { listEvents, StandaloneEvent } from '@/lib/api/events';
 import { listCommunities, type Community } from '@/lib/api/communities';
 import { getVenue } from '@/lib/api/venues';
@@ -61,9 +64,22 @@ function getEventCoords(event: StandaloneEvent, index: number): { lat: number; l
         return { lat, lng };
     }
 
-    // 2. Virtual events do not need physical map pins
-    if (event.venue?.venue_type === 'virtual' || event.location?.type === 'online') {
-        return null;
+    // 2. Virtual & Amptive App events get pinned directly on Amptive Island in the ocean!
+    const isVirtual = !event.venue || 
+                      event.venue?.venue_type === 'virtual' || 
+                      event.location?.type === 'online' || 
+                      (event as any).is_online || 
+                      (event as any).is_virtual;
+    const venueStr = (event.location?.venue || event.venue?.name || (event as any).venue_name || '').toLowerCase();
+    const isAmptiveApp = venueStr.includes('amptive') || venueStr.includes('app') || venueStr.includes('virtual') || venueStr.includes('online');
+
+    if (isVirtual || isAmptiveApp || (!event.venue?.city && !event.location?.city && !event.venue?.address_line1)) {
+        const angle = (index * 137.5) * (Math.PI / 180);
+        const radius = 0.025 * Math.sqrt(index + 1);
+        return {
+            lat: -59.5000 + Math.cos(angle) * radius,
+            lng: -42.0000 + Math.sin(angle) * radius
+        };
     }
 
     // 3. Check city/venue name substring match against known city coordinates
@@ -97,33 +113,129 @@ function getEventCoords(event: StandaloneEvent, index: number): { lat: number; l
     };
 }
 
+// How far out "Near Me" reaches — wide enough to cover a metro area and its outskirts.
+const NEAR_ME_RADIUS_KM = 75;
+
+// Great-circle distance between two points, in kilometres.
+function distanceInKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const EARTH_RADIUS_KM = 6371;
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const h =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
+}
+
+// A sensible starting region for a first-time visitor, read from the browser's timezone.
+// This needs no permission prompt — unlike geolocation, which we only request when the
+// visitor explicitly asks for "Near Me".
+const TIMEZONE_DEFAULTS: { pattern: RegExp; filter: string; country: string }[] = [
+    { pattern: /^Africa\/(Lagos|Abuja|Kano)/i, filter: 'Nigeria', country: 'Nigeria' },
+    { pattern: /^Africa\/(Accra)/i, filter: 'Ghana', country: 'Ghana' },
+    { pattern: /^Africa\/(Johannesburg|Cape_Town|Durban)/i, filter: 'South Africa', country: 'South Africa' },
+    { pattern: /^Africa\/(Nairobi)/i, filter: 'Kenya', country: 'Kenya' },
+    { pattern: /^(America|US|Canada|Mexico)\//i, filter: 'United States', country: 'United States' },
+    { pattern: /^Europe\/(Paris|Marseille|Lyon|Monaco|Brussels)/i, filter: 'France', country: 'France' },
+    { pattern: /^Europe\/(London|Belfast|Dublin)/i, filter: 'United Kingdom', country: 'United Kingdom' },
+    { pattern: /^Europe\/(Berlin|Munich|Hamburg|Frankfurt)/i, filter: 'Germany', country: 'Germany' },
+];
+
+// City pills per country — the user's detected country shows its cities first
+const COUNTRY_CITIES: Record<string, string[]> = {
+    'Nigeria': ['Lagos', 'Abuja', 'Lekki', 'Ikeja', 'Yaba', 'Port Harcourt', 'Ibadan', 'Enugu', 'Benin'],
+    'United States': ['New York', 'Los Angeles', 'Miami', 'Chicago', 'Houston', 'San Francisco', 'Atlanta'],
+    'France': ['Paris', 'Marseille', 'Lyon', 'Nice', 'Toulouse'],
+    'United Kingdom': ['London', 'Manchester', 'Birmingham', 'Edinburgh', 'Liverpool'],
+    'Ghana': ['Accra', 'Kumasi', 'Tamale', 'Cape Coast'],
+    'South Africa': ['Johannesburg', 'Cape Town', 'Durban', 'Pretoria'],
+    'Kenya': ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru'],
+    'Germany': ['Berlin', 'Munich', 'Hamburg', 'Frankfurt', 'Cologne'],
+};
+
+function detectCountry(): string {
+    try {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        const match = TIMEZONE_DEFAULTS.find(entry => entry.pattern.test(timeZone));
+        if (match) return match.country;
+    } catch { /* fallback */ }
+    return 'Nigeria';
+}
+
+function defaultLocationFilter(): string {
+    try {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        const match = TIMEZONE_DEFAULTS.find(entry => entry.pattern.test(timeZone));
+        if (match) return match.filter;
+    } catch {
+        // Intl unavailable — fall through to the home market.
+    }
+    return 'Nigeria';
+}
+
 const LOCATION_CENTERS: Record<string, { lat: number; lng: number; zoom: number }> = {
     'united states': { lat: 37.0902, lng: -95.7129, zoom: 4 },
     'us': { lat: 37.0902, lng: -95.7129, zoom: 4 },
     'usa': { lat: 37.0902, lng: -95.7129, zoom: 4 },
     'france': { lat: 46.2276, lng: 2.2137, zoom: 6 },
-    'nigeria': { lat: 9.0820, lng: 8.6753, zoom: 6 },
-    'near me': { lat: 6.5244, lng: 3.3792, zoom: 11 },
-    'amptive app': { lat: 6.5244, lng: 3.3792, zoom: 11 }
+    'nigeria': { lat: 6.5244, lng: 3.3792, zoom: 8 },
+    'near me': { lat: 6.5244, lng: 3.3792, zoom: 8 },
+    'amptive app': { lat: -59.5000, lng: -42.0000, zoom: 10 },
+    'united kingdom': { lat: 51.5074, lng: -0.1278, zoom: 6 },
+    'ghana': { lat: 5.6037, lng: -0.1870, zoom: 7 },
+    'south africa': { lat: -30.5595, lng: 22.9375, zoom: 5 },
+    'kenya': { lat: -1.2921, lng: 36.8219, zoom: 7 },
+    'germany': { lat: 51.1657, lng: 10.4515, zoom: 6 },
+    // Major cities
+    'lagos': { lat: 6.5244, lng: 3.3792, zoom: 12 },
+    'abuja': { lat: 9.0765, lng: 7.3986, zoom: 12 },
+    'lekki': { lat: 6.4698, lng: 3.5852, zoom: 13 },
+    'ikeja': { lat: 6.6018, lng: 3.3515, zoom: 13 },
+    'yaba': { lat: 6.5095, lng: 3.3711, zoom: 14 },
+    'port harcourt': { lat: 4.8156, lng: 7.0498, zoom: 12 },
+    'ibadan': { lat: 7.3775, lng: 3.9470, zoom: 12 },
+    'enugu': { lat: 6.4584, lng: 7.5464, zoom: 12 },
+    'benin': { lat: 6.3350, lng: 5.6037, zoom: 12 },
+    'new york': { lat: 40.7128, lng: -74.0060, zoom: 12 },
+    'los angeles': { lat: 34.0522, lng: -118.2437, zoom: 11 },
+    'miami': { lat: 25.7617, lng: -80.1918, zoom: 12 },
+    'chicago': { lat: 41.8781, lng: -87.6298, zoom: 12 },
+    'houston': { lat: 29.7604, lng: -95.3698, zoom: 11 },
+    'san francisco': { lat: 37.7749, lng: -122.4194, zoom: 12 },
+    'atlanta': { lat: 33.7490, lng: -84.3880, zoom: 12 },
+    'paris': { lat: 48.8566, lng: 2.3522, zoom: 12 },
+    'marseille': { lat: 43.2965, lng: 5.3698, zoom: 12 },
+    'lyon': { lat: 45.7640, lng: 4.8357, zoom: 12 },
+    'nice': { lat: 43.7102, lng: 7.2620, zoom: 12 },
+    'toulouse': { lat: 43.6047, lng: 1.4442, zoom: 12 },
+    'london': { lat: 51.5074, lng: -0.1278, zoom: 12 },
+    'manchester': { lat: 53.4808, lng: -2.2426, zoom: 12 },
+    'birmingham': { lat: 52.4862, lng: -1.8904, zoom: 12 },
+    'edinburgh': { lat: 55.9533, lng: -3.1883, zoom: 12 },
+    'liverpool': { lat: 53.4084, lng: -2.9916, zoom: 12 },
+    'accra': { lat: 5.6037, lng: -0.1870, zoom: 12 },
+    'kumasi': { lat: 6.6885, lng: -1.6244, zoom: 12 },
+    'johannesburg': { lat: -26.2041, lng: 28.0473, zoom: 12 },
+    'cape town': { lat: -33.9249, lng: 18.4241, zoom: 12 },
+    'durban': { lat: -29.8587, lng: 31.0218, zoom: 12 },
+    'pretoria': { lat: -25.7479, lng: 28.2293, zoom: 12 },
+    'nairobi': { lat: -1.2921, lng: 36.8219, zoom: 12 },
+    'mombasa': { lat: -4.0435, lng: 39.6682, zoom: 12 },
+    'berlin': { lat: 52.5200, lng: 13.4050, zoom: 12 },
+    'munich': { lat: 48.1351, lng: 11.5820, zoom: 12 },
+    'hamburg': { lat: 53.5511, lng: 9.9937, zoom: 12 },
+    'frankfurt': { lat: 50.1109, lng: 8.6821, zoom: 12 },
+    'cologne': { lat: 50.9375, lng: 6.9603, zoom: 12 },
 };
 
-function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: StandaloneEvent[]; locFilter?: string; onSelectEvent: (eventId: string) => void }) {
+function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode, onSelectEvent, onMapMoved }: { events: StandaloneEvent[]; locFilter?: string; isLoading?: boolean; userCoords?: { lat: number; lng: number } | null; viewMode?: 'map' | 'list'; onSelectEvent: (eventId: string) => void; onMapMoved?: (moved: boolean) => void }) {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstance = useRef<L.Map | null>(null);
-    const [rotationDeg, setRotationDeg] = useState(0);
-    const isDraggingRef = useRef(false);
-
-    useEffect(() => {
-        if (mapRef.current) {
-            const mapPane = mapRef.current.querySelector('.leaflet-map-pane') as HTMLElement;
-            if (mapPane) {
-                const scaleVal = rotationDeg === 0 ? 1 : 1.45;
-                mapPane.style.transform = `rotate(${rotationDeg}deg) scale(${scaleVal})`;
-                mapPane.style.transformOrigin = 'center center';
-                mapPane.style.transition = isDraggingRef.current ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)';
-            }
-        }
-    }, [rotationDeg]);
+    // Map heading in degrees; drives the compass needle.
+    const [bearing, setBearing] = useState(0);
+    // True when the dial was just spun, so the trailing click is ignored.
+    const dialDraggedRef = useRef(false);
 
     useEffect(() => {
         if (!mapRef.current) return;
@@ -132,16 +244,64 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
             const map = L.map(mapRef.current, {
                 center: [6.5244, 3.3792],
                 zoom: 11,
+                minZoom: 3,
+                maxZoom: 19,
                 zoomControl: false,
                 attributionControl: false,
-            });
+                // Rotation, as on Apple Maps: two-finger twist on trackpad/touch, or
+                // shift-drag with a mouse.
+                rotate: true,
+                touchRotate: true,
+                shiftKeyRotate: true,
+                rotateControl: false,
+            } as L.MapOptions);
 
-            L.control.zoom({ position: 'bottomright' }).addTo(map);
+            // Mapbox vector-rendered raster tiles: green land, tan drylands and saturated
+            // blue water read much closer to Apple Maps than the flat CARTO basemap.
+            // Served at 512px @2x for retina crispness (zoomOffset keeps the zoom levels
+            // aligned with Leaflet's 256px grid). Falls back to CARTO without a token.
+            const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
 
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
-                attribution: '&copy; Esri &copy; OpenStreetMap',
-                maxZoom: 19
-            }).addTo(map);
+            if (mapboxToken) {
+                L.tileLayer(
+                    `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${mapboxToken}`,
+                    {
+                        attribution: '&copy; Mapbox &copy; OpenStreetMap',
+                        tileSize: 512,
+                        zoomOffset: -1,
+                        minZoom: 3,
+                        maxZoom: 20,
+                    }
+                ).addTo(map);
+            } else {
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; CARTO &copy; OpenStreetMap',
+                    subdomains: 'abcd',
+                    minZoom: 3,
+                    maxZoom: 20
+                }).addTo(map);
+            }
+
+            map.on('dragstart', () => onMapMoved?.(true));
+            map.on('zoomstart', () => onMapMoved?.(true));
+            map.on('rotate', () => setBearing((map as any).getBearing?.() ?? 0));
+
+            // leaflet-rotate rotates on shift+wheel but reads only deltaY. macOS turns
+            // shift+scroll into horizontal scrolling (deltaY === 0), so rotation never
+            // fired on a Mac. Handle whichever axis carries the delta.
+            (map as any).shiftKeyRotate?.disable();
+            mapRef.current.addEventListener(
+                'wheel',
+                (event: WheelEvent) => {
+                    if (!event.shiftKey) return;
+                    event.preventDefault();
+                    const delta = event.deltaY || event.deltaX;
+                    if (!delta) return;
+                    const current = (map as any).getBearing?.() ?? 0;
+                    (map as any).setBearing(current + Math.sign(delta) * 5);
+                },
+                { passive: false }
+            );
 
             mapInstance.current = map;
         }
@@ -152,12 +312,146 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
             map.invalidateSize();
         }, 150);
 
-        // Clear previous markers
+        // Leaflet caches the container size, so a resize (window, sidebar, device
+        // rotation) leaves tiles not covering the box until it is told to re-measure.
+        const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+        resizeObserver.observe(mapRef.current);
+
+        // Clear previous markers & overlays
         map.eachLayer((layer) => {
-            if (layer instanceof L.Marker) {
+            if (layer instanceof L.Marker || layer instanceof L.SVGOverlay || layer instanceof L.Polygon || layer instanceof L.Circle) {
                 map.removeLayer(layer);
             }
         });
+
+        // 1. Highly Detailed Organic Island SVG Overlay (Natural coastline, inlets, coves & satellite islets)
+        const svgElement = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svgElement.setAttribute('viewBox', '0 0 800 500');
+        svgElement.innerHTML = `
+            <defs>
+                <filter id="coast-shadow" x="-5%" y="-5%" width="110%" height="110%">
+                    <feDropShadow dx="1" dy="2" stdDeviation="3" flood-color="#1e293b" flood-opacity="0.12"/>
+                </filter>
+            </defs>
+            
+            <!-- Shallow Coral / Lagoon Water Halo -->
+            <path d="M 120,240 Q 140,110 260,80 Q 380,50 510,75 Q 640,100 710,180 Q 770,260 720,350 Q 660,430 490,435 Q 330,440 210,390 Q 90,340 120,240 Z" fill="#b2e2f8" opacity="0.45" />
+
+            <!-- Organic Sandy Beach with realistic inlets & bays -->
+            <path d="
+                M 140,240 
+                C 145,210 152,185 170,165 
+                C 185,150 178,135 195,120 
+                C 215,105 240,115 265,95 
+                C 290,75 325,85 355,75 
+                C 385,65 415,80 445,72 
+                C 475,65 505,82 535,90 
+                C 565,98 585,88 610,110 
+                C 635,132 660,125 680,150 
+                C 700,175 688,198 715,220 
+                C 735,240 720,268 705,290 
+                C 690,312 708,335 685,360 
+                C 662,385 630,375 600,395 
+                C 570,415 538,402 505,420 
+                C 472,438 440,425 405,428 
+                C 370,431 340,418 305,410 
+                C 270,402 245,415 215,395 
+                C 185,375 192,352 170,335 
+                C 148,318 160,295 145,275 
+                C 130,255 135,245 140,240 Z" 
+                fill="#eae1bf" stroke="#dcd0a2" stroke-width="3" filter="url(#coast-shadow)" />
+
+            <!-- Organic Solid Land Mass with jagged headlands, coves & peninsulas -->
+            <path d="
+                M 152,240 
+                C 157,213 162,190 178,172 
+                C 192,158 186,143 202,128 
+                C 220,114 243,122 268,104 
+                C 292,86 324,94 353,85 
+                C 382,76 411,89 440,81 
+                C 468,74 497,90 526,97 
+                C 554,104 573,95 597,116 
+                C 621,137 645,131 664,154 
+                C 682,177 671,199 696,220 
+                C 715,238 701,264 688,284 
+                C 674,304 690,326 669,349 
+                C 648,372 618,363 590,381 
+                C 562,399 532,388 501,404 
+                C 470,420 439,409 406,411 
+                C 373,413 345,401 313,394 
+                C 281,387 258,398 230,380 
+                C 202,362 208,341 188,326 
+                C 168,311 178,290 164,272 
+                C 150,254 147,244 152,240 Z" 
+                fill="#e4ead8" stroke="#a6bd90" stroke-width="2.5" />
+
+            <!-- Satellite Islets off the coast -->
+            <circle cx="120" cy="180" r="10" fill="#eae1bf" stroke="#dcd0a2" stroke-width="1.5" />
+            <circle cx="120" cy="180" r="7" fill="#e4ead8" stroke="#a6bd90" stroke-width="1.5" />
+
+            <circle cx="730" cy="160" r="14" fill="#eae1bf" stroke="#dcd0a2" stroke-width="1.5" />
+            <circle cx="730" cy="160" r="10" fill="#e4ead8" stroke="#a6bd90" stroke-width="1.5" />
+
+            <circle cx="640" cy="420" r="12" fill="#eae1bf" stroke="#dcd0a2" stroke-width="1.5" />
+            <circle cx="640" cy="420" r="8" fill="#e4ead8" stroke="#a6bd90" stroke-width="1.5" />
+
+            <!-- Natural Interior Topography / Elevation Contour lines -->
+            <path d="
+                M 220,230 
+                C 230,170 300,120 420,130 
+                C 540,140 600,180 580,240 
+                C 560,300 480,350 360,340 
+                C 260,330 210,290 220,230 Z" 
+                fill="#d6e2c3" opacity="0.6" />
+            
+            <path d="
+                M 280,225 
+                C 290,185 340,150 430,160 
+                C 510,170 540,200 525,235 
+                C 510,270 450,305 370,300 
+                C 300,295 272,260 280,225 Z" 
+                fill="#c6d8ae" opacity="0.5" />
+        `;
+
+        const islandBounds: L.LatLngBoundsExpression = [
+            [-60.2000, -43.4000],
+            [-58.8000, -40.6000]
+        ];
+
+        L.svgOverlay(svgElement, islandBounds, { opacity: 1, interactive: false }).addTo(map);
+
+        // Native map place label for Amptive Island
+        const islandLabelIcon = L.divIcon({
+            className: 'custom-native-map-label',
+            html: `
+                <div style="
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: #2d3748;
+                    text-align: center;
+                    white-space: nowrap;
+                    user-select: none;
+                    pointer-events: none;
+                    text-shadow: 
+                        -1.5px -1.5px 0 #ffffff,
+                         1.5px -1.5px 0 #ffffff,
+                        -1.5px  1.5px 0 #ffffff,
+                         1.5px  1.5px 0 #ffffff,
+                         0px    0px 5px #ffffff,
+                         0px    0px 8px #ffffff;
+                    letter-spacing: -0.3px;
+                    line-height: 1.2;
+                ">
+                    Amptive Island
+                </div>
+            `,
+            iconSize: [160, 24],
+            iconAnchor: [80, 12]
+        });
+
+        L.marker([-59.5000, -42.0000], { icon: islandLabelIcon }).addTo(map);
 
         const bounds = L.latLngBounds([]);
         let hasCoords = false;
@@ -191,12 +485,21 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
                 });
 
                 const dateStr = event.scheduled_for 
-                    ? new Date(event.scheduled_for).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+                    ? new Date(event.scheduled_for).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
                     : 'Upcoming';
 
-                const venueTitle = event.venue?.name || event.location?.venue || event.location?.city || 'Venue Location';
+                const isEventVirtual = event.venue?.venue_type === 'virtual' || 
+                                       event.location?.type === 'online' || 
+                                       (event as any).is_online || 
+                                       (event as any).is_virtual;
+                const rawLocName = event.venue?.name || event.location?.venue || event.location?.city || '';
+                const venueTitle = isEventVirtual || !rawLocName || rawLocName === 'TBD' || rawLocName === 'TBA'
+                    ? 'Amptive App'
+                    : rawLocName;
                 const venueSub = 'Location';
-                const locationSubStr = [event.venue?.name || event.location?.venue, event.venue?.city || event.location?.city].filter(Boolean).join(', ') || 'Venue';
+                const locationSubStr = isEventVirtual || !rawLocName || rawLocName === 'TBD' || rawLocName === 'TBA'
+                    ? 'Amptive App'
+                    : ([event.venue?.name || event.location?.venue, event.venue?.city || event.location?.city].filter(Boolean).join(', ') || 'Amptive App');
                 
                 // Format price exactly as on homepage
                 let priceDisplay = 'Free';
@@ -246,8 +549,8 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
 
                             <!-- Details -->
                             <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;">
-                                <div style="font-size: 11px; font-weight: 600; color: #4b5563; margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
-                                    <span style="color: #ef4444; font-size: 12px;">📅</span> ${dateStr}
+                                <div style="font-size: 11px; font-weight: 600; color: #4b5563; margin-bottom: 2px; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    <span style="color: #ef4444; font-size: 12px; flex-shrink: 0;">📅</span> <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${dateStr}</span>
                                 </div>
                                 <div style="font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                                     ${event.title}
@@ -266,7 +569,8 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
                 const marker = L.marker([coords.lat, coords.lng], { icon: eventIcon }).addTo(map);
                 marker.bindPopup(popupContent, {
                     closeButton: false,
-                    className: 'custom-leaflet-popup'
+                    className: 'custom-leaflet-popup',
+                    autoPan: false
                 });
 
                 marker.on('popupopen', () => {
@@ -278,24 +582,44 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
             }
         });
 
-        if (hasCoords && bounds.isValid()) {
-            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
-        } else {
-            const key = (locFilter || '').toLowerCase();
-            const center = LOCATION_CENTERS[key] || { lat: 6.5244, lng: 3.3792, zoom: 11 };
+        const key = (locFilter || '').toLowerCase();
+        if (key === 'amptive app') {
+            map.setView([-59.5000, -42.0000], 10);
+        } else if (key === 'near me' && userCoords) {
+            map.setView([userCoords.lat, userCoords.lng], 9);
+        } else if (LOCATION_CENTERS[key]) {
+            const center = LOCATION_CENTERS[key];
             map.setView([center.lat, center.lng], center.zoom);
+        } else if (hasCoords && bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 9, minZoom: 3 });
+        } else if (!isLoading && key) {
+            // Geocode unknown locations via Nominatim (free, no API key)
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(locFilter || '')}`)
+                .then(res => res.json())
+                .then(results => {
+                    if (results && results[0]) {
+                        const { lat, lon } = results[0];
+                        map.setView([parseFloat(lat), parseFloat(lon)], 12);
+                    }
+                })
+                .catch(() => { /* geocode failed — keep current view */ });
+        } else if (!isLoading) {
+            map.setView([6.5244, 3.3792], 8);
         }
 
         return () => {
             clearTimeout(timer);
+            resizeObserver.disconnect();
         };
-    }, [events, locFilter, onSelectEvent]);
+    }, [events, locFilter, isLoading, userCoords, onSelectEvent]);
 
     return (
-        <div className="relative h-[600px] w-full rounded-3xl overflow-hidden border border-gray-200 shadow-lg bg-gray-50">
+        <div className="relative h-full w-full rounded-none overflow-hidden bg-gray-50">
             <style>{`
+                /* The basemap ships with the palette we want — only a touch of warmth,
+                   no hue rotation (that turned borders pink and roads neon). */
                 .leaflet-tile-pane {
-                    filter: saturate(1.18) contrast(1.03) brightness(1.01) hue-rotate(-2deg);
+                    filter: saturate(1.04) brightness(1.01);
                 }
                 .leaflet-control-zoom {
                     border: none !important;
@@ -368,8 +692,8 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
                 }
                 .mk-rotation-control {
                     position: absolute;
-                    top: 14px;
-                    right: 14px;
+                    bottom: 20px;
+                    left: 20px;
                     z-index: 30;
                     width: 44px;
                     height: 44px;
@@ -386,74 +710,117 @@ function ExploreLeafletMap({ events, locFilter, onSelectEvent }: { events: Stand
                     user-select: none;
                     transition: transform 0.2s ease, background 0.2s ease;
                 }
-                .mk-rotation-control:hover {
-                    background: #ffffff;
-                    transform: scale(1.06);
-                }
-                .mk-rotation-slider {
-                    position: absolute;
-                    inset: 0;
-                    opacity: 0;
-                    cursor: pointer;
-                    width: 100%;
-                    height: 100%;
-                    margin: 0;
-                    z-index: 2;
+                @media (max-width: 639px) {
+                    .mk-rotation-control {
+                        display: none !important;
+                    }
                 }
             `}</style>
-            <div ref={mapRef} className="absolute inset-0 h-full w-full z-10" />
-            <div 
-                title="Rotate the map (Drag slider to rotate, Click to reset North)" 
-                aria-label="Rotate the map" 
-                className="mk-control mk-rotation-control mk-with-zoom-control"
+            <div ref={mapRef} onPointerDown={() => onMapMoved?.(true)} className="absolute inset-0 h-full w-full z-10" />
+            <div
+                role="button"
+                tabIndex={0}
+                title={bearing ? 'Point north' : 'Reset map view'}
+                aria-label={bearing ? 'Point north' : 'Reset map view'}
+                className="mk-control mk-rotation-control mk-with-zoom-control hidden sm:flex"
+                // Drag the dial to spin the map, the way you'd twist a physical compass —
+                // the discoverable desktop gesture, since a trackpad twist isn't something
+                // browsers report. A drag suppresses the click so it doesn't snap to north.
+                onPointerDown={(event) => {
+                    const map = mapInstance.current as any;
+                    if (!map) return;
+                    const dial = event.currentTarget as HTMLDivElement;
+                    const box = dial.getBoundingClientRect();
+                    const cx = box.left + box.width / 2;
+                    const cy = box.top + box.height / 2;
+                    const angleOf = (x: number, y: number) => Math.atan2(y - cy, x - cx) * (180 / Math.PI);
+
+                    let last = angleOf(event.clientX, event.clientY);
+                    dialDraggedRef.current = false;
+                    dial.setPointerCapture(event.pointerId);
+
+                    const onMove = (moveEvent: PointerEvent) => {
+                        const next = angleOf(moveEvent.clientX, moveEvent.clientY);
+                        let step = next - last;
+                        if (step > 180) step -= 360;
+                        if (step < -180) step += 360;
+                        if (Math.abs(step) < 0.01) return;
+                        dialDraggedRef.current = true;
+                        last = next;
+                        map.setBearing(((map.getBearing?.() ?? 0) + step));
+                    };
+                    const onUp = () => {
+                        dial.removeEventListener('pointermove', onMove);
+                        dial.removeEventListener('pointerup', onUp);
+                        dial.removeEventListener('pointercancel', onUp);
+                    };
+                    dial.addEventListener('pointermove', onMove);
+                    dial.addEventListener('pointerup', onUp);
+                    dial.addEventListener('pointercancel', onUp);
+                }}
+                onClick={() => {
+                    const map = mapInstance.current as any;
+                    if (!map) return;
+                    // A click always follows the pointerup that ends a drag; ignore that one
+                    // so spinning the dial doesn't immediately snap the map back to north.
+                    if (dialDraggedRef.current) {
+                        dialDraggedRef.current = false;
+                        return;
+                    }
+                    // Apple's behaviour: when the map is turned, the compass returns it to
+                    // north. Only when already north-up does it fall back to re-centring.
+                    // Read the heading off the map, not React state, which may not have
+                    // re-rendered yet after a rotation.
+                    if (Math.round(map.getBearing?.() ?? 0) % 360 !== 0) {
+                        map.setBearing(0);
+                        setBearing(0);
+                        return;
+                    }
+                    map.invalidateSize();
+                    const key = (locFilter || '').toLowerCase();
+                    const center = LOCATION_CENTERS[key] || { lat: 6.5244, lng: 3.3792, zoom: 11 };
+                    map.setView([center.lat, center.lng], center.zoom);
+                }}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        (event.currentTarget as HTMLDivElement).click();
+                    }
+                }}
             >
-                <input 
-                    className="mk-rotation-slider" 
-                    type="range" 
-                    min="0" 
-                    max="360" 
-                    value={rotationDeg} 
-                    onChange={(e) => {
-                        isDraggingRef.current = true;
-                        setRotationDeg(Number(e.target.value));
-                    }}
-                    onMouseUp={() => { isDraggingRef.current = false; }}
-                    onTouchEnd={() => { isDraggingRef.current = false; }}
-                    onDoubleClick={() => {
-                        isDraggingRef.current = false;
-                        setRotationDeg(0);
-                    }}
-                    aria-label={`${rotationDeg} degrees`} 
-                />
-                <div 
-                    className="pointer-events-none" 
-                    style={{ 
-                        transform: `rotate(-${rotationDeg}deg)`, 
-                        transition: isDraggingRef.current ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' 
-                    }}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        isDraggingRef.current = false;
-                        setRotationDeg(0);
+                {/* The dial turns opposite the map so the needle keeps pointing north.
+                    The transform sits on this wrapper because a CSS transform on an <svg>
+                    root is not applied reliably. */}
+                <div
+                    style={{
+                        display: 'flex',
+                        transform: `rotate(${-bearing}deg)`,
+                        transition: 'transform 0.18s ease-out',
                     }}
                 >
-                    <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="20" cy="20" r="17.5" stroke="#e5e7eb" strokeWidth="1.5" />
-                        <line x1="20" y1="3" x2="20" y2="6" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
-                        <line x1="20" y1="34" x2="20" y2="37" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" />
-                        <line x1="3" y1="20" x2="6" y2="20" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" />
-                        <line x1="34" y1="20" x2="37" y2="20" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" />
-                        
-                        <line x1="8" y1="8" x2="10.5" y2="10.5" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
-                        <line x1="29.5" y1="29.5" x2="32" y2="32" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
-                        <line x1="8" y1="32" x2="10.5" y2="29.5" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
-                        <line x1="29.5" y1="10.5" x2="32" y2="8" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
+                <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 40 40"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                >
+                    <circle cx="20" cy="20" r="17.5" stroke="#e5e7eb" strokeWidth="1.5" />
+                    <line x1="20" y1="3" x2="20" y2="6" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+                    <line x1="20" y1="34" x2="20" y2="37" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" />
+                    <line x1="3" y1="20" x2="6" y2="20" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" />
+                    <line x1="34" y1="20" x2="37" y2="20" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" />
+                    
+                    <line x1="8" y1="8" x2="10.5" y2="10.5" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
+                    <line x1="29.5" y1="29.5" x2="32" y2="32" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
+                    <line x1="8" y1="32" x2="10.5" y2="29.5" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
+                    <line x1="29.5" y1="10.5" x2="32" y2="8" stroke="#d1d5db" strokeWidth="1" strokeLinecap="round" />
 
-                        <polygon points="20,7 23.5,19 20,16.5 16.5,19" fill="#ef4444" />
-                        <polygon points="20,33 23.5,21 20,23.5 16.5,21" fill="#9ca3af" />
-                        
-                        <text x="20" y="11" fontFamily="-apple-system, BlinkMacSystemFont, sans-serif" fontSize="7.5" fontWeight="900" fill="#ef4444" textAnchor="middle" dominantBaseline="central">N</text>
-                    </svg>
+                    <polygon points="20,7 23.5,19 20,16.5 16.5,19" fill="#ef4444" />
+                    <polygon points="20,33 23.5,21 20,23.5 16.5,21" fill="#9ca3af" />
+                    
+                    <text x="20" y="11" fontFamily="-apple-system, BlinkMacSystemFont, sans-serif" fontSize="7.5" fontWeight="900" fill="#ef4444" textAnchor="middle" dominantBaseline="central">N</text>
+                </svg>
                 </div>
             </div>
         </div>
@@ -465,6 +832,8 @@ export default function Explore() {
     const urlParams = new URLSearchParams(location.search);
     const urlQuery = urlParams.get('q') || urlParams.get('search') || '';
     const urlCommunity = urlParams.get('community') || '';
+
+    const detectedCountry = detectCountry();
 
     const [viewMode, setViewMode] = useState<'list' | 'map'>(() => sessionStorage.getItem('explore_viewMode') as 'list' | 'map' || 'list');
     const [searchQuery, setSearchQuery] = useState(() => urlQuery || sessionStorage.getItem('explore_searchQuery') || '');
@@ -480,13 +849,31 @@ export default function Explore() {
     }, [urlQuery]);
 
     const [dateFilter, setDateFilter] = useState(() => sessionStorage.getItem('explore_dateFilter') || 'All Upcoming');
-    const [locFilter, setLocFilter] = useState(() => sessionStorage.getItem('explore_locFilter') || 'Nigeria');
+    const [locFilter, setLocFilter] = useState(() => sessionStorage.getItem('explore_locFilter') || defaultLocationFilter());
+    // Set only after the visitor asks for "Near Me" and the browser grants permission.
+    const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
     const [communityFilter, setCommunityFilter] = useState(() => urlCommunity || sessionStorage.getItem('explore_communityFilter') || 'all');
     const [priceFilter, setPriceFilter] = useState<string[]>(() => {
         const stored = sessionStorage.getItem('explore_priceFilter');
         return stored ? JSON.parse(stored) : [];
     });
 
+    // "Near Me" is the only place we ask for the device location, and only because the
+    // visitor asked for it — the browser shows its own permission prompt. If it's denied
+    // or unavailable we simply keep the current region rather than nagging.
+    const requestNearMe = () => {
+        setLocFilter('Near Me');
+        if (userCoords || !navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition(
+            (position) => setUserCoords({ lat: position.coords.latitude, lng: position.coords.longitude }),
+            () => { /* denied or unavailable — keep the existing view */ },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 10 * 60 * 1000 }
+        );
+    };
+
+    const [showFloatingFilters, setShowFloatingFilters] = useState(true);
+    const [hasMovedMap, setHasMovedMap] = useState(false);
+    const [maxPrice, setMaxPrice] = useState<number>(() => Number(sessionStorage.getItem('explore_maxPrice')) || 100000);
     const [customStartDate, setCustomStartDate] = useState(() => sessionStorage.getItem('explore_customStartDate') || '');
     const [customEndDate, setCustomEndDate] = useState(() => sessionStorage.getItem('explore_customEndDate') || '');
     const [showCustomDate, setShowCustomDate] = useState(false);
@@ -498,9 +885,10 @@ export default function Explore() {
         sessionStorage.setItem('explore_locFilter', locFilter);
         sessionStorage.setItem('explore_communityFilter', communityFilter);
         sessionStorage.setItem('explore_priceFilter', JSON.stringify(priceFilter));
+        sessionStorage.setItem('explore_maxPrice', String(maxPrice));
         sessionStorage.setItem('explore_customStartDate', customStartDate);
         sessionStorage.setItem('explore_customEndDate', customEndDate);
-    }, [viewMode, searchQuery, dateFilter, locFilter, communityFilter, priceFilter, customStartDate, customEndDate]);
+    }, [viewMode, searchQuery, dateFilter, locFilter, communityFilter, priceFilter, maxPrice, customStartDate, customEndDate]);
 
     const navigate = useNavigate();
 
@@ -653,7 +1041,24 @@ export default function Explore() {
                 const eventDate = new Date(e.scheduled_for);
                 return eventDate >= tomorrow && eventDate < dayAfter;
             });
-        } else if (dateFilter && dateFilter !== 'Custom') {
+        } else if (dateFilter === 'Custom' || customStartDate || customEndDate) {
+            if (customStartDate) {
+                const start = new Date(customStartDate);
+                start.setHours(0, 0, 0, 0);
+                filtered = filtered.filter(e => {
+                    if (!e.scheduled_for) return false;
+                    return new Date(e.scheduled_for) >= start;
+                });
+            }
+            if (customEndDate) {
+                const end = new Date(customEndDate);
+                end.setHours(23, 59, 59, 999);
+                filtered = filtered.filter(e => {
+                    if (!e.scheduled_for) return false;
+                    return new Date(e.scheduled_for) <= end;
+                });
+            }
+        } else if (dateFilter) {
             filtered = filtered.filter(e => {
                 if (!e.scheduled_for) return false;
                 const eventDate = new Date(e.scheduled_for);
@@ -673,48 +1078,76 @@ export default function Explore() {
             });
         }
 
-        if (locFilter === 'Amptive App') {
+        if (locFilter === 'Near Me') {
+            // Keep events within NEAR_ME_RADIUS_KM of the visitor. Without a granted
+            // location we can't judge distance, so everything stays visible rather than
+            // showing a misleading empty result.
+            if (userCoords) {
+                filtered = filtered.filter((event, idx) => {
+                    const coords = getEventCoords(event, idx);
+                    if (!coords) return false;
+                    return distanceInKm(userCoords, coords) <= NEAR_ME_RADIUS_KM;
+                });
+            }
+        } else if (locFilter === 'Amptive App' || locFilter === 'amptive app') {
             filtered = filtered.filter(e => {
-                const venueStr = (e.location?.venue || e.venue?.name || '').toLowerCase();
+                const isVirtual = !e.venue || 
+                                  e.venue?.venue_type === 'virtual' || 
+                                  e.location?.type === 'online' || 
+                                  (e as any).is_online || 
+                                  (e as any).is_virtual;
+                const venueStr = (e.location?.venue || e.venue?.name || (e as any).venue_name || '').toLowerCase();
                 const cityStr = (e.location?.city || e.venue?.city || '').toLowerCase();
                 const addressStr = (e.location?.address || e.venue?.address || '').toLowerCase();
-                const isOnline = (e as any).is_online || (e as any).is_virtual;
                 return (
-                    isOnline ||
+                    isVirtual ||
                     venueStr.includes('amptive') ||
                     venueStr.includes('app') ||
                     venueStr.includes('virtual') ||
                     venueStr.includes('online') ||
                     cityStr.includes('amptive') ||
                     cityStr.includes('app') ||
-                    addressStr.includes('amptive')
+                    addressStr.includes('amptive') ||
+                    (!e.venue?.city && !e.location?.city && !e.venue?.address_line1)
                 );
             });
         } else if (locFilter === 'United States') {
             filtered = filtered.filter(e => {
-                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name}`.toLowerCase();
+                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name} ${e.location?.address} ${e.venue?.address}`.toLowerCase();
                 return str.includes('united states') || str.includes('usa') || str.includes('us') || str.includes('new york') || str.includes('california') || str.includes('miami');
             });
         } else if (locFilter === 'Nigeria') {
             filtered = filtered.filter(e => {
-                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name}`.toLowerCase();
-                return str.includes('nigeria') || str.includes('lagos') || str.includes('lekki') || str.includes('ikeja') || str.includes('abuja') || str.includes('port harcourt') || str.includes('ibadan');
+                const isVirtual = !e.venue || 
+                                  e.venue?.venue_type === 'virtual' || 
+                                  e.location?.type === 'online' || 
+                                  (e as any).is_online || 
+                                  (e as any).is_virtual;
+                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name} ${e.location?.address} ${e.venue?.address}`.toLowerCase();
+                return isVirtual || str.includes('nigeria') || str.includes('lagos') || str.includes('lekki') || str.includes('ikeja') || str.includes('abuja') || str.includes('port harcourt') || str.includes('ibadan') || str.includes('yaba') || str.includes('surulere') || str.includes('ikoyi') || str.includes('victoria island');
             });
         } else if (locFilter === 'France') {
             filtered = filtered.filter(e => {
-                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name}`.toLowerCase();
+                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name} ${e.location?.address} ${e.venue?.address}`.toLowerCase();
                 return str.includes('france') || str.includes('paris');
+            });
+        } else if (locFilter) {
+            // Generic text match for any custom typed location
+            const locLower = locFilter.toLowerCase();
+            filtered = filtered.filter(e => {
+                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name} ${e.location?.address} ${e.venue?.address} ${e.venue?.state} ${e.location?.state}`.toLowerCase();
+                return str.includes(locLower);
             });
         }
 
-        if (priceFilter.includes('Free')) {
+        if (maxPrice === 0) {
             filtered = filtered.filter(e => e.price_min === 0);
-        } else if (priceFilter.includes('Paid')) {
-            filtered = filtered.filter(e => e.price_min > 0);
+        } else if (maxPrice < 100000) {
+            filtered = filtered.filter(e => e.price_min <= maxPrice);
         }
 
         setEvents(filtered);
-    }, [rawEvents, searchQuery, dateFilter, locFilter, priceFilter, customStartDate, customEndDate]);
+    }, [rawEvents, searchQuery, dateFilter, locFilter, userCoords, priceFilter, maxPrice, customStartDate, customEndDate]);
 
     const FilterPill = ({ label, active, onClick, icon: Icon }: { label: string, active: boolean, onClick: () => void, icon?: any }) => (
         <button
@@ -730,307 +1163,853 @@ export default function Explore() {
     );
 
     return (
-        <div className="min-h-screen bg-white pt-24 pb-12">
-            <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen bg-white pt-0 pb-0">
+            <div className="w-full px-0">
 
-                {/* Mobile View Toggle & Header */}
-                <div className="flex md:hidden justify-between items-center mb-6">
-                    <h1 className="text-2xl font-bold text-gray-900">Explore</h1>
-                    <div className="flex bg-gray-100 p-1 rounded-lg">
-                        <button onClick={() => setViewMode('list')} className={`p-2 rounded-md ${viewMode === 'list' ? 'bg-white shadow-sm' : ''}`}><List className="w-5 h-5" /></button>
-                        <button onClick={() => setViewMode('map')} className={`p-2 rounded-md ${viewMode === 'map' ? 'bg-white shadow-sm' : ''}`}><MapIcon className="w-5 h-5" /></button>
+                {/* FULL CANVAS CONTAINER: Edge-to-Edge Full-bleed Map with Floating Event List Overlay */}
+                <div className="relative w-full overflow-hidden" style={{ height: '100vh' }}>
+                    {/* Leaflet Map: Fills 100% of container underneath everything */}
+                    <ExploreLeafletMap
+                        events={events}
+                        locFilter={locFilter}
+                        isLoading={loading}
+                        userCoords={userCoords}
+                        viewMode={viewMode}
+                        onSelectEvent={(eventId) => navigate(`/events/${eventId}`)}
+                        onMapMoved={(moved) => setHasMovedMap(moved)}
+                    />
+
+                    {/* Top-Left Floating Filter Events Button */}
+                    <div className={`absolute top-24 left-4 z-30 items-center gap-2 ${
+                        viewMode === 'list' ? 'hidden sm:flex' : 'flex'
+                    }`}>
+                        <button
+                            onClick={() => setShowFloatingFilters(!showFloatingFilters)}
+                            className="bg-white/95 hover:bg-white text-gray-900 border border-gray-200/80 px-4 py-2.5 rounded-full font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                        >
+                            <Sliders className="w-4 h-4 text-gray-900" />
+                            Filter Events
+                        </button>
                     </div>
-                </div>
 
-                <div className="flex flex-col lg:flex-row gap-8">
+                    {/* Bottom-Left Circular Reset View Button (Only visible when user moves/pans map; disappears when reset) */}
+                    <button
+                        onClick={() => {
+                            setDateFilter('All Upcoming');
+                            setLocFilter('Nigeria');
+                            setCommunityFilter('all');
+                            setPriceFilter([]);
+                            setHasMovedMap(false);
+                        }}
+                        title="Reset Map View"
+                        aria-label="Reset Map View"
+                        className={`absolute bottom-[20px] sm:bottom-[74px] left-[20px] z-30 bg-white/95 hover:bg-white text-gray-900 border border-white/80 backdrop-blur-md rounded-full w-[44px] h-[44px] items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer shadow-sm ${
+                            viewMode === 'list' ? 'hidden sm:flex' : 'flex'
+                        } ${
+                            hasMovedMap
+                                ? 'opacity-100 scale-100 pointer-events-auto'
+                                : 'opacity-0 scale-90 pointer-events-none'
+                        }`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+                            <path d="M240,116H219.22A92.21,92.21,0,0,0,140,36.78V16a12,12,0,0,0-24,0V36.78A92.21,92.21,0,0,0,36.78,116H16a12,12,0,0,0,0,24H36.78A92.21,92.21,0,0,0,116,219.22V240a12,12,0,0,0,24,0V219.22A92.21,92.21,0,0,0,219.22,140H240a12,12,0,0,0,0-24ZM128,196a68,68,0,1,1,68-68A68.07,68.07,0,0,1,128,196Zm0-112a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,84Zm0,64a20,20,0,1,1,20-20A20,20,0,0,1,128,148Z"></path>
+                        </svg>
+                    </button>
 
-                    {/* SIDEBAR FILTERS (Desktop) */}
-                    <div className={`w-full lg:w-80 shrink-0 space-y-8 ${viewMode === 'map' ? 'hidden lg:block' : ''}`}>
+                    {/* MOBILE BOTTOM SHEET FILTER MODAL BACKDROP (MOBILE ONLY) */}
+                    <div
+                        className={`fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs transition-opacity duration-300 sm:hidden ${
+                            showFloatingFilters ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                        }`}
+                        onClick={() => setShowFloatingFilters(false)}
+                    />
+
+                    {/* MOBILE BOTTOM SHEET FILTER MODAL CONTAINER (MOBILE ONLY) */}
+                    <div
+                        className={`fixed bottom-0 inset-x-0 z-[100] w-full max-h-[85vh] bg-[#f4f7f2] rounded-t-3xl p-6 overflow-y-auto space-y-5 text-gray-900 shadow-2xl transition-transform duration-300 ease-out sm:hidden ${
+                            showFloatingFilters ? 'translate-y-0 pointer-events-auto' : 'translate-y-full pointer-events-none'
+                        }`}
+                    >
+                        {/* Drag Handle Indicator */}
+                        <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-1" />
 
                         {/* Header */}
-                        <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-                            <div className="flex items-center gap-2">
-                                <span className="font-medium text-lg text-black">Filter Events</span>
+                        <div className="flex items-center justify-between pb-3 border-b border-gray-200/80">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-full bg-gray-900 flex items-center justify-center">
+                                    <Sliders className="w-3.5 h-3.5 text-white" />
+                                </div>
+                                <span className="font-bold text-base text-gray-900">Filter Events</span>
                             </div>
                             <button
-                                onClick={() => {
-                                    setDateFilter('All Upcoming');
-                                    setLocFilter('Nigeria');
-                                    setCommunityFilter('all');
-                                    setPriceFilter([]);
-                                }}
-                                className="text-xs font-medium text-gray-500 flex items-center gap-1 hover:text-black"
+                                type="button"
+                                onClick={() => setShowFloatingFilters(false)}
+                                className="p-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 transition-colors cursor-pointer"
                             >
-                                <X className="w-3 h-3" /> Reset
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
                         {/* When? */}
                         <section>
-                            <h3 className="text-xl font-bold text-gray-900 mb-4">When?</h3>
-                            <div className="flex flex-wrap gap-2 mb-3">
+                            <h3 className="text-sm font-extrabold text-gray-900 mb-2.5">When?</h3>
+                            <div className="flex flex-wrap gap-2 mb-1.5">
                                 {['All Upcoming', 'Today', 'Tomorrow', 'This Weekend'].map(label => (
-                                    <FilterPill
+                                    <button
                                         key={label}
-                                        label={label}
-                                        active={dateFilter === label}
                                         onClick={() => {
                                             setDateFilter(label);
+                                            setCustomStartDate('');
+                                            setCustomEndDate('');
                                             setShowCustomDate(false);
                                         }}
-                                    />
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            dateFilter === label && !customStartDate && !customEndDate
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
                                 ))}
                             </div>
 
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                <button
+                                    onClick={() => setShowCustomDate(!showCustomDate)}
+                                    className="flex items-center gap-1 text-[11px] font-bold text-gray-900 hover:underline cursor-pointer"
+                                >
+                                    Custom Range
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showCustomDate ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {(customStartDate || customEndDate) && (
+                                    <span className="flex items-center gap-1.5 bg-gray-900 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                                        <span>
+                                            {customStartDate ? new Date(customStartDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '...'} - {customEndDate ? new Date(customEndDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '...'}
+                                        </span>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setCustomStartDate('');
+                                                setCustomEndDate('');
+                                                setDateFilter('All Upcoming');
+                                            }}
+                                            className="hover:bg-gray-700 p-0.5 rounded-full cursor-pointer transition-colors"
+                                            title="Clear custom date range"
+                                        >
+                                            <X className="w-3 h-3 text-white" />
+                                        </button>
+                                    </span>
+                                )}
+                            </div>
+
                             {showCustomDate && (
-                                <>
-                                    <div
-                                        className="fixed inset-0 bg-black/20 z-40"
-                                        onClick={() => setShowCustomDate(false)}
+                                <div className="mt-3 p-4 bg-white rounded-2xl border border-gray-200/80 shadow-lg text-gray-900 z-50">
+                                    <ReactCalendar
+                                        selectRange={true}
+                                        onChange={(value: any) => {
+                                            if (Array.isArray(value) && value[0] && value[1]) {
+                                                setCustomStartDate(value[0].toISOString().split('T')[0]);
+                                                setCustomEndDate(value[1].toISOString().split('T')[0]);
+                                                setDateFilter('Custom');
+                                            }
+                                        }}
+                                        value={
+                                            customStartDate && customEndDate
+                                                ? [new Date(customStartDate), new Date(customEndDate)]
+                                                : null
+                                        }
+                                        className="border-0 w-full rounded-xl"
                                     />
 
-                                    <div className="fixed left-4 top-32 z-50 bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 max-w-md">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <h4 className="font-bold text-gray-900">Select Date Range</h4>
-                                            <button
-                                                onClick={() => setShowCustomDate(false)}
-                                                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
+                                    <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
+                                        <div className="text-xs text-gray-600 font-medium">
+                                            {customStartDate && customEndDate ? (
+                                                <span className="font-bold text-gray-900">
+                                                    {new Date(customStartDate).toLocaleDateString()} - {new Date(customEndDate).toLocaleDateString()}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400">Select a date range</span>
+                                            )}
                                         </div>
-
-                                        <ReactCalendar
-                                            selectRange={true}
-                                            onChange={(value: any) => {
-                                                if (Array.isArray(value) && value.length === 2) {
-                                                    const [start, end] = value;
-                                                    setCustomStartDate(start.toISOString().split('T')[0]);
-                                                    setCustomEndDate(end.toISOString().split('T')[0]);
-                                                    setDateFilter('Custom');
-                                                }
-                                            }}
-                                            value={
-                                                customStartDate && customEndDate
-                                                    ? [new Date(customStartDate), new Date(customEndDate)]
-                                                    : null
-                                            }
-                                            className="border-0 w-full"
-                                        />
-
-                                        <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
-                                            <div className="text-sm text-gray-600">
-                                                {customStartDate && customEndDate ? (
-                                                    <span>
-                                                        {new Date(customStartDate).toLocaleDateString()} - {new Date(customEndDate).toLocaleDateString()}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-gray-400">Select a date range</span>
-                                                )}
-                                            </div>
+                                        <div className="flex items-center gap-2">
+                                            {(customStartDate || customEndDate) && (
+                                                <button
+                                                    onClick={() => {
+                                                        setCustomStartDate('');
+                                                        setCustomEndDate('');
+                                                        setDateFilter('All Upcoming');
+                                                    }}
+                                                    className="text-xs font-bold text-red-600 hover:underline"
+                                                >
+                                                    Reset
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => setShowCustomDate(false)}
-                                                className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+                                                className="px-3.5 py-1.5 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-black transition-colors cursor-pointer"
                                             >
                                                 Apply
                                             </button>
                                         </div>
                                     </div>
-                                </>
+                                </div>
                             )}
-
-                            <button
-                                onClick={() => setShowCustomDate(!showCustomDate)}
-                                className={`flex items-center gap-2 text-sm font-medium hover:text-black ${dateFilter === 'Custom' ? 'text-black' : 'text-gray-500'}`}
-                            >
-                                Customize
-                                <ChevronDown className={`w-4 h-4 transition-transform ${showCustomDate ? 'rotate-180' : ''}`} />
-                            </button>
                         </section>
 
                         {/* Where? */}
-                        <section>
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-xl font-bold text-gray-900">Where?</h3>
-                                <button className="text-xs text-gray-500 hover:underline hover:text-black" onClick={() => setLocFilter('Nigeria')}>Clear</button>
+                        <section className="pt-4 border-t border-gray-200/60">
+                            <div className="flex items-center justify-between mb-2.5">
+                                <h3 className="text-sm font-extrabold text-gray-900">Where?</h3>
+                                <button
+                                    onClick={() => setLocFilter(detectedCountry)}
+                                    className="text-[11px] font-bold text-gray-900 hover:underline"
+                                >
+                                    Clear
+                                </button>
                             </div>
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                <FilterPill label="Near Me" active={locFilter === 'Near Me'} onClick={() => setLocFilter('Near Me')} icon={MapPin} />
-                                <FilterPill label="Amptive App" active={locFilter === 'Amptive App'} onClick={() => setLocFilter('Amptive App')} />
-                                <FilterPill label="United States" active={locFilter === 'United States'} onClick={() => setLocFilter('United States')} />
-                                <FilterPill label="Nigeria" active={locFilter === 'Nigeria'} onClick={() => setLocFilter('Nigeria')} />
-                                <FilterPill label="France" active={locFilter === 'France'} onClick={() => setLocFilter('France')} />
-                            </div>
-                            <button className="flex items-center gap-2 text-gray-500 text-sm font-medium hover:text-black">
-                                Others
-                                <ChevronDown className="w-4 h-4" />
-                            </button>
-                        </section>
-
-                        {/* Price? */}
-                        <section>
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-xl font-bold text-gray-900">Price?</h3>
-                                <button className="text-xs text-gray-500 hover:underline hover:text-black" onClick={() => setPriceFilter([])}>Clear</button>
-                            </div>
-                            <div className="space-y-3">
-                                {['Free', 'Under ₦5,000', '₦5,000 - ₦20,000', '₦20,000 - ₦50,000', '₦50,000+'].map(price => (
-                                    <label key={price} className="flex items-center gap-3 cursor-pointer group">
-                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${priceFilter.includes(price) ? 'bg-black border-black' : 'border-gray-300 group-hover:border-black bg-white'}`}>
-                                            {priceFilter.includes(price) && <X className="w-3 h-3 text-white" />}
-                                        </div>
-                                        <input
-                                            type="checkbox"
-                                            className="hidden"
-                                            checked={priceFilter.includes(price)}
-                                            onChange={() => {
-                                                if (priceFilter.includes(price)) {
-                                                    setPriceFilter(priceFilter.filter(p => p !== price));
-                                                } else {
-                                                    setPriceFilter([...priceFilter, price]);
-                                                }
-                                            }}
-                                        />
-                                        <span className={`text-sm ${priceFilter.includes(price) ? 'text-gray-900 font-medium' : 'text-gray-600 group-hover:text-gray-900'}`}>{price}</span>
-                                    </label>
+                            <div className="flex flex-wrap gap-2 mb-2">
+                                <button
+                                    onClick={requestNearMe}
+                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                        locFilter === 'Near Me'
+                                            ? 'bg-gray-900 text-white'
+                                            : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                    }`}
+                                >
+                                    <MapPin className={`w-3.5 h-3.5 ${locFilter === 'Near Me' ? 'text-white' : 'text-gray-700'}`} />
+                                    Near Me
+                                </button>
+                                {/* User's detected country + Amptive App */}
+                                {[detectedCountry, 'Amptive App'].map(loc => (
+                                    <button
+                                        key={loc}
+                                        onClick={() => setLocFilter(loc)}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            locFilter === loc
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {loc}
+                                    </button>
+                                ))}
+                                {/* Cities for user's detected country */}
+                                {(COUNTRY_CITIES[detectedCountry] || []).map(city => (
+                                    <button
+                                        key={city}
+                                        onClick={() => setLocFilter(city)}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            locFilter === city
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {city}
+                                    </button>
+                                ))}
+                                {/* Other countries (not the detected one) */}
+                                {Object.keys(COUNTRY_CITIES).filter(c => c !== detectedCountry).map(country => (
+                                    <button
+                                        key={country}
+                                        onClick={() => setLocFilter(country)}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            locFilter === country
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {country}
+                                    </button>
                                 ))}
                             </div>
-                        </section>
-
-                        {/* Communities */}
-                        <section>
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg text-gray-900 font-bold">
-                                    By Community
-                                </h3>
-                                <button className="text-xs text-gray-500 hover:underline hover:text-black" onClick={() => setCommunityFilter('all')}>Reset</button>
-                            </div>
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                <FilterPill
-                                    label="All Communities"
-                                    active={communityFilter === 'all'}
-                                    onClick={() => setCommunityFilter('all')}
+                            {/* Custom location search */}
+                            <div className="relative mt-1">
+                                <MapPin className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    placeholder="Type a city or location..."
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                                            setLocFilter((e.target as HTMLInputElement).value.trim());
+                                        }
+                                    }}
+                                    className="w-full bg-gray-50 hover:bg-gray-100 focus:bg-white border border-gray-200/60 focus:border-gray-300 rounded-full py-2 px-3.5 pl-9 text-xs font-medium text-gray-900 placeholder:text-gray-400 transition-all outline-none"
                                 />
-                                {communities.map(c => (
-                                    <FilterPill
-                                        key={c.community_id}
-                                        label={c.name}
-                                        active={communityFilter === c.community_id}
-                                        onClick={() => setCommunityFilter(c.community_id)}
-                                    />
+                            </div>
+                        </section>
+
+                        {/* Price? (Simple Clean Range Slider) */}
+                        <section className="pt-4 border-t border-gray-200/60">
+                            <div className="flex items-center justify-between mb-2.5">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-extrabold text-gray-900">Price?</h3>
+                                    <span className="bg-gray-900 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                        {maxPrice === 100000
+                                            ? 'Any Price'
+                                            : maxPrice === 0
+                                            ? 'Free Only'
+                                            : `Up to ₦${maxPrice.toLocaleString()}`}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => setMaxPrice(100000)}
+                                    className="text-[11px] font-bold text-gray-900 hover:underline cursor-pointer"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+
+                            <input
+                                type="range"
+                                min="0"
+                                max="100000"
+                                step="5000"
+                                value={maxPrice}
+                                onChange={(e) => setMaxPrice(Number(e.target.value))}
+                                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900 my-2"
+                            />
+
+                            {/* Quick Presets */}
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                                {[
+                                    { label: 'Free', val: 0 },
+                                    { label: 'Under ₦10k', val: 10000 },
+                                    { label: 'Under ₦50k', val: 50000 },
+                                    { label: 'Any', val: 100000 },
+                                ].map((preset) => (
+                                    <button
+                                        key={preset.label}
+                                        onClick={() => setMaxPrice(preset.val)}
+                                        className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                                            maxPrice === preset.val
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {preset.label}
+                                    </button>
                                 ))}
                             </div>
                         </section>
 
+                        {/* By Community */}
+                        {communities.length > 0 && (
+                            <section className="pt-4 border-t border-gray-200/60">
+                                <div className="flex items-center justify-between mb-2.5">
+                                    <h3 className="text-sm font-extrabold text-gray-900">By Community</h3>
+                                    <button
+                                        onClick={() => setCommunityFilter('all')}
+                                        className="text-[11px] font-bold text-gray-900 hover:underline"
+                                    >
+                                        Reset
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button
+                                        onClick={() => setCommunityFilter('all')}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            communityFilter === 'all'
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-800 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        All Communities
+                                    </button>
+                                    {communities.map(c => (
+                                        <button
+                                            key={c.community_id}
+                                            onClick={() => setCommunityFilter(c.community_id)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                                communityFilter === c.community_id
+                                                    ? 'bg-gray-900 text-white'
+                                                    : 'bg-white text-gray-800 border border-gray-200/60'
+                                            }`}
+                                        >
+                                            {c.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+                        {/* Mobile Apply Button */}
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowFloatingFilters(false)}
+                                className="w-full py-3 bg-gray-900 text-white rounded-2xl font-bold text-sm hover:bg-black transition-colors cursor-pointer shadow-md"
+                            >
+                                Apply Filters
+                            </button>
+                        </div>
                     </div>
 
-
-                    {/* MAIN CONTENT */}
-                    <div className="flex-1 min-w-0">
-
-                        {/* Main Header & Search */}
-                        <div className="mb-8">
-                            <div className="flex justify-between items-center mb-2">
-                                <h2 className="text-xl font-bold text-black">{events.length} Events</h2>
-                                <div className="hidden lg:flex bg-gray-100 p-1 rounded-xl">
-                                    <button onClick={() => setViewMode('list')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'list' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>List</button>
-                                    <button onClick={() => setViewMode('map')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'map' ? 'bg-white shadow text-black' : 'text-gray-500'}`}>Map</button>
+                    {/* DESKTOP TOP-LEFT FLOATING FILTER PANEL OVERLAY (DESKTOP ONLY) */}
+                    <div
+                        className={`hidden sm:block absolute top-[140px] left-4 z-40 w-96 bg-[#f4f7f2]/95 backdrop-blur-2xl border border-white/80 rounded-3xl p-5 max-h-[65vh] overflow-y-auto space-y-6 text-gray-900 transition-all duration-300 ease-out origin-top-left ${
+                            showFloatingFilters
+                                ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto shadow-xl'
+                                : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+                        }`}
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between pb-3 border-b border-gray-200/80">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-full bg-gray-900 flex items-center justify-center">
+                                    <Sliders className="w-3.5 h-3.5 text-white" />
                                 </div>
+                                <span className="font-bold text-sm text-gray-900">Filter Events</span>
                             </div>
+                            <button
+                                onClick={() => setShowFloatingFilters(false)}
+                                className="text-xs font-bold text-gray-900 hover:underline cursor-pointer"
+                            >
+                                Hide
+                            </button>
                         </div>
 
-                        {/* CONTENT: MAP or LIST */}
-                        {viewMode === 'map' ? (
-                            <ExploreLeafletMap events={events} locFilter={locFilter} onSelectEvent={(eventId) => navigate(`/events/${eventId}`)} />
-                        ) : (
-                            <div className="space-y-4">
-                                {loading ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {[...Array(8)].map((_, i) => (
-                                            <div key={i} className="flex items-center gap-4 p-2 rounded-2xl w-full">
-                                                <div className="w-20 h-20 shrink-0 rounded-xl bg-gray-100 animate-pulse" />
-                                                <div className="flex-1 space-y-3 py-1">
-                                                    <div className="h-3 bg-gray-100 rounded w-24 animate-pulse" />
-                                                    <div className="h-5 bg-gray-100 rounded w-3/4 animate-pulse" />
-                                                    <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse" />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : events.length > 0 ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-8 duration-700 fill-mode-both">
-                                        {events.map((event, index) => {
-                                            const eventDate = event.scheduled_for ? new Date(event.scheduled_for) : null;
-                                            const isToday = eventDate ? new Date().toDateString() === eventDate.toDateString() : false;
-                                            const isTomorrow = eventDate ? new Date(Date.now() + 86400000).toDateString() === eventDate.toDateString() : false;
+                        {/* When? */}
+                        <section>
+                            <h3 className="text-sm font-extrabold text-gray-900 mb-2.5">When?</h3>
+                            <div className="flex flex-wrap gap-2 mb-1.5">
+                                {['All Upcoming', 'Today', 'Tomorrow', 'This Weekend'].map(label => (
+                                    <button
+                                        key={label}
+                                        onClick={() => {
+                                            setDateFilter(label);
+                                            setCustomStartDate('');
+                                            setCustomEndDate('');
+                                            setShowCustomDate(false);
+                                        }}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            dateFilter === label && !customStartDate && !customEndDate
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
 
-                                            let dateDisplay = eventDate ? eventDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBA';
-                                            if (isToday) dateDisplay = 'Today';
-                                            if (isTomorrow) dateDisplay = 'Tomorrow';
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                <button
+                                    onClick={() => setShowCustomDate(!showCustomDate)}
+                                    className="flex items-center gap-1 text-[11px] font-bold text-gray-900 hover:underline cursor-pointer"
+                                >
+                                    Custom Range
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showCustomDate ? 'rotate-180' : ''}`} />
+                                </button>
 
-                                            const timeDisplay = eventDate ? eventDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-
-                                            return (
-                                                <Link
-                                                    key={event.event_id}
-                                                    to={`/events/${event.event_id}`}
-                                                    className="group flex items-center gap-4 p-2 rounded-2xl hover:bg-gray-50 transition-colors w-full relative cursor-pointer block"
-                                                    style={{ animationDelay: `${index * 50}ms` }}
-                                                >
-                                                    {/* Cover Image */}
-                                                    <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 border border-gray-100 group-hover:scale-[1.02] transition-transform duration-500">
-                                                        {event.thumbnail_url ? (
-                                                            <img src={event.thumbnail_url} alt={event.title} className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                                                <Calendar className="w-8 h-8 opacity-50" />
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Content */}
-                                                    <div className="flex-1 min-w-0 flex flex-col justify-center h-full">
-                                                        {/* Time & Badge */}
-                                                        <div className="flex items-center gap-2 mb-0.5">
-                                                            <span className="text-sm font-medium text-gray-500 uppercase tracking-tight">
-                                                                {dateDisplay}{timeDisplay ? `, ${timeDisplay}` : ''}
-                                                            </span>
-                                                            {isToday && (
-                                                                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">
-                                                                    LIVE
-                                                                </span>
-                                                            )}
-                                                        </div>
-
-                                                        {/* Title */}
-                                                        <h3 className="text-base font-bold text-gray-900 truncate group-hover:text-black transition-colors">
-                                                            {event.title}
-                                                        </h3>
-
-                                                        {/* Location */}
-                                                        <div className="text-sm text-gray-500 truncate mt-0.5">
-                                                            {event.location?.type === 'online' || event.venue?.venue_type === 'virtual' ? 'Online' : (
-                                                                [event.location?.venue || event.venue?.name, event.location?.city || event.venue?.city].filter(Boolean).join(', ') || 'TBA'
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </Link>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="py-20 text-center text-gray-500">
-                                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <Search className="w-6 h-6 text-gray-400" />
-                                        </div>
-                                        <h3 className="text-lg font-semibold text-gray-900">No events found</h3>
-                                        <p>Try adjusting your filters or search terms.</p>
-                                    </div>
+                                {(customStartDate || customEndDate) && (
+                                    <span className="flex items-center gap-1.5 bg-gray-900 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                                        <span>
+                                            {customStartDate ? new Date(customStartDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '...'} - {customEndDate ? new Date(customEndDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '...'}
+                                        </span>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setCustomStartDate('');
+                                                setCustomEndDate('');
+                                                setDateFilter('All Upcoming');
+                                            }}
+                                            className="hover:bg-gray-700 p-0.5 rounded-full cursor-pointer transition-colors"
+                                            title="Clear custom date range"
+                                        >
+                                            <X className="w-3 h-3 text-white" />
+                                        </button>
+                                    </span>
                                 )}
                             </div>
+
+                            {showCustomDate && (
+                                <div className="mt-3 p-4 bg-white rounded-2xl border border-gray-200/80 shadow-lg text-gray-900 z-50">
+                                    <ReactCalendar
+                                        selectRange={true}
+                                        onChange={(value: any) => {
+                                            if (Array.isArray(value) && value[0] && value[1]) {
+                                                setCustomStartDate(value[0].toISOString().split('T')[0]);
+                                                setCustomEndDate(value[1].toISOString().split('T')[0]);
+                                                setDateFilter('Custom');
+                                            }
+                                        }}
+                                        value={
+                                            customStartDate && customEndDate
+                                                ? [new Date(customStartDate), new Date(customEndDate)]
+                                                : null
+                                        }
+                                        className="border-0 w-full rounded-xl"
+                                    />
+
+                                    <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
+                                        <div className="text-xs text-gray-600 font-medium">
+                                            {customStartDate && customEndDate ? (
+                                                <span className="font-bold text-gray-900">
+                                                    {new Date(customStartDate).toLocaleDateString()} - {new Date(customEndDate).toLocaleDateString()}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400">Select a date range</span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {(customStartDate || customEndDate) && (
+                                                <button
+                                                    onClick={() => {
+                                                        setCustomStartDate('');
+                                                        setCustomEndDate('');
+                                                        setDateFilter('All Upcoming');
+                                                    }}
+                                                    className="text-xs font-bold text-red-600 hover:underline"
+                                                >
+                                                    Reset
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => setShowCustomDate(false)}
+                                                className="px-3.5 py-1.5 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-black transition-colors cursor-pointer"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+
+                        {/* Where? */}
+                        <section className="pt-4 border-t border-gray-200/60">
+                            <div className="flex items-center justify-between mb-2.5">
+                                <h3 className="text-sm font-extrabold text-gray-900">Where?</h3>
+                                <button
+                                    onClick={() => setLocFilter(detectedCountry)}
+                                    className="text-[11px] font-bold text-gray-900 hover:underline"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mb-2">
+                                <button
+                                    onClick={requestNearMe}
+                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                        locFilter === 'Near Me'
+                                            ? 'bg-gray-900 text-white'
+                                            : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                    }`}
+                                >
+                                    <MapPin className={`w-3.5 h-3.5 ${locFilter === 'Near Me' ? 'text-white' : 'text-gray-700'}`} />
+                                    Near Me
+                                </button>
+                                {/* User's detected country + Amptive App */}
+                                {[detectedCountry, 'Amptive App'].map(loc => (
+                                    <button
+                                        key={loc}
+                                        onClick={() => setLocFilter(loc)}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            locFilter === loc
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {loc}
+                                    </button>
+                                ))}
+                                {/* Cities for user's detected country */}
+                                {(COUNTRY_CITIES[detectedCountry] || []).map(city => (
+                                    <button
+                                        key={city}
+                                        onClick={() => setLocFilter(city)}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            locFilter === city
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {city}
+                                    </button>
+                                ))}
+                                {/* Other countries (not the detected one) */}
+                                {Object.keys(COUNTRY_CITIES).filter(c => c !== detectedCountry).map(country => (
+                                    <button
+                                        key={country}
+                                        onClick={() => setLocFilter(country)}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            locFilter === country
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-900 hover:bg-gray-50 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {country}
+                                    </button>
+                                ))}
+                            </div>
+                            {/* Custom location search */}
+                            <div className="relative mt-1">
+                                <MapPin className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    placeholder="Type a city or location..."
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                                            setLocFilter((e.target as HTMLInputElement).value.trim());
+                                        }
+                                    }}
+                                    className="w-full bg-gray-50 hover:bg-gray-100 focus:bg-white border border-gray-200/60 focus:border-gray-300 rounded-full py-2 px-3.5 pl-9 text-xs font-medium text-gray-900 placeholder:text-gray-400 transition-all outline-none"
+                                />
+                            </div>
+                        </section>
+
+                        {/* Price? (Simple Clean Range Slider) */}
+                        <section className="pt-4 border-t border-gray-200/60">
+                            <div className="flex items-center justify-between mb-2.5">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-extrabold text-gray-900">Price?</h3>
+                                    <span className="bg-gray-900 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                        {maxPrice === 100000
+                                            ? 'Any Price'
+                                            : maxPrice === 0
+                                            ? 'Free Only'
+                                            : `Up to ₦${maxPrice.toLocaleString()}`}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => setMaxPrice(100000)}
+                                    className="text-[11px] font-bold text-gray-900 hover:underline cursor-pointer"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+
+                            <input
+                                type="range"
+                                min="0"
+                                max="100000"
+                                step="5000"
+                                value={maxPrice}
+                                onChange={(e) => setMaxPrice(Number(e.target.value))}
+                                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900 my-2"
+                            />
+
+                            {/* Quick Presets */}
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                                {[
+                                    { label: 'Free', val: 0 },
+                                    { label: 'Under ₦10k', val: 10000 },
+                                    { label: 'Under ₦50k', val: 50000 },
+                                    { label: 'Any', val: 100000 },
+                                ].map((preset) => (
+                                    <button
+                                        key={preset.label}
+                                        onClick={() => setMaxPrice(preset.val)}
+                                        className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                                            maxPrice === preset.val
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        {preset.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* By Community */}
+                        {communities.length > 0 && (
+                            <section className="pt-4 border-t border-gray-200/60">
+                                <div className="flex items-center justify-between mb-2.5">
+                                    <h3 className="text-sm font-extrabold text-gray-900">By Community</h3>
+                                    <button
+                                        onClick={() => setCommunityFilter('all')}
+                                        className="text-[11px] font-bold text-gray-900 hover:underline"
+                                    >
+                                        Reset
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button
+                                        onClick={() => setCommunityFilter('all')}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                            communityFilter === 'all'
+                                                ? 'bg-gray-900 text-white'
+                                                : 'bg-white text-gray-800 border border-gray-200/60'
+                                        }`}
+                                    >
+                                        All Communities
+                                    </button>
+                                    {communities.map(c => (
+                                        <button
+                                            key={c.community_id}
+                                            onClick={() => setCommunityFilter(c.community_id)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                                                communityFilter === c.community_id
+                                                    ? 'bg-gray-900 text-white'
+                                                    : 'bg-white text-gray-800 border border-gray-200/60'
+                                            }`}
+                                        >
+                                            {c.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
                         )}
                     </div>
 
+                    {/* FIXED RIGHT SIDEBAR EVENT LIST PANEL */}
+                    <div className={`absolute top-0 right-0 bottom-0 z-20 bg-white/95 backdrop-blur-xl border-l border-gray-200/90 p-6 pt-28 overflow-y-auto space-y-4 flex-col text-gray-900 shadow-md sm:flex sm:w-[380px] lg:w-[420px] ${
+                        viewMode === 'list' ? 'flex w-full' : 'hidden'
+                    }`}>
+                        <div>
+                            <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight mb-1">
+                                {locFilter === 'Near Me'
+                                    ? 'Events Near You'
+                                    : locFilter
+                                    ? `Events in ${locFilter}`
+                                    : 'Explore Events'}
+                            </h2>
+                            <p className="text-sm text-gray-500 font-medium leading-snug">
+                                {locFilter === 'Near Me'
+                                    ? 'Discover upcoming events, meetups, workshops, and community gatherings near you.'
+                                    : `Discover upcoming events, meetups, workshops, and community gatherings in ${locFilter || 'Nigeria'}.`}
+                            </p>
+                        </div>
+
+                        {/* Search bar & Mobile Filter Button */}
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    placeholder="Search events, hosts, or locations..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full bg-[#f4f4f5] hover:bg-[#eaeaea] focus:bg-white border border-transparent focus:border-gray-300 rounded-full py-2.5 px-4 pl-10 text-sm font-normal placeholder:font-normal placeholder:text-gray-400 text-gray-900 transition-all outline-none"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowFloatingFilters(!showFloatingFilters)}
+                                title="Filter Events"
+                                aria-label="Filter Events"
+                                className="sm:hidden flex items-center justify-center w-10 h-10 shrink-0 rounded-full bg-gray-900 text-white hover:bg-black transition-colors shadow-sm cursor-pointer"
+                            >
+                                <Sliders className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Event List Items */}
+                        <div className="space-y-1 pt-1 flex-1 overflow-y-auto pr-1">
+                            {loading ? (
+                                <div className="space-y-4">
+                                    {[...Array(4)].map((_, i) => (
+                                        <div key={i} className="flex items-center gap-3 p-2 rounded-2xl w-full">
+                                            <div className="w-20 h-20 shrink-0 rounded-2xl bg-gray-100 animate-pulse" />
+                                            <div className="flex-1 space-y-2 py-1">
+                                                <div className="h-3 bg-gray-100 rounded w-20 animate-pulse" />
+                                                <div className="h-4 bg-gray-100 rounded w-3/4 animate-pulse" />
+                                                <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                ) : events.length > 0 ? (
+                                events.map((event, index) => {
+                                    const eventDate = event.scheduled_for ? new Date(event.scheduled_for) : null;
+                                    const dateStr = eventDate 
+                                        ? eventDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                                        : 'TBA';
+
+                                    const isEvVirtual = event.venue?.venue_type === 'virtual' || 
+                                                         event.location?.type === 'online' || 
+                                                         (event as any).is_online || 
+                                                         (event as any).is_virtual;
+                                    const venueName = event.venue?.name || event.location?.venue || (event as any).venue_name || '';
+                                    const venueAddress = event.location?.address || event.venue?.address || '';
+                                    const cityName = event.venue?.city || event.location?.city || '';
+                                    const rawFull = [venueName || venueAddress, cityName].filter(Boolean).join(', ');
+                                    const fullLoc = isEvVirtual || !rawFull || rawFull === 'TBD' || rawFull === 'TBA'
+                                        ? 'Amptive App'
+                                        : rawFull;
+
+                                    return (
+                                        <div key={event.event_id}>
+                                            <Link
+                                                to={`/events/${event.event_id}`}
+                                                className="group flex items-center gap-4 p-2 rounded-2xl hover:bg-gray-50 transition-colors w-full relative cursor-pointer block"
+                                                style={{ animationDelay: `${index * 50}ms` }}
+                                            >
+                                                {/* Thumbnail Container */}
+                                                <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden bg-gray-200 border border-gray-100 group-hover:scale-[1.02] transition-transform duration-500">
+                                                    <img 
+                                                        src={event.thumbnail_url || '/images/IMG_6053 2.JPG'} 
+                                                        alt={event.title}
+                                                        className="w-full h-full object-cover" 
+                                                        onError={(e: any) => { e.target.src = '/images/IMG_6053 2.JPG'; }}
+                                                    />
+                                                </div>
+
+                                                {/* Details */}
+                                                <div className="flex-1 min-w-0 flex flex-col justify-center h-full">
+                                                    <div className="flex items-center gap-2 mb-0.5">
+                                                        <span className="text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-tight">
+                                                            {dateStr}
+                                                        </span>
+                                                    </div>
+
+                                                    <h3 className="text-base font-bold text-gray-900 truncate group-hover:text-black transition-colors">
+                                                        {event.title}
+                                                    </h3>
+
+                                                    <div className="text-xs sm:text-sm text-gray-500 truncate mt-0.5">
+                                                        {fullLoc}
+                                                    </div>
+                                                </div>
+                                            </Link>
+                                            {index < events.length - 1 && (
+                                                <div className="my-1.5 mx-4 border-t border-gray-100/90" />
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="py-10 text-center text-gray-500">
+                                    <p className="text-sm font-semibold">No events found in {locFilter === 'Near Me' ? 'your area' : (locFilter || 'this area')}.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* MOBILE VIEW TOGGLE FLOATING PILL (MOBILE ONLY) */}
+                    <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 sm:hidden transition-all duration-300 ${
+                        showFloatingFilters ? 'opacity-0 scale-90 pointer-events-none' : 'opacity-100 scale-100'
+                    }`}>
+                        <div className="bg-white/95 text-gray-900 backdrop-blur-2xl p-1 rounded-full shadow-2xl flex items-center border border-gray-200/80">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('map')}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                                    viewMode === 'map'
+                                        ? 'bg-gray-900 text-white shadow-md'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <MapIcon className="w-3.5 h-3.5" />
+                                <span>Map</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('list')}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                                    viewMode === 'list'
+                                        ? 'bg-gray-900 text-white shadow-md'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <List className="w-3.5 h-3.5" />
+                                <span>List</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

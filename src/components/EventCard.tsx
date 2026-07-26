@@ -169,12 +169,6 @@ const nigerianLocations = [
   'GRA, Calabar'
 ];
 
-// Function to get a random Nigerian location
-const getRandomLocation = () => {
-  const randomIndex = Math.floor(Math.random() * nigerianLocations.length);
-  return nigerianLocations[randomIndex];
-};
-
 const EventCard: React.FC<EventCardProps> = ({
   title,
   location: propLocation,
@@ -185,9 +179,14 @@ const EventCard: React.FC<EventCardProps> = ({
   hasEarlyBirdOnSale,
   isAlmostSoldOut
 }) => {
-  // Use the provided location or get a random one if not provided
-  const [location] = React.useState(propLocation || getRandomLocation());
-  
+  // Format location string cleanly, defaulting virtual/empty/TBD/TBA to 'Amptive App'
+  const location = React.useMemo(() => {
+    if (!propLocation || propLocation === 'TBD' || propLocation === 'TBA' || propLocation === 'Venue' || propLocation === 'Online' || propLocation.toLowerCase() === 'online') {
+      return 'Amptive App';
+    }
+    return propLocation;
+  }, [propLocation]);
+
   // Format the price or show 'Free' if price is 0 or not provided
   const priceDisplay = React.useMemo(() => {
     // Handle sold out status - always show 'Sold Out' regardless of price
@@ -213,6 +212,7 @@ const EventCard: React.FC<EventCardProps> = ({
     // Handle single price
     return formatPrice(propPrice as number);
   }, [propPrice, status]);
+
   return (
     <div className="bg-white rounded-lg overflow-hidden shadow-sm transition-colors border border-gray-200 hover:border-gray-300 text-sm">
       {/* Media Thumbnail */}
@@ -251,12 +251,12 @@ const EventCard: React.FC<EventCardProps> = ({
         )}
         
         {/* Title */}
-        <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{title}</h3>
+        <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 truncate block w-full">{title}</h3>
         
         {/* Location */}
         <div className="flex flex-col mb-2">
           <span className="text-xs text-gray-500">Location</span>
-          <span className="font-medium text-sm text-gray-600 truncate sm:whitespace-normal sm:overflow-visible">{location}</span>
+          <span className="font-medium text-sm text-gray-600 truncate block w-full">{location}</span>
         </div>
         
         {/* Price */}
