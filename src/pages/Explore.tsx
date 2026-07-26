@@ -113,6 +113,54 @@ function getEventCoords(event: StandaloneEvent, index: number): { lat: number; l
     };
 }
 
+// ---- Event enrichment -------------------------------------------------------------
+// The list endpoint omits venue, host avatar and ticket prices, so every event needs
+// follow-up calls. Awaiting all of them before painting meant up to 300 requests had to
+// finish before anything appeared — the main cause of the sluggish Explore page on a
+// phone. Instead the list paints immediately and these details fill in behind it, a few
+// at a time, with caches so the same venue/host/tickets are never fetched twice.
+const venueCache = new Map<string, any>();
+const hostProfileCache = new Map<string, any>();
+const ticketsCache = new Map<string, any[]>();
+
+const ENRICH_CONCURRENCY = 6;
+const ENRICH_CHUNK = 8;
+
+const priceFromRawEvent = (event: any): number => {
+    const raw = Number(event?.price ?? event?.min_price ?? event?.unit_price);
+    return !isNaN(raw) && raw > 0 ? raw : 0;
+};
+
+async function cachedFetch<T>(cache: Map<string, T>, key: string, load: () => Promise<T>): Promise<T | null> {
+    if (cache.has(key)) return cache.get(key) as T;
+    try {
+        const value = await load();
+        cache.set(key, value);
+        return value;
+    } catch {
+        return null;
+    }
+}
+
+// Runs `worker` over the list with at most `limit` requests in flight, stopping early
+// when the caller signals the result is stale (e.g. the community filter changed).
+async function mapWithConcurrency<T>(
+    items: T[],
+    limit: number,
+    worker: (item: T, index: number) => Promise<void>,
+    isStale: () => boolean
+): Promise<void> {
+    let cursor = 0;
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (cursor < items.length) {
+            if (isStale()) return;
+            const index = cursor++;
+            await worker(items[index], index);
+        }
+    });
+    await Promise.all(runners);
+}
+
 // How far out "Near Me" reaches — wide enough to cover a metro area and its outskirts.
 const NEAR_ME_RADIUS_KM = 75;
 
@@ -882,8 +930,12 @@ export default function Explore() {
         );
     };
 
-    const [showFloatingFilters, setShowFloatingFilters] = useState(true);
+    // Closed on arrival — the filter panel opens only when the visitor asks for it.
+    const [showFloatingFilters, setShowFloatingFilters] = useState(false);
     const [hasMovedMap, setHasMovedMap] = useState(false);
+    // Identifies the newest events request, so background enrichment from an older one
+    // (say, the previous community filter) can't overwrite fresher results.
+    const fetchIdRef = useRef(0);
     const [maxPrice, setMaxPrice] = useState<number>(() => Number(sessionStorage.getItem('explore_maxPrice')) || 100000);
     const [customStartDate, setCustomStartDate] = useState(() => sessionStorage.getItem('explore_customStartDate') || '');
     const [customEndDate, setCustomEndDate] = useState(() => sessionStorage.getItem('explore_customEndDate') || '');
@@ -927,95 +979,113 @@ export default function Explore() {
         }
     }, [urlCommunity]);
 
+    // Fills in one event's venue, host avatar and ticket pricing. Returns null when there
+    // was nothing to add, so unchanged events don't trigger pointless re-renders.
+    const enrichEvent = async (event: any): Promise<any | null> => {
+        let updated = event;
+        let changed = false;
+
+        if (!updated.venue && updated.venue_id) {
+            const venue = await cachedFetch(venueCache, updated.venue_id, () => getVenue(updated.venue_id));
+            if (venue) {
+                updated = { ...updated, venue };
+                changed = true;
+            }
+        }
+
+        const hostId = updated.host?.user_id || updated.host?.id || updated.host_id || updated.user_id || updated.created_by;
+        const avatar = updated.host?.profile_picture || updated.host?.avatar_url || updated.host?.profile_image_url || updated.host_avatar_url || updated.host?.user_avatar;
+
+        if (hostId && !avatar) {
+            const profile = await cachedFetch(hostProfileCache, hostId, () => getProfileByUserId(hostId));
+            const pic = profile?.profile_picture || profile?.avatar_url;
+            if (pic) {
+                updated = {
+                    ...updated,
+                    host: {
+                        ...updated.host,
+                        user_id: hostId,
+                        username: profile?.username || updated.host?.username || '',
+                        name: profile?.name || updated.host?.name || '',
+                        profile_picture: pic,
+                        avatar_url: pic,
+                    },
+                };
+                changed = true;
+            }
+        }
+
+        const tickets = await cachedFetch(ticketsCache, event.event_id, () => getTicketsForEvent(event.event_id));
+        if (tickets && tickets.length > 0) {
+            const sellable = tickets
+                .filter((t: any) => t.is_active !== false && t.active !== false && !t.sold_out)
+                .map((t: any) => Number(t.price))
+                .filter((p: number) => !isNaN(p));
+            const allPrices = tickets.map((t: any) => Number(t.price)).filter((p: number) => !isNaN(p));
+            const prices = sellable.length > 0 ? sellable : allPrices;
+            const minPrice = prices.length > 0 ? Math.min(...prices) : priceFromRawEvent(event);
+
+            updated = { ...updated, ticket_types: tickets, price_min: minPrice, min_price: minPrice, price: minPrice };
+            changed = true;
+        }
+
+        return changed ? updated : null;
+    };
+
     const fetchEvents = async () => {
+        const requestId = ++fetchIdRef.current;
+        const isStale = () => requestId !== fetchIdRef.current;
+
         setLoading(true);
         try {
             const eventsData = await listEvents({
                 page_size: 100,
                 communityId: communityFilter !== 'all' ? communityFilter : undefined,
             });
+            if (isStale()) return;
 
-            let enriched: any[] = [];
-            if (eventsData && eventsData.length > 0) {
-                enriched = await Promise.all(
-                    eventsData.map(async (e) => {
-                        let updated = { ...e };
-                        
-                        // 1. Fetch missing venue details
-                        if (!updated.venue && updated.venue_id) {
-                            try {
-                                const venue = await getVenue(updated.venue_id);
-                                if (venue) {
-                                    updated.venue = venue;
-                                }
-                            } catch (err) {
-                                // ignore
-                            }
-                        }
+            // Paint what the list endpoint already gave us — titles, dates, thumbnails and
+            // any price it carried — instead of waiting on the follow-up calls.
+            const base = (eventsData || []).map((e: any) => {
+                const raw = priceFromRawEvent(e);
+                return { ...e, price_min: raw, min_price: raw, price: raw };
+            });
+            setRawEvents(base);
+            setLoading(false);
 
-                        // 2. Fetch missing host profile avatar
-                        const hostId = updated.host?.user_id || (updated.host as any)?.id || (updated as any).host_id || (updated as any).user_id || (updated as any).created_by;
-                        let avatar = updated.host?.profile_picture || (updated.host as any)?.avatar_url || (updated.host as any)?.profile_image_url || (updated as any).host_avatar_url || (updated.host as any)?.user_avatar;
+            if (base.length === 0) return;
 
-                        if (hostId && !avatar) {
-                            try {
-                                const profile = await getProfileByUserId(hostId);
-                                if (profile && (profile.profile_picture || profile.avatar_url)) {
-                                    const pic = profile.profile_picture || profile.avatar_url;
-                                    updated.host = {
-                                        ...updated.host,
-                                        user_id: hostId,
-                                        username: profile.username || updated.host?.username || '',
-                                        name: profile.name || updated.host?.name || '',
-                                        profile_picture: pic,
-                                        avatar_url: pic,
-                                    };
-                                }
-                            } catch (err) {
-                                // ignore
-                            }
-                        }
+            // Then fill in the details a few at a time, committing each chunk so cards
+            // update progressively rather than after every request has finished.
+            const merged = [...base];
+            let pending = 0;
 
-                        // 3. Fetch ticket options and calculate actual minimum price
-                        let minPrice = 0;
-                        try {
-                            const tickets = await getTicketsForEvent(e.event_id);
-                            if (tickets && tickets.length > 0) {
-                                updated.ticket_types = tickets;
-                                const validPrices = tickets
-                                    .filter(t => t.is_active !== false && t.active !== false && !t.sold_out)
-                                    .map(t => Number(t.price))
-                                    .filter(p => !isNaN(p));
-                                
-                                if (validPrices.length > 0) {
-                                    minPrice = Math.min(...validPrices);
-                                } else {
-                                    const allPrices = tickets.map(t => Number(t.price)).filter(p => !isNaN(p));
-                                    if (allPrices.length > 0) minPrice = Math.min(...allPrices);
-                                }
-                            } else {
-                                const rawPrice = Number((e as any).price ?? (e as any).min_price ?? (e as any).unit_price);
-                                if (!isNaN(rawPrice) && rawPrice > 0) minPrice = rawPrice;
-                            }
-                        } catch (err) {
-                            const rawPrice = Number((e as any).price ?? (e as any).min_price ?? (e as any).unit_price);
-                            if (!isNaN(rawPrice) && rawPrice > 0) minPrice = rawPrice;
-                        }
+            const flush = () => {
+                if (pending === 0 || isStale()) return;
+                pending = 0;
+                setRawEvents([...merged]);
+            };
 
-                        updated.price_min = minPrice;
-                        updated.min_price = minPrice;
-                        updated.price = minPrice;
+            await mapWithConcurrency(
+                base,
+                ENRICH_CONCURRENCY,
+                async (event, index) => {
+                    const updated = await enrichEvent(event);
+                    if (isStale() || !updated) return;
+                    merged[index] = updated;
+                    pending += 1;
+                    if (pending >= ENRICH_CHUNK) flush();
+                },
+                isStale
+            );
 
-                        return updated;
-                    })
-                );
-            }
-            setRawEvents(enriched);
+            flush();
         } catch (error) {
             console.error('Error fetching events:', error);
-            setRawEvents([]);
-        } finally {
-            setLoading(false);
+            if (!isStale()) {
+                setRawEvents([]);
+                setLoading(false);
+            }
         }
     };
 
