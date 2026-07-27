@@ -52,14 +52,10 @@ const TrendingCard: React.FC<TrendingCardProps> = ({
             className="w-12 h-12 rounded-md object-cover"
           />
           <button
-            className={`px-3.5 py-1.5 text-xs font-bold rounded-full transition-all whitespace-nowrap flex items-center gap-1.5 shadow-xs ${
-              isLive
-                ? 'bg-red-600 text-white hover:bg-red-700'
-                : 'bg-white hover:bg-gray-100 text-gray-900 font-semibold'
-            }`}
+            className="px-3.5 py-1.5 bg-white hover:bg-gray-100 text-gray-900 text-xs font-bold rounded-full transition-all whitespace-nowrap flex items-center gap-1.5 shadow-xs"
             type="button"
           >
-            {isLive && <span className="w-2 h-2 rounded-full bg-white animate-pulse" />}
+            {isLive && <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />}
             {ctaLabel}
           </button>
         </div>
