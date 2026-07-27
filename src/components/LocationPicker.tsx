@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {  MapPin , Loader2 } from "lucide-react";
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { geocodeAddressQuery, tryDecodePlusCode } from '@/lib/geocoding';
 
 interface LocationPickerProps {
     onLocationSelect: (venue: string, city: string, lat?: number, lng?: number) => void;
@@ -39,7 +40,8 @@ export default function LocationPicker({
     const debounceTimer = useRef<NodeJS.Timeout>();
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    const apiKey = import.meta.env.VITE_TOMTOM_API_KEY;
+    const tomtomKey = import.meta.env.VITE_TOMTOM_API_KEY;
+    const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
 
     // Close suggestions when clicking outside
     useEffect(() => {
@@ -53,25 +55,92 @@ export default function LocationPicker({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Convert a Mapbox feature to the TomTomResult shape used throughout this component
+    const mapboxToResult = (feature: any): TomTomResult => {
+        const ctx = (type: string) => feature.context?.find((c: any) => c.id?.startsWith(type))?.text || '';
+        return {
+            id: feature.id || feature.properties?.mapbox_id || '',
+            poi: feature.text ? { name: feature.text } : undefined,
+            address: {
+                freeformAddress: feature.place_name || '',
+                municipality: ctx('place') || ctx('locality'),
+                countrySubdivision: ctx('region'),
+                country: ctx('country'),
+            },
+            position: {
+                lat: feature.center?.[1] ?? feature.geometry?.coordinates?.[1] ?? 0,
+                lon: feature.center?.[0] ?? feature.geometry?.coordinates?.[0] ?? 0,
+            },
+        };
+    };
+
     const searchPlaces = async (query: string) => {
-        if (!query.trim() || !apiKey) {
+        const trimmed = query.trim();
+        if (!trimmed) {
             setSuggestions([]);
             return;
         }
 
         setIsSearching(true);
         try {
-            const response = await fetch(
-                `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${apiKey}&limit=5&language=en-US`
-            );
+            const allResults: TomTomResult[] = [];
 
-            const data = await response.json();
-            if (data.results) {
-                setSuggestions(data.results);
-                setShowSuggestions(true);
+            // Tier 0: Direct Geocoding Resolution (Landmarks, Plus Codes, Google URLs)
+            const geoResult = await geocodeAddressQuery(trimmed);
+            if (geoResult && geoResult.lat && geoResult.lng) {
+                allResults.push({
+                    id: `geo_${Date.now()}`,
+                    poi: { name: trimmed },
+                    address: { freeformAddress: `${trimmed}, ${geoResult.city}` },
+                    position: { lat: geoResult.lat, lon: geoResult.lng }
+                });
             }
-        } catch (error) {
-            console.error('Error searching places:', error);
+
+            // Query variants (e.g. "MADhouse by Tikera Africa" -> "MADhouse Tikera Africa")
+            const queryVariants = [
+                trimmed,
+                trimmed.replace(/\bby\b/gi, ' ').replace(/\s+/g, ' ').trim()
+            ].filter(Boolean);
+
+            for (const qVar of queryVariants) {
+                if (mapboxToken) {
+                    try {
+                        const mbRes = await fetch(
+                            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(qVar)}.json?access_token=${mapboxToken}&limit=5&proximity=3.3792,6.5244&country=ng&language=en`
+                        );
+                        const mbData = await mbRes.json();
+                        if (mbData.features && mbData.features.length > 0) {
+                            allResults.push(...mbData.features.map(mapboxToResult));
+                        }
+                    } catch { /* proceed */ }
+                }
+
+                if (tomtomKey) {
+                    try {
+                        const ttRes = await fetch(
+                            `https://api.tomtom.com/search/2/search/${encodeURIComponent(qVar)}.json?key=${tomtomKey}&limit=5&language=en-US&countrySet=NG&lat=6.5244&lon=3.3792`
+                        );
+                        const ttData = await ttRes.json();
+                        if (ttData.results) {
+                            allResults.push(...ttData.results);
+                        }
+                    } catch { /* proceed */ }
+                }
+            }
+
+            // Deduplicate by rough coordinate proximity (within ~200m)
+            const deduped: TomTomResult[] = [];
+            for (const r of allResults) {
+                const isDup = deduped.some(d =>
+                    Math.abs(d.position.lat - r.position.lat) < 0.002 &&
+                    Math.abs(d.position.lon - r.position.lon) < 0.002
+                );
+                if (!isDup) deduped.push(r);
+            }
+
+            setSuggestions(deduped.slice(0, 8));
+            setShowSuggestions(deduped.length > 0);
+        } catch {
             setSuggestions([]);
         } finally {
             setIsSearching(false);
@@ -92,7 +161,6 @@ export default function LocationPicker({
     };
 
     const handleSuggestionClick = (result: TomTomResult) => {
-        // TomTom returns excellent structured data
         const venueName = result.poi?.name || result.address.freeformAddress.split(',')[0];
         const cityName = result.address.municipality || result.address.countrySubdivision || '';
 
@@ -119,8 +187,8 @@ export default function LocationPicker({
         onLocationSelect(venue, value);
     };
 
-    // If no API key, show manual inputs
-    if (!apiKey) {
+    // If no API keys at all, show manual inputs only
+    if (!tomtomKey && !mapboxToken) {
         return (
             <div className="grid gap-6 sm:grid-cols-2">
                 <div>
@@ -166,7 +234,7 @@ export default function LocationPicker({
                         value={searchQuery}
                         onChange={handleSearchChange}
                         onFocus={() => (suggestions.length > 0 || searchQuery) && setShowSuggestions(true)}
-                        placeholder="Search for a venue or location (TomTom)..."
+                        placeholder="Search for a venue or location..."
                         className={`block w-full rounded-2xl pl-12 pr-12 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none transition-all duration-300 shadow-sm bg-black/5 ${isSearching
                                 ? 'ring-2 ring-blue-500/20 bg-blue-50/30'
                                 : 'focus:ring-4 focus:ring-blue-500/10'
@@ -197,12 +265,14 @@ export default function LocationPicker({
                         {searchQuery && (
                             <button
                                 type="button"
-                                onClick={() => {
+                                onClick={async () => {
+                                    const { lat, lng, city: extractedCity } = await geocodeAddressQuery(searchQuery);
+                                    const finalCity = extractedCity || city || searchQuery.split(',')[1]?.trim() || '';
                                     setVenue(searchQuery);
-                                    setCity(''); // User can fill city manually
+                                    if (finalCity) setCity(finalCity);
                                     setShowSuggestions(false);
                                     setSuggestions([]);
-                                    onLocationSelect(searchQuery, '');
+                                    onLocationSelect(searchQuery, finalCity, lat, lng);
                                 }}
                                 className="w-full px-5 py-3 text-left hover:bg-gray-50 transition-colors text-blue-600 font-medium flex items-center gap-2"
                             >

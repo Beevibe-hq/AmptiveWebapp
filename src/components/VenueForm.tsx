@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import {  MapPin, Globe, X , Loader2 } from "lucide-react";
 import type { Venue, VenueCreateRequest } from '@/lib/api/venues';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import VenuePinPicker from '@/components/VenuePinPicker';
+import { geocodeAddressQuery, tryDecodePlusCode, getPlusCodeFromCoords } from '@/lib/geocoding';
 
 interface VenueFormProps {
   initialVenue?: Venue | null;
@@ -28,6 +30,8 @@ interface TomTomResult {
     streetName?: string;
   };
   position: { lat: number; lon: number };
+  /** Google place id; present on suggestions whose coordinates are resolved on selection. */
+  googlePlaceId?: string;
 }
 
 export default function VenueForm({
@@ -65,7 +69,12 @@ export default function VenueForm({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceTimer = useRef<NodeJS.Timeout>();
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const apiKey = import.meta.env.VITE_TOMTOM_API_KEY;
+  // True once the organiser picks a suggestion or places the pin themselves — their
+  // coordinates must not be replaced by a guess from the text they typed.
+  const hasExplicitLocationRef = useRef(false);
+  const tomtomKey = import.meta.env.VITE_TOMTOM_API_KEY;
+  const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+  const googleKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
   const isPhysicalAdded = false;
   const isVenueAdded = false;
@@ -80,21 +89,120 @@ export default function VenueForm({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const mapboxToResult = (feature: any): TomTomResult => {
+    const ctx = (type: string) => feature.context?.find((c: any) => c.id?.startsWith(type))?.text || '';
+    return {
+      id: feature.id || feature.properties?.mapbox_id || '',
+      poi: feature.text ? { name: feature.text } : undefined,
+      address: {
+        freeformAddress: feature.place_name || '',
+        municipality: ctx('place') || ctx('locality'),
+        countrySubdivision: ctx('region'),
+        country: ctx('country'),
+        postalCode: ctx('postcode'),
+      },
+      position: {
+        lat: feature.center?.[1] ?? feature.geometry?.coordinates?.[1] ?? 0,
+        lon: feature.center?.[0] ?? feature.geometry?.coordinates?.[0] ?? 0,
+      },
+    };
+  };
+
   const searchPlaces = async (query: string) => {
-    if (!query.trim() || !apiKey) {
+    const trimmed = query.trim();
+    if (!trimmed) {
       setSuggestions([]);
       return;
     }
     setIsSearching(true);
     try {
-      const response = await fetch(
-        `https://api.tomtom.com/search/2/search/${encodeURIComponent(query)}.json?key=${apiKey}&limit=5&language=en-US`
-      );
-      const data = await response.json();
-      if (data.results) {
-        setSuggestions(data.results);
-        setShowSuggestions(true);
+      const allResults: TomTomResult[] = [];
+
+      // Google first: it's the only source that indexes venue/business names organisers
+      // actually type. Coordinates are resolved when a suggestion is picked, so typing
+      // costs one autocomplete call rather than a lookup per prediction.
+      if (googleKey) {
+        try {
+          const gRes = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': googleKey },
+            body: JSON.stringify({ input: trimmed, includedRegionCodes: ['ng'] }),
+          });
+          const gData = await gRes.json();
+          for (const suggestion of (gData?.suggestions || []).slice(0, 5)) {
+            const prediction = suggestion.placePrediction;
+            if (!prediction?.placeId) continue;
+            allResults.push({
+              id: `google_${prediction.placeId}`,
+              googlePlaceId: prediction.placeId,
+              poi: { name: prediction.structuredFormat?.mainText?.text || prediction.text?.text || trimmed },
+              address: { freeformAddress: prediction.text?.text || '' },
+              position: { lat: 0, lon: 0 },   // resolved on selection
+            });
+          }
+        } catch { /* fall through to the other providers */ }
       }
+
+      // Tier 0: Direct Geocoding Resolution (Landmarks, Plus Codes, Google URLs)
+      const geoResult = await geocodeAddressQuery(trimmed);
+      if (geoResult && geoResult.lat && geoResult.lng) {
+        allResults.push({
+          id: `geo_${Date.now()}`,
+          poi: { name: trimmed },
+          address: { freeformAddress: `${trimmed}, ${geoResult.city}` },
+          position: { lat: geoResult.lat, lon: geoResult.lng }
+        });
+      }
+
+      // Query variants (e.g. "MADhouse by Tikera Africa" -> "MADhouse Tikera Africa")
+      const queryVariants = [
+        trimmed,
+        trimmed.replace(/\bby\b/gi, ' ').replace(/\s+/g, ' ').trim()
+      ].filter(Boolean);
+
+      for (const qVar of queryVariants) {
+        if (mapboxToken) {
+          try {
+            const mbRes = await fetch(
+              `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(qVar)}.json?access_token=${mapboxToken}&limit=5&proximity=3.3792,6.5244&country=ng&language=en`
+            );
+            const mbData = await mbRes.json();
+            if (mbData.features && mbData.features.length > 0) {
+              allResults.push(...mbData.features.map(mapboxToResult));
+            }
+          } catch { /* proceed */ }
+        }
+
+        if (tomtomKey) {
+          try {
+            const ttRes = await fetch(
+              `https://api.tomtom.com/search/2/search/${encodeURIComponent(qVar)}.json?key=${tomtomKey}&limit=5&language=en-US&countrySet=NG&lat=6.5244&lon=3.3792`
+            );
+            const ttData = await ttRes.json();
+            if (ttData.results) {
+              allResults.push(...ttData.results);
+            }
+          } catch { /* proceed */ }
+        }
+      }
+
+      // Deduplicate by rough coordinate proximity (within ~200m). Google suggestions have
+      // no coordinates yet, so they're de-duplicated by their text instead — comparing
+      // their placeholder 0,0 positions would collapse them all into one.
+      const deduped: TomTomResult[] = [];
+      for (const r of allResults) {
+        const isDup = r.googlePlaceId
+          ? deduped.some(d => d.address.freeformAddress === r.address.freeformAddress)
+          : deduped.some(d =>
+              !d.googlePlaceId &&
+              Math.abs(d.position.lat - r.position.lat) < 0.002 &&
+              Math.abs(d.position.lon - r.position.lon) < 0.002
+            );
+        if (!isDup) deduped.push(r);
+      }
+
+      setSuggestions(deduped.slice(0, 8));
+      setShowSuggestions(deduped.length > 0);
     } catch {
       setSuggestions([]);
     } finally {
@@ -104,35 +212,105 @@ export default function VenueForm({
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
+    hasExplicitLocationRef.current = false;
     setSearchQuery(value);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => searchPlaces(value), 300);
   };
 
-  const handleSuggestionClick = (result: TomTomResult) => {
+  // Auto-geocode live as user types in venue name or address if coordinates are not set yet
+  useEffect(() => {
+    const targetText = [name, addressLine1, searchQuery].filter(Boolean).join(' ').trim();
+    if (!targetText || (latitude != null && longitude != null)) return;
+
+    const autoTimer = setTimeout(async () => {
+      const { lat, lng, city: extractedCity } = await geocodeAddressQuery(targetText);
+      // A picked suggestion (or a dragged pin) is authoritative. Without this check the
+      // guess from the half-typed query lands after the exact coordinates and overwrites
+      // them — which is how a chosen venue ended up back at the city centre.
+      if (hasExplicitLocationRef.current) return;
+      if (lat && lng) {
+        setLatitude(lat);
+        setLongitude(lng);
+        if (extractedCity && !city) setCity(extractedCity);
+      }
+    }, 500);
+
+    return () => clearTimeout(autoTimer);
+  }, [name, addressLine1, searchQuery, latitude, longitude, city]);
+
+  const handleSuggestionClick = async (result: TomTomResult) => {
+    hasExplicitLocationRef.current = true;
     const venueName = (result.poi?.name || result.address.freeformAddress.split(',')[0]).trim();
-    const payload: VenueCreateRequest = {
-      name: venueName,
-      venue_type: 'physical',
-      description: description.trim() || null,
-      address_line1: result.address.freeformAddress || null,
-      city: result.address.municipality || result.address.countrySubdivision || null,
-      state: result.address.countrySubdivision || null,
-      country: result.address.country || null,
-      postal_code: result.address.postalCode || null,
-      latitude: result.position.lat,
-      longitude: result.position.lon,
-      place_id: result.id,
-      place_provider: 'tomtom',
-      platform_note: null,
-    };
+    setName(venueName);
+    setAddressLine1(result.address.freeformAddress || '');
+    setCity(result.address.municipality || result.address.countrySubdivision || '');
+    setState(result.address.countrySubdivision || '');
+    setCountry(result.address.country || '');
+    setPostalCode(result.address.postalCode || '');
+    setSearchQuery(venueName);
     setShowSuggestions(false);
     setSuggestions([]);
-    onSave(payload);
+
+    if (result.googlePlaceId) {
+      // Google suggestions carry no coordinates; fetch the exact point for the chosen place.
+      setPlaceId(result.googlePlaceId);
+      setPlaceProvider('google');
+      setIsSearching(true);
+      try {
+        const res = await fetch(
+          `https://places.googleapis.com/v1/places/${result.googlePlaceId}?fields=location,addressComponents`,
+          { headers: { 'X-Goog-Api-Key': googleKey } }
+        );
+        const place = await res.json();
+        const loc = place?.location;
+        if (loc?.latitude != null && loc?.longitude != null) {
+          setLatitude(Number(loc.latitude));
+          setLongitude(Number(loc.longitude));
+        }
+        const component = (type: string) =>
+          place?.addressComponents?.find((c: any) => c.types?.includes(type))?.longText || '';
+        const locality = component('locality') || component('administrative_area_level_2');
+        if (locality) setCity(locality);
+        const region = component('administrative_area_level_1');
+        if (region) setState(region);
+        const nation = component('country');
+        if (nation) setCountry(nation);
+        const postal = component('postal_code');
+        if (postal) setPostalCode(postal);
+      } catch {
+        // Fall back to geocoding the text if the details lookup fails.
+        const geo = await geocodeAddressQuery(result.address.freeformAddress || venueName);
+        if (geo?.lat && geo?.lng) {
+          setLatitude(geo.lat);
+          setLongitude(geo.lng);
+        }
+      } finally {
+        setIsSearching(false);
+      }
+      return;
+    }
+
+    setLatitude(result.position.lat);
+    setLongitude(result.position.lon);
+    setPlaceId(result.id);
+    setPlaceProvider('mapbox');
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) return;
+    let finalLat = latitude;
+    let finalLng = longitude;
+
+    if (venueType === 'physical' && (!finalLat || !finalLng)) {
+      const queryParts = [name, addressLine1, city, state, country].filter(Boolean);
+      if (queryParts.length > 0) {
+        const geoResult = await geocodeAddressQuery(queryParts.join(', '));
+        finalLat = geoResult.lat;
+        finalLng = geoResult.lng;
+      }
+    }
+
     const payload: VenueCreateRequest = {
       name: name.trim(),
       venue_type: venueType,
@@ -142,8 +320,8 @@ export default function VenueForm({
       state: venueType === 'physical' ? state.trim() || null : null,
       country: venueType === 'physical' ? country.trim() || null : null,
       postal_code: venueType === 'physical' ? postalCode.trim() || null : null,
-      latitude: venueType === 'physical' ? latitude : null,
-      longitude: venueType === 'physical' ? longitude : null,
+      latitude: venueType === 'physical' ? finalLat : null,
+      longitude: venueType === 'physical' ? finalLng : null,
       place_id: venueType === 'physical' ? placeId || null : null,
       place_provider: venueType === 'physical' ? (placeProvider || null) : null,
       platform_note: venueType === 'virtual' ? platformNote.trim() || null : null,
@@ -386,28 +564,17 @@ export default function VenueForm({
                       {searchQuery && (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
                             const trimmed = searchQuery.trim();
                             setName(trimmed);
                             setAddressLine1(trimmed);
                             setShowSuggestions(false);
                             setSuggestions([]);
-                            const payload: VenueCreateRequest = {
-                              name: trimmed,
-                              venue_type: 'physical',
-                              description: description.trim() || null,
-                              address_line1: trimmed,
-                              city: city.trim() || null,
-                              state: state.trim() || null,
-                              country: country.trim() || null,
-                              postal_code: postalCode.trim() || null,
-                              latitude: null,
-                              longitude: null,
-                              place_id: null,
-                              place_provider: null,
-                              platform_note: null,
-                            };
-                            onSave(payload);
+
+                            const { lat, lng, city: extractedCity } = await geocodeAddressQuery(trimmed);
+                            setLatitude(lat);
+                            setLongitude(lng);
+                            if (extractedCity && !city) setCity(extractedCity);
                           }}
                           className="w-full px-5 py-3 text-left hover:bg-gray-50 transition-colors text-blue-600 font-medium flex items-center gap-2"
                         >
@@ -471,6 +638,46 @@ export default function VenueForm({
                     />
                   </div>
                 </div>
+
+                {/* Confirming the pin is what gives the Explore map an exact position.
+                    It is pre-filled from the chosen address, and entirely optional. */}
+                <VenuePinPicker
+                  latitude={latitude}
+                  longitude={longitude}
+                  fallbackCity={city}
+                  initiallyConfirmed={initialVenue?.latitude != null && initialVenue?.longitude != null}
+                  onChange={(lat, lng) => {
+                    hasExplicitLocationRef.current = true;
+                    setLatitude(lat);
+                    setLongitude(lng);
+                  }}
+                />
+
+                {latitude != null && longitude != null && (
+                  <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-200/80 rounded-2xl p-3.5 mt-2 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg shrink-0 font-bold text-[10px]">
+                        PLUS CODE
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-mono font-semibold text-gray-900 truncate block">
+                          {getPlusCodeFromCoords(latitude, longitude)}
+                        </span>
+                        <span className="text-[11px] text-gray-500 truncate block">
+                          Exact 3m × 3m location generated automatically
+                        </span>
+                      </div>
+                    </div>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-blue-600 font-semibold hover:underline"
+                    >
+                      View on Google Maps ↗
+                    </a>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

@@ -308,8 +308,11 @@ export const $venues = {
   list: () =>
     api.get<{ venues: unknown[] }>(`${VENUES_PREFIX}/me/`),
 
+  // Venue details are public — the Explore map reads venue coordinates for visitors who
+  // aren't signed in, and the auth pre-check would otherwise reject those calls outright.
+  // A token is still sent when one exists.
   getById: (venueId: string) =>
-    api.get<unknown>(`${VENUES_PREFIX}/${venueId}`),
+    api.get<unknown>(`${VENUES_PREFIX}/${venueId}`, { skipAuth: true }),
 
   create: (venue: unknown) =>
     api.post<unknown>(`${VENUES_PREFIX}/`, venue),

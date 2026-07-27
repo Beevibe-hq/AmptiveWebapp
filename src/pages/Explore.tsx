@@ -15,6 +15,7 @@ import ReactCalendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 
 const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+    // Nigeria & West Africa
     lagos: { lat: 6.5244, lng: 3.3792 },
     lekki: { lat: 6.4698, lng: 3.5852 },
     ikeja: { lat: 6.6018, lng: 3.3515 },
@@ -29,7 +30,22 @@ const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
     kano: { lat: 12.0022, lng: 8.5920 },
     enugu: { lat: 6.4584, lng: 7.5464 },
     benin: { lat: 6.3350, lng: 5.6037 },
+    accra: { lat: 5.6037, lng: -0.1870 },
+    kumasi: { lat: 6.6885, lng: -1.6244 },
+
+    // Europe
+    berlin: { lat: 52.5200, lng: 13.4050 },
+    munich: { lat: 48.1351, lng: 11.5820 },
+    hamburg: { lat: 53.5511, lng: 9.9937 },
+    frankfurt: { lat: 50.1109, lng: 8.6821 },
+    cologne: { lat: 50.9375, lng: 6.9603 },
     london: { lat: 51.5074, lng: -0.1278 },
+    manchester: { lat: 53.4808, lng: -2.2426 },
+    paris: { lat: 48.8566, lng: 2.3522 },
+    france: { lat: 46.2276, lng: 2.2137 },
+    germany: { lat: 51.1657, lng: 10.4515 },
+
+    // North America
     'new york': { lat: 40.7128, lng: -74.0060 },
     'united states': { lat: 37.0902, lng: -95.7129 },
     usa: { lat: 37.0902, lng: -95.7129 },
@@ -38,34 +54,214 @@ const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
     miami: { lat: 25.7617, lng: -80.1918 },
     chicago: { lat: 41.8781, lng: -87.6298 },
     houston: { lat: 29.7604, lng: -95.3698 },
-    texas: { lat: 31.9686, lng: -99.9018 },
-    paris: { lat: 48.8566, lng: 2.3522 },
-    france: { lat: 46.2276, lng: 2.2137 }
+    dallas: { lat: 32.7767, lng: -96.7970 },
+    atlanta: { lat: 33.7490, lng: -84.3880 },
+    'san francisco': { lat: 37.7749, lng: -122.4194 },
+    seattle: { lat: 47.6062, lng: -122.3321 },
+    toronto: { lat: 43.6532, lng: -79.3832 },
+
+    // East & South Africa
+    nairobi: { lat: -1.2921, lng: 36.8219 },
+    mombasa: { lat: -4.0435, lng: 39.6682 },
+    johannesburg: { lat: -26.2041, lng: 28.0473 },
+    'cape town': { lat: -33.9249, lng: 18.4241 },
+    durban: { lat: -29.8587, lng: 31.0218 },
+    pretoria: { lat: -25.7479, lng: 28.2293 }
 };
 
-function getEventCoords(event: StandaloneEvent, index: number): { lat: number; lng: number } | null {
-    // 1. Direct explicit latitude/longitude check across various potential property names
-    const lat = Number(
-        event.location?.latitude ?? 
-        event.venue?.latitude ?? 
-        (event as any).latitude ?? 
-        (event as any).lat ?? 
-        (event as any).location_latitude
-    );
-    const lng = Number(
-        event.location?.longitude ?? 
-        event.venue?.longitude ?? 
-        (event as any).longitude ?? 
-        (event as any).lng ?? 
-        (event as any).location_longitude
-    );
+// ---- Venue geocoding --------------------------------------------------------------
+// Events come back from the API without latitude/longitude, so the only accurate source
+// of position is the venue address the organiser typed. The event detail page solves this
+// by handing the address to a Google Maps embed; the Explore map needs real coordinates
+// to place a marker, so we geocode the same address string with Mapbox (same token as the
+// tiles) and cache the answer — in memory for the session and in localStorage so repeat
+// visits and other events at the same venue cost nothing.
+// v2: results are now Google-first, which is far more precise than the Mapbox answers the
+// v1 cache holds — bumping the key discards those rather than serving stale approximations.
+const GEOCODE_CACHE_KEY = 'amptive.geocode.v2';
+const geocodeMemoryCache = new Map<string, { lat: number; lng: number } | null>();
 
-    if (lat && lng && !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+function readGeocodeCache(): Record<string, { lat: number; lng: number }> {
+    try {
+        return JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function writeGeocodeCache(key: string, value: { lat: number; lng: number }) {
+    try {
+        const cache = readGeocodeCache();
+        cache[key] = value;
+        localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+    } catch {
+        // storage full or unavailable — the in-memory cache still applies
+    }
+}
+
+// The address text to look up: venue name plus whatever address parts exist, which is the
+// same string the event page hands to its map embed.
+function venueQueryForEvent(event: any): string {
+    const venue = event?.venue || {};
+    const location = event?.location || {};
+    const parts = [
+        venue.name || location.venue || event.venue_name,
+        venue.address_line1 || venue.address || location.address,
+        venue.city || location.city,
+        venue.country || location.country,
+    ]
+        .map((part: unknown) => String(part || '').trim())
+        .filter(Boolean);
+
+    // Drop duplicates like "Lagos, Lagos" that come from name and city overlapping.
+    return Array.from(new Set(parts)).join(', ').slice(0, 220);
+}
+
+// Mapbox wants ISO codes, while events carry country names.
+const COUNTRY_CODES: Record<string, string> = {
+    nigeria: 'ng', ghana: 'gh', kenya: 'ke', 'south africa': 'za', egypt: 'eg',
+    'united states': 'us', usa: 'us', us: 'us', canada: 'ca',
+    'united kingdom': 'gb', uk: 'gb', england: 'gb', france: 'fr', germany: 'de',
+};
+
+// A venue name alone ("The Gala") matches places all over the world — that query landed in
+// Mexico. Anchoring to the event's city and rejecting anything implausibly far away keeps
+// a bad match from dropping a pin on the wrong continent.
+const MAX_KM_FROM_ANCHOR = 120;
+
+function geocodeBiasForEvent(event: any): { anchor: { lat: number; lng: number } | null; country?: string } {
+    const text = [
+        event?.location?.city, event?.venue?.city, event?.location?.venue,
+        event?.venue?.name, event?.venue?.address_line1, event?.venue?.state,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    let anchor: { lat: number; lng: number } | null = null;
+    for (const [cityName, coords] of Object.entries(CITY_COORDS)) {
+        if (text.includes(cityName)) { anchor = coords; break; }
+    }
+
+    const countryName = String(event?.venue?.country || event?.location?.country || '').trim().toLowerCase();
+    return { anchor, country: COUNTRY_CODES[countryName] };
+}
+
+async function geocodeVenue(
+    query: string,
+    bias: { anchor?: { lat: number; lng: number } | null; country?: string } = {}
+): Promise<{ lat: number; lng: number } | null> {
+    const key = `${query}|${bias.country || ''}`.toLowerCase();
+    if (geocodeMemoryCache.has(key)) return geocodeMemoryCache.get(key) ?? null;
+
+    const stored = readGeocodeCache()[key];
+    if (stored) {
+        geocodeMemoryCache.set(key, stored);
+        return stored;
+    }
+
+    // Google first: it indexes the business/venue names organisers actually type
+    // ("MADhouse by Tikera Africa" resolves to rooftop precision there, while Mapbox,
+    // TomTom, Nominatim and Photon all miss it entirely).
+    const googleKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (googleKey) {
+        try {
+            const params = new URLSearchParams({ address: query, key: googleKey });
+            if (bias.country) {
+                params.set('region', bias.country);
+                params.set('components', `country:${bias.country.toUpperCase()}`);
+            }
+            const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`);
+            const data = await response.json();
+            const loc = data?.results?.[0]?.geometry?.location;
+            if (data?.status === 'OK' && loc) {
+                const coords = { lat: Number(loc.lat), lng: Number(loc.lng) };
+                const tooFar = bias.anchor && distanceInKm(bias.anchor, coords) > MAX_KM_FROM_ANCHOR;
+                if (!tooFar) {
+                    geocodeMemoryCache.set(key, coords);
+                    writeGeocodeCache(key, coords);
+                    return coords;
+                }
+            }
+        } catch {
+            // fall through to Mapbox
+        }
+    }
+
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    if (!token) {
+        geocodeMemoryCache.set(key, null);
+        return null;
+    }
+
+    try {
+        const params = new URLSearchParams({
+            limit: '1',
+            types: 'poi,address,place,locality,neighborhood',
+            access_token: token,
+        });
+        if (bias.country) params.set('country', bias.country);
+        if (bias.anchor) params.set('proximity', `${bias.anchor.lng},${bias.anchor.lat}`);
+
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(String(response.status));
+        const data = await response.json();
+        const centre = data?.features?.[0]?.center;
+        if (!Array.isArray(centre) || centre.length < 2) {
+            geocodeMemoryCache.set(key, null);
+            return null;
+        }
+        const coords = { lat: Number(centre[1]), lng: Number(centre[0]) };
+
+        // Reject a match that sits implausibly far from the event's own city.
+        if (bias.anchor && distanceInKm(bias.anchor, coords) > MAX_KM_FROM_ANCHOR) {
+            geocodeMemoryCache.set(key, null);
+            return null;
+        }
+
+        geocodeMemoryCache.set(key, coords);
+        writeGeocodeCache(key, coords);
+        return coords;
+    } catch {
+        geocodeMemoryCache.set(key, null);
+        return null;
+    }
+}
+
+function getEventCoords(
+    event: StandaloneEvent,
+    index: number,
+    geocoded?: Record<string, { lat: number; lng: number }>
+): { lat: number; lng: number } | null {
+    // 1. Direct explicit latitude/longitude check across all possible venue/location fields
+    const rawLat = event.venue?.latitude ?? 
+                   event.location?.latitude ?? 
+                   (event as any).latitude ?? 
+                   (event as any).lat ?? 
+                   (event as any).location_latitude ?? 
+                   (event as any).venue_latitude;
+
+    const rawLng = event.venue?.longitude ?? 
+                   event.location?.longitude ?? 
+                   (event as any).longitude ?? 
+                   (event as any).lng ?? 
+                   (event as any).location_longitude ?? 
+                   (event as any).venue_longitude;
+
+    const lat = Number(rawLat);
+    const lng = Number(rawLng);
+
+    if (rawLat !== null && rawLat !== undefined && rawLng !== null && rawLng !== undefined && !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+        // Return EXACT lat & lng with 0 offset for 100% accurate pin location
         return { lat, lng };
     }
 
+    // 1b. Position resolved by geocoding the venue address — the real location of the
+    // venue the organiser typed, and the only accurate source while the API returns no
+    // coordinates of its own.
+    const resolved = geocoded?.[(event as any).event_id];
+    if (resolved) return resolved;
+
     // 2. Virtual & Amptive App events get pinned directly on Amptive Island in the ocean!
-    const isVirtual = !event.venue || 
+    const isVirtual = !event.venue ||
                       event.venue?.venue_type === 'virtual' || 
                       event.location?.type === 'online' || 
                       (event as any).is_online || 
@@ -89,14 +285,15 @@ function getEventCoords(event: StandaloneEvent, index: number): { lat: number; l
         event.location?.venue,
         event.venue?.name,
         event.venue?.address_line1,
-        event.venue?.state
+        event.venue?.state,
+        event.venue?.country
     ].filter(Boolean).join(' ').toLowerCase();
 
     for (const [cityName, coords] of Object.entries(CITY_COORDS)) {
         if (locationText.includes(cityName)) {
-            // Apply slight deterministic spread offset so pins in the same city don't stack directly on top of each other
+            // Apply micro-spread offset (100m) so multiple events in the same city don't stack directly on top of each other
             const angle = (index * 137.5) * (Math.PI / 180);
-            const radius = 0.008 * Math.sqrt(index + 1);
+            const radius = 0.001 * Math.sqrt(index + 1);
             return {
                 lat: coords.lat + Math.cos(angle) * radius,
                 lng: coords.lng + Math.sin(angle) * radius
@@ -104,9 +301,9 @@ function getEventCoords(event: StandaloneEvent, index: number): { lat: number; l
         }
     }
 
-    // 4. Fallback for any physical event: place on default Lagos region with a slight offset based on index
+    // 4. Fallback for any physical event: place on default Lagos region with a slight micro-offset based on index
     const angle = (index * 137.5) * (Math.PI / 180);
-    const radius = 0.01 * Math.sqrt(index + 1);
+    const radius = 0.0015 * Math.sqrt(index + 1);
     return {
         lat: 6.5244 + Math.cos(angle) * radius,
         lng: 3.3792 + Math.sin(angle) * radius
@@ -284,6 +481,45 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
     const [bearing, setBearing] = useState(0);
     // True when the dial was just spun, so the trailing click is ignored.
     const dialDraggedRef = useRef(false);
+    // Venue positions resolved by geocoding, keyed by event id.
+    const [geocoded, setGeocoded] = useState<Record<string, { lat: number; lng: number }>>({});
+
+    // Look up the real position of any event the API gave us no coordinates for. Runs in
+    // the background with a small concurrency cap; pins snap to the true venue as each
+    // lookup lands, and cached venues resolve instantly on later visits.
+    useEffect(() => {
+        let cancelled = false;
+
+        const needsLookup = events.filter((event: any) => {
+            if (geocoded[event.event_id]) return false;
+            const hasCoords = getEventCoords(event, 0) !== null
+                && (event.venue?.latitude ?? event.location?.latitude ?? event.latitude) != null;
+            if (hasCoords) return false;
+            const isVirtual = event.venue?.venue_type === 'virtual' || event.location?.type === 'online' || event.is_online || event.is_virtual;
+            if (isVirtual) return false;
+            return Boolean(venueQueryForEvent(event));
+        });
+
+        if (needsLookup.length === 0) return;
+
+        (async () => {
+            const found: Record<string, { lat: number; lng: number }> = {};
+            await mapWithConcurrency(
+                needsLookup,
+                4,
+                async (event: any) => {
+                    const coords = await geocodeVenue(venueQueryForEvent(event), geocodeBiasForEvent(event));
+                    if (coords) found[event.event_id] = coords;
+                },
+                () => cancelled
+            );
+            if (!cancelled && Object.keys(found).length > 0) {
+                setGeocoded(prev => ({ ...prev, ...found }));
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [events]);
 
     // The callbacks are read through refs so their identity never lands in the effect's
     // dependencies. Previously an inline arrow from the parent changed on every render,
@@ -517,7 +753,7 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
         let hasCoords = false;
 
         events.forEach((event, idx) => {
-            const coords = getEventCoords(event, idx);
+            const coords = getEventCoords(event, idx, geocoded);
 
             if (coords) {
                 hasCoords = true;
@@ -671,7 +907,7 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
             clearTimeout(timer);
             resizeObserver.disconnect();
         };
-    }, [events, locFilter, isLoading, userCoords]);
+    }, [events, locFilter, isLoading, userCoords, geocoded]);
 
     return (
         <div className="relative h-full w-full rounded-none overflow-hidden bg-gray-50">
@@ -993,10 +1229,16 @@ export default function Explore() {
         let updated = event;
         let changed = false;
 
-        if (!updated.venue && updated.venue_id) {
-            const venue = await cachedFetch(venueCache, updated.venue_id, () => getVenue(updated.venue_id));
+        // The events list embeds only a summary of the venue — name, address, city — and
+        // leaves out latitude/longitude, so fetch the full record whenever coordinates are
+        // missing. Any venue that has them stored then pins exactly, with no geocoding.
+        const venueId = updated.venue?.venue_id || updated.venue_id;
+        const hasVenueCoords = updated.venue?.latitude != null && updated.venue?.longitude != null;
+
+        if (venueId && !hasVenueCoords) {
+            const venue = await cachedFetch(venueCache, venueId, () => getVenue(venueId));
             if (venue) {
-                updated = { ...updated, venue };
+                updated = { ...updated, venue: { ...(updated.venue || {}), ...venue } };
                 changed = true;
             }
         }
