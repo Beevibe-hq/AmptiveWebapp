@@ -67,8 +67,8 @@ export default function VenueForm({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const apiKey = import.meta.env.VITE_TOMTOM_API_KEY;
 
-  const isPhysicalAdded = venueType === 'physical' && !!addressLine1;
-  const isVenueAdded = isPhysicalAdded;
+  const isPhysicalAdded = false;
+  const isVenueAdded = false;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -110,20 +110,25 @@ export default function VenueForm({
   };
 
   const handleSuggestionClick = (result: TomTomResult) => {
-    const name = result.poi?.name || result.address.freeformAddress.split(',')[0];
-    setName(name);
-    setAddressLine1(result.address.freeformAddress);
-    setCity(result.address.municipality || result.address.countrySubdivision || '');
-    setState(result.address.countrySubdivision || '');
-    setCountry(result.address.country || '');
-    setPostalCode(result.address.postalCode || '');
-    setLatitude(result.position.lat);
-    setLongitude(result.position.lon);
-    setPlaceId(result.id);
-    setPlaceProvider('tomtom');
-    setSearchQuery(name);
+    const venueName = (result.poi?.name || result.address.freeformAddress.split(',')[0]).trim();
+    const payload: VenueCreateRequest = {
+      name: venueName,
+      venue_type: 'physical',
+      description: description.trim() || null,
+      address_line1: result.address.freeformAddress || null,
+      city: result.address.municipality || result.address.countrySubdivision || null,
+      state: result.address.countrySubdivision || null,
+      country: result.address.country || null,
+      postal_code: result.address.postalCode || null,
+      latitude: result.position.lat,
+      longitude: result.position.lon,
+      place_id: result.id,
+      place_provider: 'tomtom',
+      platform_note: null,
+    };
     setShowSuggestions(false);
     setSuggestions([]);
+    onSave(payload);
   };
 
   const handleSubmit = () => {
@@ -382,11 +387,27 @@ export default function VenueForm({
                         <button
                           type="button"
                           onClick={() => {
-                            setName(searchQuery);
-                            setAddressLine1(searchQuery);
-                            setSearchQuery(searchQuery);
+                            const trimmed = searchQuery.trim();
+                            setName(trimmed);
+                            setAddressLine1(trimmed);
                             setShowSuggestions(false);
                             setSuggestions([]);
+                            const payload: VenueCreateRequest = {
+                              name: trimmed,
+                              venue_type: 'physical',
+                              description: description.trim() || null,
+                              address_line1: trimmed,
+                              city: city.trim() || null,
+                              state: state.trim() || null,
+                              country: country.trim() || null,
+                              postal_code: postalCode.trim() || null,
+                              latitude: null,
+                              longitude: null,
+                              place_id: null,
+                              place_provider: null,
+                              platform_note: null,
+                            };
+                            onSave(payload);
                           }}
                           className="w-full px-5 py-3 text-left hover:bg-gray-50 transition-colors text-blue-600 font-medium flex items-center gap-2"
                         >
