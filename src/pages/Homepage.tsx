@@ -868,7 +868,8 @@ const Homepage: React.FC = () => {
         description: "The biggest tech conference of the year featuring industry leaders and innovative startups.",
         image: '/images/config.jpeg',
         gradient: 'linear-gradient(135deg, #825B90 0%, #7E41B9 100%)',
-        avatars: ['/images/config.jpg']
+        avatars: ['/images/config.jpg'],
+        buttonText: 'Get Tickets'
       },
       {
         id: 6,
@@ -876,7 +877,8 @@ const Homepage: React.FC = () => {
         description: "A weekend of amazing music, food, and good vibes with your favorite artists.",
         image: '/images/liquidium.jpg',
         gradient: 'linear-gradient(to bottom, #1A4D00 0%, #37A400 100%)',
-        avatars: ['https://i.pravatar.cc/150?img=8', 'https://i.pravatar.cc/150?img=9']
+        avatars: ['https://i.pravatar.cc/150?img=8', 'https://i.pravatar.cc/150?img=9'],
+        buttonText: 'Add to Calendar'
       },
       {
         id: 7,
@@ -884,7 +886,8 @@ const Homepage: React.FC = () => {
         description: "Experience the finest culinary delights and wines from around the world.",
         image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
         gradient: 'linear-gradient(135deg, #B91C1C 0%, #F87171 100%)',
-        avatars: ['https://i.pravatar.cc/150?img=10', 'https://i.pravatar.cc/150?img=11', 'https://i.pravatar.cc/150?img=12']
+        avatars: ['https://i.pravatar.cc/150?img=10', 'https://i.pravatar.cc/150?img=11', 'https://i.pravatar.cc/150?img=12'],
+        buttonText: 'Join Live'
       },
       {
         id: 8,
@@ -892,7 +895,8 @@ const Homepage: React.FC = () => {
         description: "Witness innovative startups pitch their ideas to a panel of investors.",
         image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
         gradient: 'linear-gradient(135deg, #047857 0%, #10B981 100%)',
-        avatars: ['https://i.pravatar.cc/150?img=13', 'https://i.pravatar.cc/150?img=14']
+        avatars: ['https://i.pravatar.cc/150?img=13', 'https://i.pravatar.cc/150?img=14'],
+        buttonText: 'Buy Ticket'
       }
     ]
   };
