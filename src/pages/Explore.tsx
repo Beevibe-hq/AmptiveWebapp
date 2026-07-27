@@ -1297,7 +1297,7 @@ export default function Explore() {
                         }}
                         title="Reset Map View"
                         aria-label="Reset Map View"
-                        className={`absolute bottom-[20px] sm:bottom-[74px] left-[20px] z-30 bg-white/95 hover:bg-white text-gray-900 border border-white/80 backdrop-blur-md rounded-full w-[44px] h-[44px] items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer shadow-sm ${
+                        className={`absolute bottom-[80px] sm:bottom-[74px] left-[20px] z-30 bg-white/95 hover:bg-white text-gray-900 border border-white/80 backdrop-blur-md rounded-full w-[44px] h-[44px] items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer shadow-sm ${
                             viewMode === 'list' ? 'hidden sm:flex' : 'flex'
                         } ${
                             hasMovedMap
