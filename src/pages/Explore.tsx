@@ -307,10 +307,11 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
                 maxZoom: 19,
                 zoomControl: false,
                 attributionControl: false,
-                // Rotation, as on Apple Maps: two-finger twist on trackpad/touch, or
-                // shift-drag with a mouse.
                 rotate: true,
-                touchRotate: true,
+                // Two-finger rotation is deliberately off: the plugin rotates and zooms on
+                // the same gesture with no angular threshold, so pinching to zoom always
+                // spun the map. On touch, rotation is done by dragging the compass dial.
+                touchRotate: false,
                 shiftKeyRotate: true,
                 rotateControl: false,
             } as L.MapOptions);
