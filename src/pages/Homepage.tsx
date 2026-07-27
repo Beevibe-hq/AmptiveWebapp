@@ -2407,8 +2407,8 @@ const Homepage: React.FC = () => {
                 event
               </span>
             </h2>
-            <a
-              href="/generate"
+            <Link
+              to="/ai-chat"
               className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 w-max"
               style={{
                 backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -2422,7 +2422,7 @@ const Homepage: React.FC = () => {
                 </svg>
                 <span>Generate with AI</span>
               </span>
-            </a>
+            </Link>
           </div>
 
           {/* Right Column - Cards with Infinite Scroll */}
