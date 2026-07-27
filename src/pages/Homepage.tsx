@@ -23,6 +23,7 @@ interface TrendingCardProps {
   gradient: string;
   avatars: string[];
   type: 'shows' | 'events';
+  buttonText?: string;
 }
 
 // Trending Card Component
@@ -32,45 +33,56 @@ const TrendingCard: React.FC<TrendingCardProps> = ({
   image,
   gradient,
   avatars,
-  type
-}) => (
-  <div
-    className="flex-shrink-0 w-[280px] sm:w-auto rounded-xl border border-gray-200 hover:shadow-md transition-shadow overflow-hidden relative"
-    style={{ background: gradient }}
-  >
-    <div className="p-4 flex flex-col h-full relative z-10">
-      <div className="flex justify-between items-center mb-3">
-        <img
-          src={image}
-          alt={title}
-          className="w-12 h-12 rounded-md object-cover"
-        />
-        <button
-          className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-900 text-xs font-medium rounded-full transition-colors whitespace-nowrap"
-          type="button"
-        >
-          {type === 'shows' ? 'Subscribe' : 'Get Tickets'}
-        </button>
-      </div>
-      <h3 className="text-sm font-semibold text-white mb-2 whitespace-nowrap overflow-hidden text-ellipsis">{title}</h3>
-      <p className="text-gray-200 text-xs mb-3 line-clamp-2">
-        {description}
-      </p>
-      <div className="mt-auto">
-        <div className="flex -space-x-2">
-          {avatars.map((avatar, index) => (
-            <img
-              key={index}
-              src={avatar}
-              alt={`Host ${index + 1}`}
-              className="w-6 h-6 rounded-full border-2 border-white object-cover"
-            />
-          ))}
+  type,
+  buttonText
+}) => {
+  const ctaLabel = buttonText || (type === 'shows' ? 'Subscribe' : 'Get Tickets');
+  const isLive = ctaLabel.toLowerCase().includes('live');
+
+  return (
+    <div
+      className="flex-shrink-0 w-[280px] sm:w-auto rounded-xl border border-gray-200 hover:shadow-md transition-shadow overflow-hidden relative"
+      style={{ background: gradient }}
+    >
+      <div className="p-4 flex flex-col h-full relative z-10">
+        <div className="flex justify-between items-center mb-3">
+          <img
+            src={image}
+            alt={title}
+            className="w-12 h-12 rounded-md object-cover"
+          />
+          <button
+            className={`px-3.5 py-1.5 text-xs font-bold rounded-full transition-all whitespace-nowrap flex items-center gap-1.5 shadow-xs ${
+              isLive
+                ? 'bg-red-600 text-white hover:bg-red-700'
+                : 'bg-white hover:bg-gray-100 text-gray-900 font-semibold'
+            }`}
+            type="button"
+          >
+            {isLive && <span className="w-2 h-2 rounded-full bg-white animate-pulse" />}
+            {ctaLabel}
+          </button>
+        </div>
+        <h3 className="text-sm font-semibold text-white mb-2 whitespace-nowrap overflow-hidden text-ellipsis">{title}</h3>
+        <p className="text-gray-200 text-xs mb-3 line-clamp-2">
+          {description}
+        </p>
+        <div className="mt-auto">
+          <div className="flex -space-x-2">
+            {avatars.map((avatar, index) => (
+              <img
+                key={index}
+                src={avatar}
+                alt={`Host ${index + 1}`}
+                className="w-6 h-6 rounded-full border-2 border-white object-cover"
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 // Images moved to public directory for Netlify
 import EventCard, { MediaSource, EventCardSkeleton } from '../components/EventCard';
 import GeometricPattern from '../components/GeometricPattern';
@@ -822,7 +834,8 @@ const Homepage: React.FC = () => {
         description: "Life is freaking hard. We are hard. Let's get through it together. Join Glennon Doyle and her sister Amanda as they discuss hard things and how to survive them.",
         image: '/images/we-can-do-hard-things.jpeg',
         gradient: 'linear-gradient(135deg, #8B3A3A 0%, #CD5C5C 50%, #D2691E 100%)',
-        avatars: ['https://i.pravatar.cc/150?img=1', 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3']
+        avatars: ['https://i.pravatar.cc/150?img=1', 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3'],
+        buttonText: 'Subscribe'
       },
       {
         id: 2,
@@ -830,7 +843,8 @@ const Homepage: React.FC = () => {
         description: "Unfiltered conversations about life, love, and everything in between. No topic is off limits.",
         image: '/images/i-said-what-i-said.jpg',
         gradient: 'linear-gradient(135deg, #4C1D1D 0%, #7F1D1D 50%, #B91C1C 100%)',
-        avatars: ['https://i.pravatar.cc/150?img=32', 'https://i.pravatar.cc/150?img=33']
+        avatars: ['https://i.pravatar.cc/150?img=32', 'https://i.pravatar.cc/150?img=33'],
+        buttonText: 'Join Live'
       },
       {
         id: 3,
@@ -838,7 +852,8 @@ const Homepage: React.FC = () => {
         description: "Join the conversation about culture, technology, and everything in between with hosts Jenna Wortham and Wesley Morris.",
         image: '/images/still processing.jpg',
         gradient: 'linear-gradient(135deg, #4A2D5A 0%, #6A3F7A 50%, #8A5E9B 100%)',
-        avatars: ['https://i.pravatar.cc/150?img=34', 'https://i.pravatar.cc/150?img=35']
+        avatars: ['https://i.pravatar.cc/150?img=34', 'https://i.pravatar.cc/150?img=35'],
+        buttonText: 'Add to Calendar'
       },
       {
         id: 4,
@@ -846,7 +861,8 @@ const Homepage: React.FC = () => {
         description: "A group of friends having honest conversations about life, relationships, and personal growth.",
         image: '/images/honnest bunch.jpeg',
         gradient: 'linear-gradient(135deg, #556B2F 0%, #6B8E23 100%)',
-        avatars: ['https://i.pravatar.cc/150?img=36', 'https://i.pravatar.cc/150?img=37', 'https://i.pravatar.cc/150?img=38']
+        avatars: ['https://i.pravatar.cc/150?img=36', 'https://i.pravatar.cc/150?img=37', 'https://i.pravatar.cc/150?img=38'],
+        buttonText: 'One-Time Access'
       }
     ],
     events: [
@@ -2189,6 +2205,7 @@ const Homepage: React.FC = () => {
               gradient={item.gradient}
               avatars={item.avatars}
               type={activeTab}
+              buttonText={item.buttonText}
             />
           ))}
         </div>
