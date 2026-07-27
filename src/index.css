@@ -28,6 +28,19 @@
   }
 }
 
+/* iOS Safari zooms the whole page when you focus a field whose text is under 16px, then
+   leaves the page scaled up. The @layer base rule above sets 16px, but Tailwind utilities
+   (text-sm, text-xs, text-[15px], …) sit in a later layer and win — so fields styled that
+   way still triggered the zoom. Forcing 16px on touch-sized screens stops it; desktop
+   keeps its intended typography. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .hide-scrollbar::-webkit-scrollbar,
 .no-scrollbar::-webkit-scrollbar {

@@ -895,7 +895,14 @@ export default function Explore() {
 
     const detectedCountry = detectCountry();
 
-    const [viewMode, setViewMode] = useState<'list' | 'map'>(() => sessionStorage.getItem('explore_viewMode') as 'list' | 'map' || 'list');
+    const [viewMode, setViewMode] = useState<'list' | 'map'>(() => {
+        const stored = sessionStorage.getItem('explore_viewMode');
+        if (stored === 'list' || stored === 'map') return stored;
+        // First visit: phones open on the map, where browsing by location is the point.
+        // Desktop keeps the list, which suits the wider two-column layout.
+        const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+        return isMobile ? 'map' : 'list';
+    });
     const [searchQuery, setSearchQuery] = useState(() => urlQuery || sessionStorage.getItem('explore_searchQuery') || '');
     const [rawEvents, setRawEvents] = useState<StandaloneEvent[]>([]);
     const [events, setEvents] = useState<StandaloneEvent[]>([]);
