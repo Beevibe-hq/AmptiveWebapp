@@ -47,7 +47,7 @@
     X-Content-Type-Options = "nosniff"
     X-XSS-Protection = "1; mode=block"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co https://amptive-staging.getamptive.com https://*.onrender.com https://api.tomtom.com http://localhost:*; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.supabase.co https://maps.google.com https://*.google.com; form-action 'self' https://*.supabase.co;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co https://amptive-staging.getamptive.com https://*.onrender.com https://api.tomtom.com https://maps.googleapis.com https://places.googleapis.com https://api.mapbox.com http://localhost:*; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.supabase.co https://maps.google.com https://*.google.com; form-action 'self' https://*.supabase.co;"
 
 # Cache static assets
 [[headers]]
