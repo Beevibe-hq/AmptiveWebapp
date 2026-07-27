@@ -205,6 +205,29 @@ const EventDetail = () => {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
 
+  const isVirtualEvent = useMemo(() => {
+    if (!event) return true;
+    const vType = event.venue?.venue_type?.toLowerCase();
+    const vName = event.venue?.name?.trim();
+    const lVenue = event.location?.venue?.trim();
+    const lType = event.location?.type?.toLowerCase();
+    const isOnline = (event as any).is_online || (event as any).is_virtual;
+
+    if (vType === 'virtual' || lType === 'online' || isOnline) return true;
+
+    if (!vName || vName === 'TBD' || vName === 'TBA' || vName === 'Venue' || vName === 'Online' || vName === 'Amptive App') {
+      if (!event.venue?.address_line1 && !lVenue) {
+        return true;
+      }
+    }
+
+    if (vType === 'physical' && vName && vName !== 'TBD' && vName !== 'TBA' && vName !== 'Venue' && vName !== 'Online') {
+      return false;
+    }
+
+    return !event.venue?.address_line1 && !event.location?.venue;
+  }, [event]);
+
   // Handle escape key to close image modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -496,29 +519,6 @@ const EventDetail = () => {
     getTicketUnitPrice(ticket) < (Number(ticket.price) || 0)
   ));
   const hasEarlyBirdTickets = earlyBirdTickets.length > 0;
-
-  const isVirtualEvent = useMemo(() => {
-    if (!event) return true;
-    const vType = event.venue?.venue_type?.toLowerCase();
-    const vName = event.venue?.name?.trim();
-    const lVenue = event.location?.venue?.trim();
-    const lType = event.location?.type?.toLowerCase();
-    const isOnline = (event as any).is_online || (event as any).is_virtual;
-
-    if (vType === 'virtual' || lType === 'online' || isOnline) return true;
-
-    if (!vName || vName === 'TBD' || vName === 'TBA' || vName === 'Venue' || vName === 'Online' || vName === 'Amptive App') {
-      if (!event.venue?.address_line1 && !lVenue) {
-        return true;
-      }
-    }
-
-    if (vType === 'physical' && vName && vName !== 'TBD' && vName !== 'TBA' && vName !== 'Venue' && vName !== 'Online') {
-      return false;
-    }
-
-    return !event.venue?.address_line1 && !event.location?.venue;
-  }, [event]);
 
   return (
     <div className="min-h-screen selection:bg-blue-100 selection:text-blue-900 font-sans relative">
