@@ -1068,7 +1068,7 @@ const ProfilePage = () => {
                     <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                     <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                   </svg>
-                  <span>{(profile?.support_enabled === true || (profile as any)?.accept_tips === true) ? 'My Support Page' : 'Accept Tips'}</span>
+                  <span>{(profile?.support_enabled === true || (profile as any)?.accept_tips === true) ? 'My Support Page' : 'Accept Gifts'}</span>
                 </button>
               </>
             )}

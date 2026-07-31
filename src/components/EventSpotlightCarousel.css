@@ -1,0 +1,384 @@
+/* Spotlight carousel: a shallow 3D cylinder of event cards beside a headline. */
+
+.SpotlightGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 3.75rem 0rem 2rem;
+  position: relative;
+  z-index: 2;
+  color: #fff;
+}
+
+@media (min-width: 1024px) {
+  .SpotlightGrid {
+    grid-template-columns: 1fr 1.35fr;
+    gap: 2rem;
+    padding: 3.5rem 3rem;
+  }
+}
+
+/*
+ * The band's palette drifts through some light tones, so white copy needs its own scrim
+ * rather than relying on the background staying dark.
+ *
+ * This has to sit on a wrapper around *everything*, dots included — anchored to the grid
+ * alone it stops at the grid's padding box and leaves a hard horizontal seam above the
+ * pagination row.
+ */
+.SpotlightBand {
+  position: relative;
+}
+
+.SpotlightBand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.35) 35%, rgba(0, 0, 0, 0) 62%);
+}
+
+.SpotlightCopy {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  text-shadow: none;
+  padding: 0 1.25rem;
+}
+
+.SpotlightEyebrow {
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 700;
+  margin: 0 0 0.85rem;
+  text-shadow: none;
+}
+
+.SpotlightHeadline {
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  color: #fff;
+  margin: 0 auto;
+  max-width: 350px;
+  width: 100%;
+  text-wrap: balance;
+  text-shadow: none;
+}
+
+@media (min-width: 768px) {
+  .SpotlightHeadline {
+    font-size: 2.6rem;
+    max-width: 540px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .SpotlightCopy {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .SpotlightHeadline {
+    font-size: 3.5rem;
+    max-width: none;
+    margin: 0;
+  }
+}
+
+.SpotlightCta {
+  margin-top: 1.75rem;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  background: #fff;
+  color: #000;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.7rem 1.35rem;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+@media (min-width: 1024px) {
+  .SpotlightCta {
+    align-self: flex-start;
+  }
+}
+
+.SpotlightCta:hover {
+  background: #ececec;
+}
+
+/* --- Stage ------------------------------------------------------------- */
+
+/*
+ * `perspective` is deliberately long relative to the cylinder radius below: a short
+ * one scales the front card up so hard that it outgrows the stage and gets clipped.
+ */
+.SpotlightStage {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 450px;
+  perspective: 1730px;
+  outline: none;
+  overflow: visible;
+  cursor: grab;
+  /*
+   * Claims horizontal gestures for the carousel while leaving vertical ones to the page,
+   * so swiping the cards on a phone doesn't also block scrolling past the section.
+   */
+  touch-action: pan-y;
+}
+
+.SpotlightStage[data-dragging='true'] {
+  cursor: grabbing;
+}
+
+/* A card being dragged must track the pointer exactly, with no easing in between. */
+.SpotlightStage[data-dragging='true'] .SpotlightSlot {
+  transition: none;
+}
+
+@media (min-width: 768px) {
+  .SpotlightStage {
+    height: 560px;
+  }
+}
+
+.SpotlightScene {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.SpotlightCylinder {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  transform: translate3d(-50%, -50%, 0);
+}
+
+.SpotlightSlot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 178px;
+  height: 390px;
+  margin-top: -195px;
+  margin-left: -89px;
+  transform-style: preserve-3d;
+  transition: transform 0.85s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 767px) {
+  .SpotlightSlot {
+    width: 160px;
+    height: 350px;
+    margin-top: -175px;
+    margin-left: -80px;
+  }
+}
+
+/* Fixed height so every card's top edge lines up regardless of how the caption wraps. */
+.SpotlightSlotLabel {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  text-align: center;
+  padding-bottom: 0.6rem;
+}
+
+.SpotlightSlotLabelTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.SpotlightSlotLabelSub {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 0.1rem 0 0;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .SpotlightSlotLabel {
+    height: 48px;
+  }
+
+  .SpotlightSlotLabelTitle {
+    font-size: 0.8rem;
+  }
+
+  .SpotlightSlotLabelSub {
+    font-size: 0.68rem;
+  }
+}
+
+/* --- Card -------------------------------------------------------------- */
+
+.SpotlightCard {
+  position: relative;
+  flex: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+
+/* A darker wash of the card's own tint, pooled top-left and along the bottom edge. */
+.SpotlightCardBlob {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.SpotlightCardInner {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 0.6rem 0.6rem 0.85rem 0.6rem;
+}
+
+@media (max-width: 767px) {
+  .SpotlightCardInner {
+    padding: 0.5rem 0.5rem 0.65rem 0.5rem;
+  }
+}
+
+.SpotlightCardImageWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 607 / 1080;
+  border-radius: 8px;
+  overflow: hidden;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.SpotlightCardImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transform: none;
+  display: block;
+}
+
+.SpotlightCardImageFallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.SpotlightCardFooter {
+  margin-top: 0.6rem;
+  min-width: 0;
+}
+
+/* Single line, like the reference — it also keeps every card's text block the same
+   height, so no card ends up with a band of dead space under its date. */
+.SpotlightCardTitle {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+}
+
+/* Makes the whole card the link target without nesting the share button inside it. */
+.SpotlightCardTitle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.SpotlightCardMeta {
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 0.25rem 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Pagination -------------------------------------------------------- */
+
+.SpotlightDots {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0 2rem;
+}
+
+.SpotlightDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.3);
+  transition: background-color 0.25s ease, width 0.25s ease;
+}
+
+.SpotlightDot[data-active='true'] {
+  background: #fff;
+  width: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .SpotlightCylinder,
+  .SpotlightSlot {
+    transition: none;
+  }
+}

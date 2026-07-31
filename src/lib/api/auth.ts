@@ -247,11 +247,40 @@ export async function setWalletPin(data: SetPinRequest): Promise<{ ok: boolean; 
 }
 
 export function signInWithGoogle(): void {
-  throw new Error('Google OAuth is not supported by the current backend contract.');
+  const backendUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api/v1' : 'https://amptive-staging.getamptive.com/api/v1');
+  window.location.href = `${backendUrl}/auth/google`;
 }
 
-export async function handleOAuthCallback(_code: string): Promise<AuthResponse> {
-  return unsupportedAuthResponse('OAuth callback is not supported by the current backend contract.');
+export async function handleOAuthCallback(code?: string): Promise<AuthResponse> {
+  try {
+    if (!code) {
+      return unsupportedAuthResponse('No authorization code received.');
+    }
+    const response = await api.post<any>('/auth/google/callback', { code }, { skipAuth: true });
+    
+    if (response?.access_token) {
+      const expiresIn = response.expires_in ?? 86400;
+      api.setSessionTokens(response.access_token, response.refresh_token || '', expiresIn);
+    }
+
+    const user = response?.user ? normalizeUserProfile(response.user) : await getCurrentUser();
+
+    return {
+      status: true,
+      message: 'Google login successful',
+      access_token: response?.access_token,
+      refresh_token: response?.refresh_token,
+      user: user || undefined,
+      data: {
+        access_token: response?.access_token,
+        refresh_token: response?.refresh_token,
+        user: user || undefined,
+      },
+    };
+  } catch (err: any) {
+    console.error('handleOAuthCallback error:', err);
+    return unsupportedAuthResponse(err?.message || 'Google authentication failed.');
+  }
 }
 
 export type VerifyOtpResponse = { success: boolean; message?: string };

@@ -21,34 +21,22 @@ export default function OAuthCallback() {
           throw new Error(`Authentication error: ${error}`);
         }
 
-        const provider = searchParams.get('provider');
-
-        // OAuth not currently supported - redirect to login with message
-        if (!provider) {
-          setStatus('Social login is not available. Redirecting...');
-          setTimeout(() => {
-            navigate('/login?error=Social+login+not+available', { replace: true });
-          }, 2000);
-          return;
-        }
-
         setStatus('Verifying your session...');
 
-        const code = searchParams.get('code');
-        if (!code) {
-          throw new Error('No authorization code found');
+        const code = searchParams.get('code') || undefined;
+
+        const authRes = await processOAuthCallback(code);
+        if (!authRes.status || !authRes.user) {
+          throw new Error(authRes.message || authRes.error || 'Authentication failed');
         }
 
-        const { user } = await processOAuthCallback(code);
-        if (!user) {
-          throw new Error('No user found in session');
-        }
+        const user = authRes.user;
 
         setStatus('Loading your profile...');
 
         let profile = await getCurrentUser();
 
-        const providerAvatar = (user as any).user_metadata?.avatar_url || (user as any).user_metadata?.picture;
+        const providerAvatar = (user as any).user_metadata?.avatar_url || (user as any).user_metadata?.picture || user.avatar_url;
         if ((!profile || !profile.avatar_url) && providerAvatar) {
           const profileUpdate: any = {
             user_id: user.id,
@@ -56,7 +44,7 @@ export default function OAuthCallback() {
           };
 
           if (!profile?.name) {
-            profileUpdate.full_name = (user as any).user_metadata?.full_name || (user as any).user_metadata?.name || '';
+            profileUpdate.full_name = (user as any).user_metadata?.full_name || (user as any).user_metadata?.name || user.name || '';
           }
 
           await upsertProfile(profileUpdate);
@@ -73,7 +61,7 @@ export default function OAuthCallback() {
           });
         } else {
           setStatus('Login successful! Redirecting...');
-          const redirectTo = location.state?.from || '/';
+          const redirectTo = location.state?.from || '/dashboard';
           setTimeout(() => {
             navigate(redirectTo, { replace: true });
           }, 1000);

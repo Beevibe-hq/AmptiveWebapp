@@ -140,7 +140,7 @@ export function getTicketUnitPrice(ticket: Partial<EventTicket>, selectedQuantit
     return basePrice;
   }
 
-  const remainingEarlyBirdUnits = Math.max(earlyBirdUnits - sold, 0);
+  const remainingEarlyBirdUnits = getTicketEarlyBirdRemaining(ticket);
   if (remainingEarlyBirdUnits <= 0) {
     return basePrice;
   }
@@ -158,7 +158,7 @@ export function getTicketLineTotal(ticket: Partial<EventTicket>, quantity: numbe
     return basePrice * quantity;
   }
 
-  const remainingEarlyBirdUnits = Math.max(earlyBirdUnits - sold, 0);
+  const remainingEarlyBirdUnits = getTicketEarlyBirdRemaining(ticket);
   const discountedQuantity = Math.min(quantity, remainingEarlyBirdUnits);
   const regularQuantity = Math.max(quantity - discountedQuantity, 0);
   const discountedPrice = Math.max(basePrice - (basePrice * discount / 100), 0);
@@ -166,9 +166,21 @@ export function getTicketLineTotal(ticket: Partial<EventTicket>, quantity: numbe
   return (discountedPrice * discountedQuantity) + (basePrice * regularQuantity);
 }
 
+/**
+ * How many discounted early-bird units are still available.
+ *
+ * Prefers the backend's own counters (`early_bird_remaining`, then
+ * `early_bird_sold_count`). Deriving this from the ticket's *total* `quantity_sold`
+ * assumes every sale consumed an early-bird unit, so the moment those two diverge the
+ * checkout would price a ticket differently from the server that charges for it.
+ */
 export function getTicketEarlyBirdRemaining(ticket: Partial<EventTicket>): number {
+  const reported = toFiniteNumber((ticket as any).early_bird_remaining);
+  if (reported !== null && reported !== undefined) return Math.max(reported, 0);
+
   const earlyBirdUnits = toFiniteNumber(ticket.early_bird_max_count ?? ticket.early_bird_units) ?? 0;
-  const sold = toFiniteNumber(ticket.quantity_sold) ?? 0;
+  const earlyBirdSold = toFiniteNumber((ticket as any).early_bird_sold_count);
+  const sold = earlyBirdSold ?? toFiniteNumber(ticket.quantity_sold) ?? 0;
   return Math.max(earlyBirdUnits - sold, 0);
 }
 

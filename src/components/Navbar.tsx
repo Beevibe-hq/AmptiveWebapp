@@ -113,7 +113,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   const shouldShowAcceptTips = !hasEnabledTips;
 
   const authLinks: NavLink[] = [
-    ...(shouldShowAcceptTips ? [{ name: 'Accept Tip$', path: '/profile/support-setup' } as MenuItem] : []),
+    ...(shouldShowAcceptTips ? [{ name: 'Accept Gifts', path: '/profile/support-setup' } as MenuItem] : []),
     { name: 'Create Event', path: '/events/create' },
     { name: 'Explore', path: '/explore' },
     {
@@ -129,7 +129,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
 
   // Navigation links for unauthenticated users (original)
   const guestLinks: NavLink[] = [
-    { name: 'Accept Tip$', path: '/profile/support-setup' },
+    { name: 'Accept Gifts', path: '/profile/support-setup' },
     { name: 'Explore', path: '/explore' },
     { name: 'Create Event', path: '/login?redirect=/events/create' },
     { name: 'Store', path: '/store' },

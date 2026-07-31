@@ -206,7 +206,7 @@ const EventCard: React.FC<EventCardProps> = ({
       }
       const prices = propPrice.map(t => t.price);
       const minPrice = Math.min(...prices);
-      return `${formatPrice(minPrice)}+`;
+      return minPrice === 0 ? 'From Free' : `From ${formatPrice(minPrice)}`;
     }
     
     // Handle single price

@@ -519,10 +519,10 @@ export default function SupportSetup() {
                                 <div className="space-y-4">
                                     <h2 className="text-[30px] md:text-[54px] font-extrabold leading-[1.1] tracking-tight text-black text-center md:text-left">
                                         <span className="md:hidden">
-                                            Accept Tip$ for Events <br /> Work &amp; Business.
+                                            Accept Gifts for Events <br /> Work &amp; Business.
                                         </span>
                                         <span className="hidden md:inline">
-                                            Accept Tip$ <br /> for Events, Work <br /> &amp; Business.
+                                            Accept Gifts <br /> for Events, Work <br /> &amp; Business.
                                         </span>
                                     </h2>
                                     <p className="text-xl md:text-2xl text-gray-600 font-medium leading-relaxed max-w-xl text-center md:text-left">

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { login } from '@/lib/api/auth';
+import { login, signInWithGoogle } from '@/lib/api/auth';
 import { isProfileComplete } from '@/lib/api/profiles';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -62,6 +62,18 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [showSocialTooltip, setShowSocialTooltip] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await signInWithGoogle();
+    } catch (err: any) {
+      console.error('Google sign in error:', err);
+      setError(err?.message || 'Failed to initialize Google Sign In');
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,20 +146,20 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* Social providers - temporarily disabled */}
+      {/* Social providers */}
       <div style={{ marginBottom: '24px' }}>
         {showSocialTooltip && (
           <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-            Social login coming soon. Use email sign-in below.
+            X and Facebook login coming soon. Use Google or email sign-in below.
             <button type="button" onClick={() => setShowSocialTooltip(false)} className="ml-2 underline font-medium">Got it</button>
           </div>
         )}
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
-            disabled
-            onClick={() => setShowSocialTooltip(true)}
+            style={socialButtonStyle}
+            onClick={handleGoogleSignIn}
+            disabled={loading}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>

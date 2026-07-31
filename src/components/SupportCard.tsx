@@ -699,7 +699,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                             
                             {/* Polaroid handwriting caption */}
                             <span className="text-[10px] md:text-xs font-spotify font-black tracking-widest text-slate-800 uppercase mt-5">
-                              ★ {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Tip Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'} ★
+                              ★ {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Gift Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'} ★
                             </span>
                           </div>
                         </div>
@@ -734,7 +734,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                         </div>
 
                         <p className="text-xs md:text-sm font-medium" style={{ color: current.accent }}>
-                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Tip Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
+                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Gift Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
                         </p>
                       </div>
                     </>
@@ -769,7 +769,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                         </motion.div>
 
                         <p className="text-xs md:text-sm font-medium" style={{ color: current.accent }}>
-                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Tip Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
+                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Gift Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
                         </p>
                       </div>
 
@@ -954,7 +954,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           </div>
                         </motion.div>
                         <p className="text-xs md:text-sm font-medium" style={{ color: current.accent }}>
-                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Tip Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
+                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Gift Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
                         </p>
                       </div>
                     </div>
@@ -1043,7 +1043,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           </div>
                         </motion.div>
                         <p className="text-xs md:text-sm font-medium" style={{ color: current.accent }}>
-                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Tip Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
+                          {profileType === 'business' ? 'Scan to Tip My Business' : profileType === 'creator' ? 'Scan to Gift Creator' : profileType === 'organizer' ? 'Scan to Support My Event' : 'Scan to Support'}
                         </p>
                       </div>
                     </div>

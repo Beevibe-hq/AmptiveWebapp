@@ -1,13 +1,15 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Apple, Play } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 
 const Footer = () => {
   const { dominantColor } = useTheme();
+  const location = useLocation();
+  const isExplorePage = location.pathname === '/explore';
 
   return (
     <footer
-      className="w-full bg-transparent"
+      className={`w-full bg-transparent ${isExplorePage ? 'hidden md:block' : ''}`}
     >
       <div className="w-[95vw] mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 lg:pt-16 lg:pb-12">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 md:gap-8">

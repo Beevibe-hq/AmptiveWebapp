@@ -215,6 +215,11 @@ export default function CheckoutPage() {
 
     const totalAmount = ticketCost + (wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0);
 
+    // How many tickets are in the basket. The checkout button keys off this rather than the
+    // price: a free ticket is a valid selection worth ₦0, and gating on the amount meant
+    // free events could never be checked out even though the backend supports them.
+    const selectedTicketCount = Object.values(selection).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+
     const handlePayment = async () => {
         // if (!currentUser) {
         //     navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
@@ -1126,7 +1131,7 @@ export default function CheckoutPage() {
 
                                     <button
                                         onClick={handlePayment}
-                                        disabled={totalAmount <= 0 || processing}
+                                        disabled={selectedTicketCount === 0 || processing}
                                         className="w-full py-5 rounded-full font-bold text-lg transition-all duration-300 transform active:scale-[0.98] bg-black text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-3 mt-4"
                                     >
                                         {processing ? (
@@ -1135,7 +1140,9 @@ export default function CheckoutPage() {
                                                 Authenticating...
                                             </>
                                         ) : (
-                                            `Continue ${formatPrice(totalAmount)}`
+                                            selectedTicketCount === 0
+                                                ? 'Select a ticket'
+                                                : totalAmount === 0 ? 'Continue — Free' : `Continue ${formatPrice(totalAmount)}`
                                         )}
                                     </button>
                                     <p className="text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest">
@@ -1265,7 +1272,7 @@ export default function CheckoutPage() {
                                                 Processing Payment...
                                             </>
                                         ) : (
-                                            `Confirm & Pay ${formatPrice(totalAmount)}`
+                                            totalAmount === 0 ? 'Confirm — Free' : `Confirm & Pay ${formatPrice(totalAmount)}`
                                         )}
                                     </button>
                                     <button

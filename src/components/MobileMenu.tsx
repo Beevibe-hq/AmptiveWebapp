@@ -57,7 +57,7 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
 
   const authLinks: LinkItem[] = [
     ...(shouldShowAcceptTips ? [{
-      name: 'Accept Tip$',
+      name: 'Accept Gifts',
       path: '/profile/support-setup',
       icon: <Heart className="w-7 h-7 mr-4" />
     } as MenuLink] : []),
@@ -131,7 +131,7 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
   // Navigation links for unauthenticated users with icons
   const guestLinks: LinkItem[] = [
     {
-      name: 'Accept Tip$',
+      name: 'Accept Gifts',
       path: '/profile/support-setup',
       icon: <Heart className="w-7 h-7 mr-4" />
     },

@@ -358,6 +358,40 @@ async function mapWithConcurrency<T>(
     await Promise.all(runners);
 }
 
+// Country filters used to scan a string built only from city/venue names, so a venue like
+// "Singiokolo Creek" — whose record clearly says country "Nigeria" — was filtered out of
+// Nigeria. The venue's own country field is authoritative; the city keywords are only a
+// fallback for records that never captured one. (The old United States branch also matched
+// the bare substring "us", which caught "House", "Museum" and "Campus".)
+const COUNTRY_FILTERS: Record<string, { names: string[]; cities: string[] }> = {
+    nigeria: {
+        names: ['nigeria'],
+        cities: ['lagos', 'lekki', 'ikeja', 'abuja', 'port harcourt', 'ibadan', 'yaba',
+                 'surulere', 'ikoyi', 'victoria island', 'ogun', 'benin city', 'enugu', 'kano'],
+    },
+    'united states': {
+        names: ['united states', 'usa', 'u.s.a'],
+        cities: ['new york', 'california', 'miami', 'los angeles', 'chicago', 'texas', 'atlanta'],
+    },
+    france: { names: ['france'], cities: ['paris', 'marseille', 'lyon', 'nice'] },
+};
+
+function matchesCountryFilter(event: any, filterKey: string): boolean {
+    const config = COUNTRY_FILTERS[filterKey];
+    if (!config) return true;
+
+    const country = String(event?.venue?.country || event?.location?.country || '').toLowerCase().trim();
+    if (country) return config.names.some(name => country.includes(name));
+
+    const text = [
+        event?.location?.city, event?.location?.venue, event?.location?.address,
+        event?.venue?.city, event?.venue?.name, event?.venue?.state,
+        event?.venue?.address_line1, event?.venue?.address,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return [...config.names, ...config.cities].some(term => text.includes(term));
+}
+
 // How far out "Near Me" reaches — wide enough to cover a metro area and its outskirts.
 const NEAR_ME_RADIUS_KM = 75;
 
@@ -1448,25 +1482,18 @@ export default function Explore() {
                 );
             });
         } else if (locFilter === 'United States') {
-            filtered = filtered.filter(e => {
-                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name} ${e.location?.address} ${e.venue?.address}`.toLowerCase();
-                return str.includes('united states') || str.includes('usa') || str.includes('us') || str.includes('new york') || str.includes('california') || str.includes('miami');
-            });
+            filtered = filtered.filter(e => matchesCountryFilter(e, 'united states'));
         } else if (locFilter === 'Nigeria') {
             filtered = filtered.filter(e => {
-                const isVirtual = !e.venue || 
-                                  e.venue?.venue_type === 'virtual' || 
-                                  e.location?.type === 'online' || 
-                                  (e as any).is_online || 
+                const isVirtual = !e.venue ||
+                                  e.venue?.venue_type === 'virtual' ||
+                                  e.location?.type === 'online' ||
+                                  (e as any).is_online ||
                                   (e as any).is_virtual;
-                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name} ${e.location?.address} ${e.venue?.address}`.toLowerCase();
-                return isVirtual || str.includes('nigeria') || str.includes('lagos') || str.includes('lekki') || str.includes('ikeja') || str.includes('abuja') || str.includes('port harcourt') || str.includes('ibadan') || str.includes('yaba') || str.includes('surulere') || str.includes('ikoyi') || str.includes('victoria island');
+                return isVirtual || matchesCountryFilter(e, 'nigeria');
             });
         } else if (locFilter === 'France') {
-            filtered = filtered.filter(e => {
-                const str = `${e.location?.city} ${e.location?.venue} ${e.venue?.city} ${e.venue?.name} ${e.location?.address} ${e.venue?.address}`.toLowerCase();
-                return str.includes('france') || str.includes('paris');
-            });
+            filtered = filtered.filter(e => matchesCountryFilter(e, 'france'));
         } else if (locFilter) {
             // Generic text match for any custom typed location
             const locLower = locFilter.toLowerCase();

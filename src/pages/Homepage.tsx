@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getPublishedPosts } from '@/lib/api/blog';
 import { blogPosts as staticBlogPosts } from '@/lib/blog-data';
 import { useSEO } from '@/hooks/useSEO';
+import EventSpotlightCarousel from '@/components/EventSpotlightCarousel';
 
 
 // Type definition for Trending Card
@@ -532,7 +533,7 @@ const SLIDES: SlideData[] = [
   {
     title: "Create Your Amptive Support Card & Start Earning Tips",
     description: "As a business, creator, or event organizer, Amptive's support feature provides your audience with an easy way to support your work anytime and anywhere",
-    ctaText: "Accept Tip$",
+    ctaText: "Accept Gifts",
     ctaLink: "/profile/support-setup",
     videoSrc: '/videos/accepttips_encode4.mp4',
     videoSources: ['/videos/accepttips_encode4.mp4', '/videos/tipping1.mp4'],
@@ -1937,12 +1938,12 @@ const Homepage: React.FC = () => {
         </div>
       </div>
 
-      {/* Top Events Section */}
-      <div className="w-[95vw] mx-auto mt-4 mb-12 bg-white px-6 py-8">
-        <div className="mb-7 flex items-center justify-between gap-4">
+      {/* Top Events Section - Popular this Week */}
+      <div className="w-[95vw] mx-auto mt-4 mb-12 bg-white px-4 md:px-6 py-6 md:py-8">
+        <div className="mb-6 flex items-center justify-between gap-4">
           <button
             type="button"
-            onClick={() => navigate('/events')}
+            onClick={() => navigate('/events?sort=popular')}
             className="group inline-flex items-center gap-2 text-[22px] font-bold text-black md:text-[24px]"
           >
             Popular this Week
@@ -1952,15 +1953,15 @@ const Homepage: React.FC = () => {
             <button
               type="button"
               aria-label="Previous events"
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-50 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
             <button
               type="button"
               aria-label="Next events"
-              onClick={() => navigate('/events')}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-black transition-colors hover:bg-gray-200"
+              onClick={() => navigate('/events?sort=popular')}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-black transition-colors hover:bg-gray-200"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -1968,144 +1969,109 @@ const Homepage: React.FC = () => {
         </div>
 
         {loadingEvents ? (
-          <div className="grid gap-x-14 gap-y-6 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={`popular-skeleton-${i}`} className="flex items-center gap-4 animate-pulse">
-                <div className="h-16 w-16 rounded-xl bg-gray-100" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="h-4 w-2/3 rounded bg-gray-100" />
-                  <div className="h-3 w-full rounded bg-gray-100" />
-                </div>
+          <div className="grid gap-12 md:gap-16 lg:gap-24 md:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2].map((colIndex) => (
+              <div key={`col-skel-${colIndex}`} className="flex flex-col space-y-4">
+                {[1, 2, 3].map((rowIndex) => (
+                  <div key={`row-skel-${rowIndex}`} className="flex items-center gap-4 animate-pulse">
+                    <div className="h-14 w-14 rounded-xl bg-gray-100 shrink-0" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-4 w-3/4 rounded bg-gray-100" />
+                      <div className="h-3 w-1/2 rounded bg-gray-100" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
         ) : filteredEvents.length === 0 ? (
-          <div className="py-12 text-sm font-medium text-gray-500">
+          <div className="py-12 text-sm font-medium text-gray-500 text-center">
             No upcoming events found
           </div>
         ) : (
-          <>
-          <div className="grid gap-x-14 gap-y-6 md:hidden">
-            {filteredEvents.slice(0, 4).map((event) => {
-              const priceLabel = Array.isArray(event.price) && event.price.length > 0
-                ? (event.price.length === 1
-                    ? (event.price[0].price > 0 ? `₦${event.price[0].price.toLocaleString()}` : 'Free')
-                    : `From ₦${Math.min(...event.price.map((t: any) => t.price)).toLocaleString()}`
-                  )
-                : (event.price && (event.price as number) > 0 ? `₦${Number(event.price).toLocaleString()}` : 'Free');
-              const dateLabel = event.date
-                ? new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                : 'Date TBA';
-
+          <div className="hide-scrollbar flex gap-10 md:gap-16 lg:gap-24 overflow-x-auto pb-4 snap-x sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0">
+            {Array.from({ length: Math.ceil(Math.min(filteredEvents.length, 9) / 3) }).map((_, colIdx) => {
+              const colEvents = filteredEvents.slice(colIdx * 3, colIdx * 3 + 3);
               return (
-                <button
-                  key={event.id}
-                  type="button"
-                  onClick={() => navigate(`/events/${event.id}`)}
-                  className="group flex min-w-0 items-center gap-4 text-left"
-                >
-                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                    {event.media?.src ? (
-                      <img
-                        src={event.media.src}
-                        alt={event.media.alt || event.title}
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-300">
-                        <Calendar className="h-6 w-6" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="truncate text-[17px] font-bold leading-tight text-black group-hover:underline">
-                      {event.title}
-                    </h3>
-                    <p className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-gray-500">
-                      {event.location} · {priceLabel} · {dateLabel}
-                    </p>
-                    {(event.hasEarlyBirdOnSale || event.isAlmostSoldOut) && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {event.hasEarlyBirdOnSale && (
-                          <span className="rounded-full bg-orange-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm">
-                            Early bird
+                <div key={`popular-col-${colIdx}`} className="w-[85vw] sm:w-auto shrink-0 snap-start flex flex-col justify-between">
+                  {colEvents.map((event, rowIdx) => {
+                    const globalRank = colIdx * 3 + rowIdx + 1;
+                    const priceLabel = Array.isArray(event.price) && event.price.length > 0
+                      ? (event.price.length === 1
+                          ? (event.price[0].price > 0 ? `₦${event.price[0].price.toLocaleString()}` : 'Free')
+                          : `From ₦${Math.min(...event.price.map((t: any) => t.price)).toLocaleString()}`
+                        )
+                      : (event.price && (event.price as number) > 0 ? `₦${Number(event.price).toLocaleString()}` : 'Free');
+
+                    return (
+                      <div key={event.id} className="flex flex-col">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/events/${event.id}`)}
+                          className="group flex items-center gap-3 md:gap-4 text-left py-3 px-1 hover:bg-gray-50/80 rounded-xl transition-colors min-w-0 w-full"
+                        >
+                          {/* Rank Numbering */}
+                          <span className="w-6 md:w-7 text-center font-extrabold text-black text-lg md:text-xl shrink-0 select-none">
+                            {globalRank}
                           </span>
-                        )}
-                        {event.isAlmostSoldOut && (
-                          <span className="rounded-full bg-rose-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm ring-1 ring-rose-300/60">
-                            Almost sold out
-                          </span>
+
+                          {/* Square Cover Art */}
+                          <div className="relative h-20 w-20 md:h-22 md:w-22 shrink-0 overflow-hidden rounded-lg md:rounded-xl bg-gray-100 shadow-xs">
+                            {event.media?.src ? (
+                              <img
+                                src={event.media.src}
+                                alt={event.media.alt || event.title}
+                                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-gray-300">
+                                <Calendar className="h-6 w-6" />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Metadata */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <h3 className="truncate text-[15px] md:text-[16px] font-bold leading-snug text-gray-900 group-hover:text-black">
+                                {event.title}
+                              </h3>
+                              {/* Early Bird SVG Orange Badge */}
+                              {event.hasEarlyBirdOnSale && (
+                                <span
+                                  className="inline-flex items-center justify-center p-0.5 rounded shrink-0 text-orange-600 border border-orange-600/80 bg-orange-50 select-none"
+                                  title="Early Bird Available"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 fill-orange-600" viewBox="0 0 256 256">
+                                    <path d="M236.44,73.34,213.21,57.86A60,60,0,0,0,156,16h-.29C122.79,16.16,96,43.47,96,76.89V96.63L11.63,197.88l-.1.12A16,16,0,0,0,24,224h88A104.11,104.11,0,0,0,216,120V100.28l20.44-13.62a8,8,0,0,0,0-13.32ZM126.15,133.12l-60,72a8,8,0,1,1-12.29-10.24l60-72a8,8,0,1,1,12.29,10.24ZM164,80a12,12,0,1,1,12-12A12,12,0,0,1,164,80Z" />
+                                  </svg>
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 truncate text-[13px] md:text-[14px] font-medium text-gray-500">
+                              {event.location} · {priceLabel}
+                            </p>
+                          </div>
+                        </button>
+
+                        {/* Divider Line between items in the column */}
+                        {rowIdx < colEvents.length - 1 && (
+                          <div className="h-px bg-gray-200/80 my-1 w-[calc(100%+1.5rem)] md:w-[calc(100%+2.5rem)]" />
                         )}
                       </div>
-                    )}
-                  </div>
-                </button>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>
-          <div className="hidden gap-x-14 gap-y-6 md:grid md:grid-cols-2 xl:grid-cols-3">
-            {filteredEvents.slice(0, 9).map((event) => {
-              const priceLabel = Array.isArray(event.price) && event.price.length > 0
-                ? (event.price.length === 1
-                    ? (event.price[0].price > 0 ? `₦${event.price[0].price.toLocaleString()}` : 'Free')
-                    : `From ₦${Math.min(...event.price.map((t: any) => t.price)).toLocaleString()}`
-                  )
-                : (event.price && (event.price as number) > 0 ? `₦${Number(event.price).toLocaleString()}` : 'Free');
-              const dateLabel = event.date
-                ? new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                : 'Date TBA';
-
-              return (
-                <button
-                  key={event.id}
-                  type="button"
-                  onClick={() => navigate(`/events/${event.id}`)}
-                  className="group flex min-w-0 items-center gap-4 text-left"
-                >
-                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                    {event.media?.src ? (
-                      <img
-                        src={event.media.src}
-                        alt={event.media.alt || event.title}
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-300">
-                        <Calendar className="h-6 w-6" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="truncate text-[17px] font-bold leading-tight text-black group-hover:underline">
-                      {event.title}
-                    </h3>
-                    <p className="mt-1 line-clamp-2 text-[15px] font-medium leading-snug text-gray-500">
-                      {event.location} · {priceLabel} · {dateLabel}
-                    </p>
-                    {(event.hasEarlyBirdOnSale || event.isAlmostSoldOut) && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {event.hasEarlyBirdOnSale && (
-                          <span className="rounded-full bg-orange-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm sm:text-[10px]">
-                            Early bird
-                          </span>
-                        )}
-                        {event.isAlmostSoldOut && (
-                          <span className="rounded-full bg-rose-600 px-2 py-1 text-[8px] font-bold uppercase leading-none tracking-tight text-white shadow-sm ring-1 ring-rose-300/60 sm:text-[10px]">
-                            Almost sold out
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          </>
         )}
       </div>
 
 
+
+      {/* 3D Event Spotlight Carousel */}
+      <EventSpotlightCarousel events={filteredEvents} loading={loadingEvents} />
 
       {/* Explore Topics Section */}
       <div className="w-[95vw] mx-auto mt-2 mb-10 bg-white px-4 py-6 sm:mt-4 sm:mb-12 sm:px-6 sm:py-8">
