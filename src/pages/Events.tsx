@@ -246,7 +246,7 @@ export default function Events() {
               </div>
 
               {/* Right Video Card Skeleton */}
-              <div className="w-full lg:w-[320px] xl:w-[360px] shrink-0 lg:ml-6 xl:ml-10">
+              <div className="hidden lg:block lg:w-[320px] xl:w-[360px] shrink-0 lg:ml-6 xl:ml-10">
                 <div className="w-full h-[480px] sm:h-[540px] lg:h-[580px] bg-gray-200 rounded-2xl animate-pulse shadow-sm" />
               </div>
             </div>
@@ -330,7 +330,7 @@ export default function Events() {
               </div>
 
               {/* Right Video Card */}
-              <div className="w-full lg:w-[320px] xl:w-[360px] shrink-0 sticky top-24 lg:ml-6 xl:ml-10">
+              <div className="hidden lg:block lg:w-[320px] xl:w-[360px] shrink-0 sticky top-24 lg:ml-6 xl:ml-10">
                 <div className="relative overflow-hidden rounded-2xl bg-black shadow-lg group">
                   <video
                     src="/videos/amptivevid5.mp4"
