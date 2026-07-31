@@ -333,7 +333,7 @@ export default function Events() {
               <div className="hidden lg:block lg:w-[320px] xl:w-[360px] shrink-0 sticky top-24 lg:ml-6 xl:ml-10">
                 <div className="relative overflow-hidden rounded-2xl bg-black shadow-lg group">
                   <video
-                    src="/videos/amptivevid5.mp4"
+                    src="/images/amptiveappprovid.mp4"
                     autoPlay
                     loop
                     muted

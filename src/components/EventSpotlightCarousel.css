@@ -229,23 +229,26 @@
   color: rgba(255, 255, 255, 0.72);
   margin: 0.1rem 0 0;
   line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  text-align: center;
   max-width: 100%;
 }
 
 @media (max-width: 767px) {
   .SpotlightSlotLabel {
-    height: 48px;
+    min-height: 48px;
+    height: auto;
   }
 
   .SpotlightSlotLabelTitle {
     font-size: 0.8rem;
+    white-space: normal;
   }
 
   .SpotlightSlotLabelSub {
-    font-size: 0.68rem;
+    font-size: 0.65rem;
+    line-height: 1.15;
+    white-space: normal;
   }
 }
 

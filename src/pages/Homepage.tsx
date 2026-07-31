@@ -387,10 +387,10 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
             <h1 className={`text-2xl ${title.length > 35 ? 'md:text-[26px] lg:text-[30px]' : 'md:text-[36px]'} font-extrabold mb-4 md:mb-6 leading-tight text-white`}>
               {isFirstSlide ? (
                 <>
-                  <span className="md:hidden">Go Live with Amptive</span>
-                  <span className="hidden md:inline" dangerouslySetInnerHTML={{
-                    __html: title.replace('Audio Show or', 'Audio Show<br/>or')
-                  }} />
+                  <span className="md:hidden">Go Live With Amptive</span>
+                  <span className="hidden md:inline">
+                    Earn Money From Your Live Audio Shows Through Direct Monetization And Gifting.
+                  </span>
                 </>
               ) : isSecondSlide ? (
                 <>
@@ -399,7 +399,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 </>
               ) : (
                 <>
-                  <span className="md:hidden">One Link. Endless Support</span>
+                  <span className="md:hidden">One Link. Endless Support.</span>
                   <span className="hidden md:inline">{title}</span>
                 </>
               )}
@@ -407,9 +407,9 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
             <p className="text-[14px] md:text-[16px] font-semibold text-white mb-6 md:mb-8">
               {isFirstSlide ? (
                 <>
-                  <span className="md:hidden" dangerouslySetInnerHTML={{
-                    __html: 'Discover live audio shows & events, <br> host your own, and support creators.'
-                  }} />
+                  <span className="md:hidden">
+                    Earn money from your live audio shows through direct monetization and gifting.
+                  </span>
                   <span className="hidden md:inline" dangerouslySetInnerHTML={{
                     __html: description.replace('host your own,', 'host your own,<br/>')
                   }} />
@@ -511,8 +511,8 @@ interface SlideData {
 
 const SLIDES: SlideData[] = [
   {
-    title: "Start a Live Audio Show or Event",
-    mobileTitle: "Go Live with Amptive",
+    title: "Earn Money From Your Live Audio Shows Through Direct Monetization And Gifting.",
+    mobileTitle: "Go Live With Amptive",
     description: "Discover live audio shows & events, host your own, and support creators.",
     ctaText: "Download App",
     ctaLink: "/download",
@@ -521,7 +521,7 @@ const SLIDES: SlideData[] = [
     isFirstSlide: true
   },
   {
-    title: "Launch, sell, and manage your Physical Event Tickets with Ease.",
+    title: "Launch, Sell, And Manage Your Physical Event Tickets With Ease.",
     description: "Reach more attendees, track sales, and deliver a smooth ticketing experience from start to finish.",
     ctaText: "Launch event",
     ctaLink: "/events",
@@ -1989,11 +1989,11 @@ const Homepage: React.FC = () => {
             No upcoming events found
           </div>
         ) : (
-          <div className="hide-scrollbar flex gap-10 md:gap-16 lg:gap-24 overflow-x-auto pb-4 snap-x sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0">
+          <div className="hide-scrollbar flex gap-6 md:gap-16 lg:gap-24 overflow-x-auto pb-4 snap-x snap-mandatory scroll-smooth sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible sm:pb-0">
             {Array.from({ length: Math.ceil(Math.min(filteredEvents.length, 9) / 3) }).map((_, colIdx) => {
               const colEvents = filteredEvents.slice(colIdx * 3, colIdx * 3 + 3);
               return (
-                <div key={`popular-col-${colIdx}`} className="w-[85vw] sm:w-auto shrink-0 snap-start flex flex-col justify-between">
+                <div key={`popular-col-${colIdx}`} className="w-[calc(100vw-3rem)] sm:w-auto shrink-0 snap-center flex flex-col justify-between">
                   {colEvents.map((event, rowIdx) => {
                     const globalRank = colIdx * 3 + rowIdx + 1;
                     const priceLabel = Array.isArray(event.price) && event.price.length > 0

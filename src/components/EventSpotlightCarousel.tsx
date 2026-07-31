@@ -457,7 +457,14 @@ export default function EventSpotlightCarousel({ events, loading = false }: Even
             {currentCopy.eyebrow}
           </p>
           <h2 key={`headline-${activeCardIndex}`} className="SpotlightHeadline">
-            {currentCopy.headline}
+            {activeCardIndex === 0 ? (
+              <>
+                <span className="lg:hidden">Create Ticketed Events &amp; Sell Out In Minutes</span>
+                <span className="hidden lg:inline">Earn Money From Your Live Audio Shows Through Direct Monetization And Gifting.</span>
+              </>
+            ) : (
+              currentCopy.headline
+            )}
           </h2>
           <button
             key={`cta-${activeCardIndex}`}
