@@ -16,33 +16,146 @@ import { useSEO } from '@/hooks/useSEO';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-const MAP_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const MAP_TILE_ATTR = '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>';
-const MAP_PROVIDER = 'OpenStreetMap';
+const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+  'lagos': { lat: 6.5244, lng: 3.3792 },
+  'abuja': { lat: 9.0765, lng: 7.3986 },
+  'lekki': { lat: 6.4698, lng: 3.5852 },
+  'ikeja': { lat: 6.6018, lng: 3.3515 },
+  'yaba': { lat: 6.5095, lng: 3.3711 },
+  'port harcourt': { lat: 4.8156, lng: 7.0498 },
+  'ibadan': { lat: 7.3775, lng: 3.9470 },
+  'enugu': { lat: 6.4584, lng: 7.5464 },
+  'benin': { lat: 6.3350, lng: 5.6037 },
+  'new york': { lat: 40.7128, lng: -74.0060 },
+  'los angeles': { lat: 34.0522, lng: -118.2437 },
+  'miami': { lat: 25.7617, lng: -80.1918 },
+  'chicago': { lat: 41.8781, lng: -87.6298 },
+  'houston': { lat: 29.7604, lng: -95.3698 },
+  'san francisco': { lat: 37.7749, lng: -122.4194 },
+  'atlanta': { lat: 33.7490, lng: -84.3880 },
+  'paris': { lat: 48.8566, lng: 2.3522 },
+  'london': { lat: 51.5074, lng: -0.1278 },
+  'accra': { lat: 5.6037, lng: -0.1870 },
+  'johannesburg': { lat: -26.2041, lng: 28.0473 },
+  'cape town': { lat: -33.9249, lng: 18.4241 },
+  'nairobi': { lat: -1.2921, lng: 36.8219 },
+  'berlin': { lat: 52.5200, lng: 10.4515 },
+};
 
-function VenueMap({ latitude, longitude, venueName }: { latitude: number; longitude: number; venueName?: string }) {
+function VenueMap({
+  latitude,
+  longitude,
+  locationQuery,
+  venueName,
+  hostAvatarUrl
+}: {
+  latitude?: number | null;
+  longitude?: number | null;
+  locationQuery?: string;
+  venueName?: string;
+  hostAvatarUrl?: string;
+}) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
+
+    let cancelled = false;
+
+    // Determine initial center coordinates
+    let initialLat = latitude;
+    let initialLng = longitude;
+
+    if ((initialLat == null || initialLng == null || (initialLat === 0 && initialLng === 0)) && locationQuery) {
+      const q = locationQuery.toLowerCase();
+      for (const [city, coords] of Object.entries(CITY_COORDS)) {
+        if (q.includes(city)) {
+          initialLat = coords.lat;
+          initialLng = coords.lng;
+          break;
+        }
+      }
+    }
+
+    if (initialLat == null || initialLng == null || (initialLat === 0 && initialLng === 0)) {
+      initialLat = 6.5244;
+      initialLng = 3.3792;
+    }
+
     const map = L.map(mapRef.current, {
-      center: [latitude, longitude],
+      center: [initialLat, initialLng],
       zoom: 15,
       zoomControl: false,
       attributionControl: false,
     });
-    L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTR }).addTo(map);
-    L.marker([latitude, longitude]).addTo(map);
+
+    // Tile Layer: Mapbox Streets v12 → CARTO Voyager fallback
+    const mapboxToken = (import.meta as any).env?.VITE_MAPBOX_ACCESS_TOKEN;
+    if (mapboxToken) {
+      L.tileLayer(
+        `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${mapboxToken}`,
+        { attribution: '© Mapbox © OpenStreetMap', tileSize: 512, zoomOffset: -1, minZoom: 3, maxZoom: 20 }
+      ).addTo(map);
+    } else {
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '© CARTO © OpenStreetMap',
+        subdomains: 'abcd',
+        minZoom: 3,
+        maxZoom: 20,
+      }).addTo(map);
+    }
+
+    // Host avatar pin marker
+    const imgSrc = hostAvatarUrl || '/images/IMG_6053 2.JPG';
+    const iconHtml = `
+      <div style="position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;">
+        <div style="width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
+          <img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='/images/IMG_6053 2.JPG';" />
+        </div>
+        <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #ffffff;margin-top:-2px;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.12));"></div>
+      </div>
+    `;
+
+    const eventIcon = L.divIcon({
+      className: '',
+      html: iconHtml,
+      iconSize: [48, 58],
+      iconAnchor: [24, 58],
+    });
+
+    const marker = L.marker([initialLat, initialLng], { icon: eventIcon }).addTo(map);
     mapInstance.current = map;
+
+    // If explicit coordinates were missing, attempt async geocoding via Nominatim
+    if ((latitude == null || longitude == null || (latitude === 0 && longitude === 0)) && locationQuery) {
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(locationQuery)}`)
+        .then((res) => res.json())
+        .then((results) => {
+          if (!cancelled && results && results[0]) {
+            const lat = parseFloat(results[0].lat);
+            const lon = parseFloat(results[0].lon);
+            if (!isNaN(lat) && !isNaN(lon)) {
+              map.setView([lat, lon], 15);
+              marker.setLatLng([lat, lon]);
+            }
+          }
+        })
+        .catch(() => { /* keep initial center */ });
+    }
+
     return () => {
+      cancelled = true;
       map.remove();
       mapInstance.current = null;
     };
-  }, [latitude, longitude]);
+  }, [latitude, longitude, locationQuery, hostAvatarUrl]);
 
   return (
     <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-gray-200 bg-gray-100 shadow-sm group">
+      <style>{`
+        .leaflet-tile-pane { filter: saturate(1.04) brightness(1.01); }
+      `}</style>
       <div ref={mapRef} className="absolute inset-0 h-full w-full z-10" />
       <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-black/5 z-20" />
       {venueName && (
@@ -50,10 +163,6 @@ function VenueMap({ latitude, longitude, venueName }: { latitude: number; longit
           {venueName}
         </div>
       )}
-      <div className="absolute top-3 right-3 z-30 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-full text-[10px] font-medium text-gray-500 shadow-sm flex items-center gap-1">
-        <MapPin className="h-3 w-3" />
-        {MAP_PROVIDER}
-      </div>
     </div>
   );
 }
@@ -923,7 +1032,7 @@ const EventDetail = () => {
               </section>
 
               {/* Location Map Section */}
-              {physicalLatitude !== null && physicalLongitude !== null ? (
+              {!isVirtualEvent && (physicalLatitude !== null || physicalLongitude !== null || fallbackMapQuery) ? (
                 <section className="pt-12 border-t border-gray-100">
                   <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
                     <MapPin className="h-4 w-4 text-blue-500" />
@@ -932,25 +1041,10 @@ const EventDetail = () => {
                   <VenueMap
                     latitude={physicalLatitude}
                     longitude={physicalLongitude}
+                    locationQuery={fallbackMapQuery}
                     venueName={physicalVenue?.name || event.location?.venue}
+                    hostAvatarUrl={event.host?.profile_picture || (event.host as any)?.profile_image_url || (event.host as any)?.avatar_url || organizerProfile?.avatar_url || organizerProfile?.profile_picture || undefined}
                   />
-                </section>
-              ) : event.location?.type !== 'online' && fallbackMapSrc ? (
-                <section className="pt-12 border-t border-gray-100">
-                  <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
-                    <MapPin className="h-4 w-4 text-blue-500" />
-                    Location
-                  </div>
-                  <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-gray-200 bg-gray-100 shadow-sm group">
-                    <iframe
-                      src={fallbackMapSrc}
-                      title={`${fallbackMapQuery} map`}
-                      className="absolute inset-0 h-full w-full grayscale-[20%] transition-all duration-700 group-hover:grayscale-0"
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                    />
-                    <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-black/5" />
-                  </div>
                 </section>
               ) : null}
 

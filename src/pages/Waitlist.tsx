@@ -49,7 +49,7 @@ const WAITLIST_GOALS: {
     role: 'listener',
     icon: IoHeadset,
     title: 'Listening and discovery',
-    description: 'Join communities, attend life-changing events, support your favorite creators, & earn rewards.',
+    description: 'Join communities, attend unforgettable events, support creators, & earn rewards.',
     tint: [208, 233, 214],
   },
 ];

@@ -406,14 +406,9 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
             </h1>
             <p className="text-[14px] md:text-[16px] font-semibold text-white mb-6 md:mb-8">
               {isFirstSlide ? (
-                <>
-                  <span className="md:hidden">
-                    Earn money from your live audio shows through direct monetization and gifting.
-                  </span>
-                  <span className="hidden md:inline" dangerouslySetInnerHTML={{
-                    __html: description.replace('host your own,', 'host your own,<br/>')
-                  }} />
-                </>
+                <span>
+                  Join communities, attend unforgettable events, support creators, & earn rewards.
+                </span>
               ) : isSecondSlide ? (
                 <>
                   <span className="md:hidden" dangerouslySetInnerHTML={{
@@ -469,7 +464,7 @@ const SLIDES: SlideData[] = [
   {
     title: "Earn Money From Your Live Audio Through Direct Monetization And Gifting.",
     mobileTitle: "Go Live With Amptive",
-    description: "Discover live audio shows & events, host your own, and support creators.",
+    description: "Join communities, attend unforgettable events, support creators, & earn rewards.",
     ctaText: "Join Waitlist",
     ctaLink: "/waitlist",
     videoSrc: new URL('../assets/949_720x60_shots_so.mp4', import.meta.url).href,
