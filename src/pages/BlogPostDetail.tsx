@@ -390,13 +390,6 @@ const BlogPostDetail = () => {
       <div className="max-w-4xl mx-auto py-12 px-4 sm:px-6">
         <div className="flex flex-col gap-10">
 
-          <div className="self-start">
-            <Link to="/blog" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-black font-semibold transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-              Back to Blog
-            </Link>
-          </div>
-
           {/* Header */}
           <header className="space-y-6 text-center">
             <div className="flex justify-center">

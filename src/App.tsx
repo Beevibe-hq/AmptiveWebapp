@@ -36,6 +36,7 @@ import FAQs from './pages/FAQs';
 import CommunityGuidelines from './pages/CommunityGuidelines';
 import Dashboard from './pages/Dashboard';
 import SupportProfile from './pages/SupportProfile.tsx';
+import Waitlist from './pages/Waitlist';
 
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -110,6 +111,7 @@ function MainLayout() {
     location.pathname === '/login' ||
     location.pathname === '/signup' ||
     location.pathname === '/complete-profile' ||
+    location.pathname === '/waitlist' ||
     location.pathname === '/events/create' ||
     (location.pathname.startsWith('/dashboard/events/') && location.pathname.endsWith('/edit')) ||
     location.pathname === '/profile/edit' ||
@@ -117,13 +119,16 @@ function MainLayout() {
     location.pathname === '/purchase/confirmed' ||
     isDashboard;
 
+  const hideNavbar = isDashboard || location.pathname.startsWith('/support/');
+
   return (
     <div className="min-h-screen font-sans">
       {showRouteSplash && <RouteLogoSplash />}
-      {!isDashboard && !location.pathname.startsWith('/support/') && <Navbar />}
-      <main className={(location.pathname === '/events/create' || (location.pathname.startsWith('/dashboard/events/') && location.pathname.endsWith('/edit'))) ? '' : isDashboard ? '' : 'bg-white'}>
+      {!hideNavbar && <Navbar />}
+      <main className={(location.pathname === '/events/create' || location.pathname === '/waitlist' || (location.pathname.startsWith('/dashboard/events/') && location.pathname.endsWith('/edit'))) ? '' : isDashboard ? '' : 'bg-white'}>
         <Routes>
           <Route path="/" element={<Homepage />} />
+          <Route path="/waitlist" element={<Waitlist />} />
           <Route path="/explore" element={<Explore />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/create" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />

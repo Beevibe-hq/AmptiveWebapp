@@ -71,19 +71,19 @@ const kickerFor = (event: SpotlightEvent, cardIndex: number): { title: string; s
 const DYNAMIC_COPY: Record<number, { eyebrow: string; headline: string; ctaText: string; ctaPath: string }> = {
   0: {
     eyebrow: 'Event Ticketing',
-    headline: 'Create ticketed events & sell out in minutes',
+    headline: 'Create Ticketed Events & Sell Out In Minutes',
     ctaText: 'Create an Event',
     ctaPath: '/events/create',
   },
   1: {
     eyebrow: 'Creator Support',
-    headline: 'Receive instant tips & gifts from your biggest fans',
+    headline: 'Receive Instant Tips & Gifts From Your Biggest Fans',
     ctaText: 'Accept Gifts',
     ctaPath: '/profile/support-setup',
   },
   2: {
     eyebrow: 'Live Audio Spaces',
-    headline: 'Host live audio shows & events with your audience',
+    headline: 'Earn From Live Audio Subs & Gifting',
     ctaText: 'Explore Live Audio',
     ctaPath: '/events',
   },
@@ -457,14 +457,7 @@ export default function EventSpotlightCarousel({ events, loading = false }: Even
             {currentCopy.eyebrow}
           </p>
           <h2 key={`headline-${activeCardIndex}`} className="SpotlightHeadline">
-            {activeCardIndex === 0 ? (
-              <>
-                <span className="lg:hidden">Create Ticketed Events &amp; Sell Out In Minutes</span>
-                <span className="hidden lg:inline">Earn Money From Your Live Audio Shows Through Direct Monetization And Gifting.</span>
-              </>
-            ) : (
-              currentCopy.headline
-            )}
+            {currentCopy.headline}
           </h2>
           <button
             key={`cta-${activeCardIndex}`}

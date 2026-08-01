@@ -55,10 +55,7 @@ const Footer = () => {
           </div>
         </div>
 
-        <div className="border-t border-gray-200 mt-6 pt-6 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-gray-600 text-[13px]">
-            © 2025 Amptive. All rights reserved.
-          </p>
+        <div className="border-t border-gray-200 mt-6 pt-6 flex flex-col md:flex-row justify-end items-center">
           <div className="flex items-center space-x-4 mt-3 md:mt-0">
             <a href="https://apps.apple.com" className="text-gray-600 hover:text-gray-900 transition-colors" aria-label="App Store">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 330 330" fill="currentColor">

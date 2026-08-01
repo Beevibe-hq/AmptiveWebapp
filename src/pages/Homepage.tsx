@@ -389,7 +389,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
                 <>
                   <span className="md:hidden">Go Live With Amptive</span>
                   <span className="hidden md:inline">
-                    Earn Money From Your Live Audio Shows Through Direct Monetization And Gifting.
+                    Earn Money From Your Live Audio Through Direct Monetization And Gifting.
                   </span>
                 </>
               ) : isSecondSlide ? (
@@ -431,59 +431,15 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
               )}
             </p>
 
-
-            {/* Button - Hidden on desktop only for first slide, visible on mobile for all slides */}
-            <div className={isFirstSlide ? 'md:hidden' : ''}>
-              <div className="flex md:block justify-center">
-                <Link
-                  to={ctaLink}
-                  className="bg-white text-black px-6 md:px-8 py-3 md:py-4 rounded-full font-bold text-sm md:text-base hover:bg-gray-100 transition-all duration-200"
-                >
-                  {ctaText}
-                </Link>
-              </div>
+            {/* Button */}
+            <div className="flex justify-center lg:justify-start">
+              <Link
+                to={ctaLink}
+                className="bg-white text-black px-6 md:px-8 py-3 md:py-4 rounded-full font-bold text-sm md:text-base hover:bg-gray-100 transition-all duration-200 inline-block"
+              >
+                {ctaText}
+              </Link>
             </div>
-
-            {/* QR Code - Desktop Only - First Slide */}
-            {isFirstSlide && (
-              <div className="hidden md:block">
-                <div className="flex items-center gap-2 mb-8 p-2 bg-black/10 rounded-lg">
-                  <div className="flex-shrink-0">
-                    <div className="bg-white p-1 rounded flex items-center justify-center" style={{ width: '80px', height: '80px' }}>
-                      <QRCodeGenerator
-                        value="https://www.amptiveapp.com/downloads"
-                        size={72}
-                        className="w-[72px] h-[72px]"
-                      />
-                    </div>
-                  </div>
-                  <div className="ml-1">
-                    <div className="text-white text-base font-normal">Get the app</div>
-                    <div className="text-white/70 text-sm mb-2">Scan the code with your smart phone camera to download the free app</div>
-                  </div>
-                </div>
-                <div className="mt 2 text-white/80 text-sm">
-                  Available on{' '}
-                  <a
-                    href="https://apps.apple.com/app/amptivelive/id1234567890"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-white font-medium hover:underline"
-                  >
-                    iOS
-                  </a>{' '}
-                  and{' '}
-                  <a
-                    href="https://play.google.com/store/apps/details?id=com.amptivelive.app"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-white font-medium hover:underline"
-                  >
-                    Android
-                  </a>
-                </div>
-              </div>
-            )}
 
           </div>
         </div>
@@ -511,11 +467,11 @@ interface SlideData {
 
 const SLIDES: SlideData[] = [
   {
-    title: "Earn Money From Your Live Audio Shows Through Direct Monetization And Gifting.",
+    title: "Earn Money From Your Live Audio Through Direct Monetization And Gifting.",
     mobileTitle: "Go Live With Amptive",
     description: "Discover live audio shows & events, host your own, and support creators.",
-    ctaText: "Download App",
-    ctaLink: "/download",
+    ctaText: "Join Waitlist",
+    ctaLink: "/waitlist",
     videoSrc: new URL('../assets/949_720x60_shots_so.mp4', import.meta.url).href,
     shadowColor: 'rgba(0, 0, 0, 0.5)',
     isFirstSlide: true
@@ -2357,25 +2313,25 @@ const Homepage: React.FC = () => {
 
 
       {/* Generate Poster Section */}
-      <div className="w-[95vw] mx-auto my-12 bg-[#299AFC1A] border border-gray-200 rounded-2xl py-12 px-8">
+      <div className="w-full sm:w-[95vw] mx-auto my-8 sm:my-12 bg-[#299AFC1A] border-y sm:border border-gray-200 rounded-none sm:rounded-2xl pt-14 pb-8 sm:py-12 px-0 sm:px-8 overflow-hidden">
         <div className="flex flex-col lg:flex-row gap-8 items-center lg:items-center">
           {/* Left Column - Title and Description */}
-          <div className="w-full lg:w-[20%] text-left lg:flex lg:flex-col lg:justify-center lg:h-full lg:my-auto">
-            <h2 className="text-[32px] md:text-[40px] font-bold text-gray-900 mb-6 leading-tight">
+          <div className="w-full lg:w-[20%] text-center lg:text-left px-4 sm:px-0 flex flex-col items-center lg:items-start lg:justify-center lg:h-full lg:my-auto">
+            <h2 className="text-[32px] md:text-[40px] font-bold text-gray-900 mb-6 leading-tight text-center lg:text-left">
               <span className="lg:hidden">
-                <span className="block">Generate a poster</span>
-                <span className="block">for Show or event</span>
+                <span className="block">Generate a Poster</span>
+                <span className="block">for Show or Event</span>
               </span>
               <span className="hidden lg:block">
                 Generate a <br />
-                poster for <br />
+                Poster for <br />
                 Show or <br />
-                event
+                Event
               </span>
             </h2>
             <Link
               to="/ai-chat"
-              className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 w-max"
+              className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 w-max mx-auto lg:mx-0"
               style={{
                 backgroundColor: 'rgba(168, 85, 247, 0.1)',
                 color: 'rgb(139, 92, 246)',
@@ -2394,9 +2350,9 @@ const Homepage: React.FC = () => {
           {/* Right Column - Cards with Infinite Scroll */}
           <div className="w-full md:w-full lg:w-[80%] overflow-hidden pb-4 relative group">
             <style>{`
-              @keyframes scroll {
-                0% { transform: translateX(0); }
-                100% { transform: translateX(calc(-100% / 2)); }
+              @keyframes marqueeScroll {
+                0% { transform: translate3d(0, 0, 0); }
+                100% { transform: translate3d(-50%, 0, 0); }
               }
               .scroll-container {
                 width: 100%;
@@ -2405,8 +2361,10 @@ const Homepage: React.FC = () => {
               }
               .scroll-track {
                 display: flex;
-                width: 200%;
-                animation: scroll 30s linear infinite;
+                width: max-content;
+                gap: 1rem;
+                animation: marqueeScroll 35s linear infinite;
+                will-change: transform;
               }
               .scroll-track:hover {
                 animation-play-state: paused;
@@ -2419,7 +2377,7 @@ const Homepage: React.FC = () => {
                 padding: 1rem;
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 transition: transform 0.3s ease;
-                margin-right: 1rem;
+                margin-right: 0;
               }
               .card-item:hover {
                 transform: translateY(-4px);
@@ -2454,19 +2412,31 @@ const Homepage: React.FC = () => {
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
                   ];
+                  const posterPrompts = [
+                    'A modern, minimal event ticket design with a dark theme, soft purple gradients, and bold rounded typography.',
+                    'Vibrant synthwave music festival poster with glowing neon typography, retro geometric shapes, and deep purple gradient.',
+                    'Minimalist tech summit poster with futuristic glassmorphic card overlays, clean Helvetica type, and deep cyan accents.',
+                    'Sun-drenched Afrobeats carnival poster with warm golden lighting, tropical palm silhouettes, and energetic typography.',
+                    'Sleek gourmet food and cocktail night poster featuring dark moody photography, copper foil accents, and elegant serif titles.',
+                    'Modern live audio podcast session flyer with acoustic soundwave graphics, warm studio lighting, and minimal bold lettering.',
+                    'Avant-garde contemporary art exhibition poster with abstract 3D geometric shapes, pastel grain textures, and editorial layout.',
+                    'High-fashion runway gala poster featuring sleek monochrome contrast, luxury gold accents, and sharp architectural typography.',
+                    'Electric underground Warehouse Rave poster with strobe laser beams, glitch distortion effects, and ultra-bold brutalist type.',
+                    'Clean executive startup pitch night flyer featuring modern dark mode aesthetics, vibrant blue glow badges, and crisp type.'
+                  ];
 
                   return (
                     <div
                       key={`card-${i}`}
                       className="card-item"
                       style={{
-                        backgroundColor: colors[i % 10],
+                        backgroundColor: colors[(i - 1) % 10],
                       }}
                     >
                       <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
                         <img
-                          src={images[i % 10]}
-                          alt={`Event ${i + 1}`}
+                          src={images[(i - 1) % 10]}
+                          alt={`Event ${i}`}
                           className="w-full h-full object-cover"
                           loading="lazy"
                         />
@@ -2475,7 +2445,7 @@ const Homepage: React.FC = () => {
                         Prompt:
                       </p>
                       <p className="text-[13px] font-medium leading-5 text-white/90 line-clamp-4">
-                        A modern, minimal event ticket design with a dark theme and soft gradients. The layout features a bold, rounded event title.
+                        {posterPrompts[(i - 1) % 10]}
                       </p>
                     </div>
                   );
@@ -2496,19 +2466,31 @@ const Homepage: React.FC = () => {
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
                     'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
                   ];
+                  const posterPrompts = [
+                    'A modern, minimal event ticket design with a dark theme, soft purple gradients, and bold rounded typography.',
+                    'Vibrant synthwave music festival poster with glowing neon typography, retro geometric shapes, and deep purple gradient.',
+                    'Minimalist tech summit poster with futuristic glassmorphic card overlays, clean Helvetica type, and deep cyan accents.',
+                    'Sun-drenched Afrobeats carnival poster with warm golden lighting, tropical palm silhouettes, and energetic typography.',
+                    'Sleek gourmet food and cocktail night poster featuring dark moody photography, copper foil accents, and elegant serif titles.',
+                    'Modern live audio podcast session flyer with acoustic soundwave graphics, warm studio lighting, and minimal bold lettering.',
+                    'Avant-garde contemporary art exhibition poster with abstract 3D geometric shapes, pastel grain textures, and editorial layout.',
+                    'High-fashion runway gala poster featuring sleek monochrome contrast, luxury gold accents, and sharp architectural typography.',
+                    'Electric underground Warehouse Rave poster with strobe laser beams, glitch distortion effects, and ultra-bold brutalist type.',
+                    'Clean executive startup pitch night flyer featuring modern dark mode aesthetics, vibrant blue glow badges, and crisp type.'
+                  ];
 
                   return (
                     <div
                       key={`duplicate-${i}`}
                       className="card-item"
                       style={{
-                        backgroundColor: colors[i % 10],
+                        backgroundColor: colors[(i - 1) % 10],
                       }}
                     >
                       <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
                         <img
-                          src={images[i % 10]}
-                          alt={`Event ${i + 1}`}
+                          src={images[(i - 1) % 10]}
+                          alt={`Event ${i}`}
                           className="w-full h-full object-cover"
                           loading="lazy"
                         />
@@ -2517,7 +2499,7 @@ const Homepage: React.FC = () => {
                         Prompt:
                       </p>
                       <p className="text-[13px] font-medium leading-5 text-white/90 line-clamp-4">
-                        A modern, minimal event ticket design with a dark theme and soft gradients. The layout features a bold, rounded event title.
+                        {posterPrompts[(i - 1) % 10]}
                       </p>
                     </div>
                   );
