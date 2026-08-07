@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import Cropper from 'react-easy-crop';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SIGNUP_KEYS } from '@/lib/constants';
-import { register } from '@/lib/api/auth';
+import { register, completeSocialProfile } from '@/lib/api/auth';
+import { api } from '@/lib/api/client';
 import { uploadImage } from '@/lib/api/storage';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,9 +16,10 @@ const AUTH_REDIRECT_KEY = 'amptive.auth.redirect';
 export default function CompleteProfilePage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const params = new URLSearchParams(location.search);
-  const email = params.get('email') || sessionStorage.getItem(SIGNUP_KEYS.email) || '';
+  const isSocial = params.get('isSocial') === 'true' || location.state?.isSocial || Boolean(api.getToken());
+  const email = params.get('email') || user?.email || sessionStorage.getItem(SIGNUP_KEYS.email) || '';
 
   useEffect(() => {
     const handleLeave = () => {
@@ -165,6 +167,14 @@ export default function CompleteProfilePage() {
     'This helps personalize your experience.',
   ];
 
+
+
+  useEffect(() => {
+    if (user?.name && !fullName) {
+      setFullName(user.name);
+    }
+  }, [user]);
+
   const next = async () => {
     if (step === 0) {
       const un = username.trim().toLowerCase();
@@ -180,6 +190,11 @@ export default function CompleteProfilePage() {
     if (step === 1) {
       if (!fullName.trim()) {
         toastError('Please enter your full name.');
+        return;
+      }
+      if (isSocial) {
+        // Skip password steps 2 & 3 for social users
+        setStep(4);
         return;
       }
     }
@@ -252,7 +267,13 @@ export default function CompleteProfilePage() {
     };
   }, [username]);
 
-  const back = () => setStep((s) => Math.max(0, s - 1));
+  const back = () => {
+    if (isSocial && step === 4) {
+      setStep(1);
+    } else {
+      setStep((s) => Math.max(0, s - 1));
+    }
+  };
 
   const onPickAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -323,7 +344,7 @@ export default function CompleteProfilePage() {
   };
 
   const submit = async () => {
-    if (!email || !password) {
+    if (!isSocial && (!email || !password)) {
       toastError('Missing email or password. Please start signup again.');
       return;
     }
@@ -373,26 +394,39 @@ export default function CompleteProfilePage() {
     }
     setLoading(true);
     try {
-      // Step 1: Register the user FIRST to get an auth token
-      const { status, error } = await register(email, password, {
-        username: username.trim().toLowerCase(),
-        dob: effectiveDob,
-        name: fullName.trim(),
-      });
-      if (!status) {
-        toastError(error || 'Failed to register. Please try again.');
-        setLoading(false);
-        return;
-      }
+      let profilePictureUrl: string | undefined;
 
-      // Step 2: Now that the user is logged in, upload the image if present
       if (avatarPreview && !avatarPreview.startsWith('data:image/svg')) {
         const res = await fetch(avatarPreview);
         const blob = await res.blob();
         const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
-        const profilePictureUrl = await uploadImage(file, 'profile-picture');
-        
-        // Step 3: Update the user profile with the new image URL
+        profilePictureUrl = (await uploadImage(file, 'profile-picture')) || undefined;
+      }
+
+      if (isSocial || api.getToken()) {
+        // Complete profile for social users
+        await completeSocialProfile({
+          username: username.trim().toLowerCase(),
+          dob: effectiveDob,
+          profile_picture: profilePictureUrl,
+        });
+
+        if (fullName.trim()) {
+          await updateProfile({ name: fullName.trim(), profile_picture: profilePictureUrl });
+        }
+      } else {
+        // Step 1: Register the user FIRST to get an auth token
+        const { status, error } = await register(email, password, {
+          username: username.trim().toLowerCase(),
+          dob: effectiveDob,
+          name: fullName.trim(),
+        });
+        if (!status) {
+          toastError(error || 'Failed to register. Please try again.');
+          setLoading(false);
+          return;
+        }
+
         if (profilePictureUrl) {
           await updateProfile({ profile_picture: profilePictureUrl });
         }
@@ -401,10 +435,9 @@ export default function CompleteProfilePage() {
       sessionStorage.removeItem(SIGNUP_KEYS.email);
       await refreshUser();
       setShowSuccessAnimation(true);
-      const redirectTo = location.state?.from || '/';
-      setTimeout(() => navigate(redirectTo), 3200);
+      setTimeout(() => navigate('/'), 1500);
     } catch (e: any) {
-      console.error('Registration Error:', e);
+      console.error('Profile Completion Error:', e);
       toastError(e.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
@@ -934,60 +967,31 @@ export default function CompleteProfilePage() {
         </div>
       </div>
 
-      {/* Success Intro Animation Overlay */}
+      {/* Clean White Loading Overlay after completion */}
       <AnimatePresence>
         {showSuccessAnimation && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0A0A0C] text-white"
+            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white text-gray-900"
           >
-            {/* Glowing gradient background blur blobs */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[600px] sm:h-[600px] bg-purple-500/10 rounded-full blur-[100px] sm:blur-[130px]" />
-              <div className="absolute top-1/4 left-1/3 w-[250px] h-[250px] bg-amber-500/5 rounded-full blur-[80px] sm:blur-[110px]" />
-            </div>
-
-            <div className="relative z-10 flex flex-col items-center">
-              {/* Outer spinning ring */}
-              <div className="relative flex items-center justify-center">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 8, ease: "linear" }}
-                  className="absolute w-36 h-36 sm:w-44 sm:h-44 rounded-full border border-dashed border-purple-500/20"
-                />
-                <motion.div
-                  animate={{ scale: [1, 1.12, 1], opacity: [0.15, 0.4, 0.15] }}
-                  transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-                  className="absolute w-28 h-28 sm:w-36 sm:h-36 rounded-full border border-purple-500/30"
-                />
-                
-                {/* Logo with spring scale entry */}
-                <motion.div
-                  initial={{ scale: 0.3, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ delay: 0.1, type: "spring", stiffness: 120, damping: 12 }}
-                  className="relative z-20 flex items-center justify-center bg-[#111115] w-24 h-24 sm:w-32 sm:h-32 rounded-full border border-purple-500/40 shadow-[0_0_50px_rgba(168,85,247,0.35)]"
-                >
-                  <img src={amptiveLogo} alt="Amptive Logo" className="w-12 h-12 sm:w-16 sm:h-16" />
-                </motion.div>
+            <div className="flex flex-col items-center justify-center p-6">
+              {/* Amptive Logo in the middle */}
+              <div className="w-24 h-24 mb-6 flex items-center justify-center">
+                <img src={amptiveLogo} alt="Amptive Logo" className="w-20 h-20 object-contain" />
               </div>
 
-              {/* Text elements fading up sequentially */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5, duration: 0.7, ease: "easeOut" }}
-                className="text-center mt-10 space-y-3 px-6"
-              >
-                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-white via-gray-200 to-purple-200 bg-clip-text text-transparent">
-                  Welcome to Amptive
-                </h1>
-                <p className="text-sm sm:text-base text-gray-400 font-medium tracking-wide">
-                  Your account has been created. Redirecting...
-                </p>
-              </motion.div>
+              {/* Loader under the logo */}
+              <div className="w-32 h-1 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-black rounded-full"
+                  style={{
+                    width: '100%',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                  }}
+                />
+              </div>
             </div>
           </motion.div>
         )}

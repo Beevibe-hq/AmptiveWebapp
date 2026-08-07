@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { isProfileComplete, upsertProfile } from '@/lib/api/profiles';
 import { getCurrentUser, handleOAuthCallback as processOAuthCallback } from '@/lib/api/auth';
@@ -10,8 +10,12 @@ export default function OAuthCallback() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState('Processing login...');
+  const handledRef = useRef(false);
 
   useEffect(() => {
+    if (handledRef.current) return;
+    handledRef.current = true;
+
     const handleOAuth = async () => {
       try {
         setStatus('Checking authentication...');
@@ -21,13 +25,30 @@ export default function OAuthCallback() {
           throw new Error(`Authentication error: ${error}`);
         }
 
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const token = searchParams.get('code') || searchParams.get('access_token') || hashParams.get('access_token') || undefined;
+
+        // If no token is present (e.g. user landed here directly), redirect to login
+        if (!token) {
+          setStatus('No authentication data found. Redirecting...');
+          setTimeout(() => navigate('/login', { replace: true }), 1500);
+          return;
+        }
+
+        const isX = Boolean(sessionStorage.getItem('x_oauth_code_verifier'));
+        const provider = searchParams.get('provider') || (isX ? 'x' : 'google');
+
         setStatus('Verifying your session...');
 
-        const code = searchParams.get('code') || undefined;
-
-        const authRes = await processOAuthCallback(code);
+        const authRes = await processOAuthCallback(token, provider);
         if (!authRes.status || !authRes.user) {
           throw new Error(authRes.message || authRes.error || 'Authentication failed');
+        }
+
+        // Clean up X OAuth PKCE state
+        if (isX) {
+          sessionStorage.removeItem('x_oauth_code_verifier');
+          sessionStorage.removeItem('x_oauth_state');
         }
 
         const user = authRes.user;
@@ -36,35 +57,21 @@ export default function OAuthCallback() {
 
         let profile = await getCurrentUser();
 
-        const providerAvatar = (user as any).user_metadata?.avatar_url || (user as any).user_metadata?.picture || user.avatar_url;
-        if ((!profile || !profile.avatar_url) && providerAvatar) {
-          const profileUpdate: any = {
-            user_id: user.id,
-            avatar_url: providerAvatar
-          };
-
-          if (!profile?.name) {
-            profileUpdate.full_name = (user as any).user_metadata?.full_name || (user as any).user_metadata?.name || user.name || '';
-          }
-
-          await upsertProfile(profileUpdate);
-          profile = await getCurrentUser();
-        }
-
-        const needsCompletion = !isProfileComplete(profile);
+        const reqComp = Boolean(authRes.requires_profile_completion || authRes.data?.requires_profile_completion);
+        const isNew = Boolean(authRes.is_new_user || authRes.data?.is_new_user);
+        const needsCompletion = reqComp || isNew || !isProfileComplete(profile || user);
 
         if (needsCompletion) {
           setStatus('Redirecting to complete your profile...');
-          navigate(`/complete-profile?email=${encodeURIComponent(user.email || '')}`, {
-            state: { from: location.state?.from },
+          navigate(`/complete-profile?email=${encodeURIComponent(user.email || '')}&isSocial=true`, {
+            state: { from: location.state?.from || '/', isSocial: true },
             replace: true
           });
         } else {
           setStatus('Login successful! Redirecting...');
-          const redirectTo = location.state?.from || '/dashboard';
           setTimeout(() => {
-            navigate(redirectTo, { replace: true });
-          }, 1000);
+            navigate('/', { replace: true });
+          }, 800);
         }
       } catch (err) {
         console.error('OAuth callback error:', err);

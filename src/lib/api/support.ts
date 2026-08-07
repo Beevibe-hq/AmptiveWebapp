@@ -131,10 +131,10 @@ function mapSupportProfilePayload(data: Partial<SupportProfile>): Record<string,
     support_card_variant: supportCardVariant,
     // When socials are provided, an emptied field maps to null so the backend clears it;
     // when the caller sends no socials at all, the fields are omitted and left untouched.
-    x_url: data.support_socials ? normalizeSocialUrl('x', data.support_socials.x) ?? null : undefined,
-    instagram_url: data.support_socials ? normalizeSocialUrl('instagram', data.support_socials.instagram) ?? null : undefined,
-    youtube_url: data.support_socials ? normalizeSocialUrl('youtube', data.support_socials.youtube) ?? null : undefined,
-    website_url: data.support_socials ? normalizeSocialUrl('website', data.support_socials.website) ?? null : undefined,
+    x_url: data.support_socials ? normalizeSocialUrl('x', data.support_socials.x) ?? undefined : undefined,
+    instagram_url: data.support_socials ? normalizeSocialUrl('instagram', data.support_socials.instagram) ?? undefined : undefined,
+    youtube_url: data.support_socials ? normalizeSocialUrl('youtube', data.support_socials.youtube) ?? undefined : undefined,
+    website_url: data.support_socials ? normalizeSocialUrl('website', data.support_socials.website) ?? undefined : undefined,
   };
 }
 
@@ -166,8 +166,11 @@ function normalizeSupportRecord(record: SupportProfile | null): SupportProfile |
   const rawProfileType = (record as any).support_profile_type ?? record.profile_type;
   const supportEnabled = (record as any).is_support_enabled ?? record.support_enabled ?? record.accept_tips;
 
+  const accountUsername = record.username || user.username || (record as any).user_username || (record as any).support_slug || '';
+
   return {
     ...record,
+    username: accountUsername,
     user_id: record.user_id || user.id || '',
     full_name: fullName,
     name: fullName,
@@ -330,14 +333,181 @@ export async function getSupportProfileBySlug(slug: string): Promise<SupportProf
 }
 
 export async function getSupportPayments(
-  receiverId: string
+  receiverId?: string
 ): Promise<{ data: unknown[]; error?: string }> {
   try {
-    const response = await api.get<unknown[]>(
-      `${SUPPORT_PAYMENTS_PREFIX}?receiver_id=${receiverId}&status=completed`
-    );
-    return { data: response || [] };
+    const history = await getSupportHistory({ date_filter: 'all_time', page: 1, page_size: 50 });
+    if (history.ok && Array.isArray(history.items)) {
+      return { data: history.items };
+    }
   } catch (e) {
-    return { data: [], error: (e as Error).message };
+    // Ignore error when unauthenticated
+  }
+  return { data: [] };
+}
+
+export interface PaySupportPayload {
+  amount: number;
+  message?: string;
+  payment_channel?: string;
+  email: string;
+  /**
+   * Optional display name for the supporter. The history endpoint returns a
+   * `supporter_name` on every record but it is currently always null, because nothing in
+   * the payment flow ever collected one.
+   */
+  supporter_name?: string;
+}
+
+export interface SupportPaymentInitResponse {
+  reference?: string;
+  payment_url?: string;
+  access_code?: string;
+  transaction_status?: string;
+  [key: string]: unknown;
+}
+
+export async function paySupportCreator(
+  recipientUsername: string,
+  payload: PaySupportPayload
+): Promise<{ ok: boolean; data?: SupportPaymentInitResponse; error?: string }> {
+  try {
+    const hasToken = Boolean(api.getToken());
+    const response = await api.post<SupportPaymentInitResponse>(
+      `${SUPPORT_PREFIX}/${encodeURIComponent(recipientUsername)}/pay`,
+      payload,
+      { skipAuth: !hasToken }
+    );
+    return { ok: true, data: response };
+  } catch (error: any) {
+    return { ok: false, error: error.message || 'Payment initialization failed.' };
   }
 }
+
+export type SupportHistoryDateFilter = 'all_time' | 'last_7_days' | 'last_30_days' | 'last_90_days';
+
+export interface SupportHistoryItem {
+  id: string;
+  supporter_name?: string;
+  supporter_email?: string;
+  amount: string | number;
+  message?: string;
+  created_at: string;
+  [key: string]: unknown;
+}
+
+export interface SupportHistoryParams {
+  date_filter?: SupportHistoryDateFilter;
+  page?: number;
+  page_size?: number;
+}
+
+export interface SupportHistoryResponse {
+  status?: boolean;
+  status_code?: number;
+  message?: string;
+  data?: {
+    items?: SupportHistoryItem[];
+    records?: SupportHistoryItem[];
+    payments?: SupportHistoryItem[];
+    history?: SupportHistoryItem[];
+    [key: string]: any;
+  } | SupportHistoryItem[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  total_pages?: number;
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export async function getSupportHistory(
+  params?: SupportHistoryParams
+): Promise<{
+  ok: boolean;
+  items: SupportHistoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  error?: string;
+  raw?: SupportHistoryResponse;
+}> {
+  try {
+    const query = new URLSearchParams();
+    if (params?.date_filter) query.set('date_filter', params.date_filter);
+    if (params?.page !== undefined) query.set('page', String(params.page));
+    if (params?.page_size !== undefined) query.set('page_size', String(params.page_size));
+
+    const queryString = query.toString();
+    const endpoint = `${SUPPORT_PREFIX}/history${queryString ? `?${queryString}` : ''}`;
+
+    const response = await api.get<SupportHistoryResponse>(endpoint);
+
+    let items: SupportHistoryItem[] = [];
+
+    /*
+     * `api.get` already strips the { status, status_code, data } envelope and hands back
+     * the inner `data` object, so `response` IS that object — reading `response.data`
+     * off it yields undefined and loses every record. The `.data` fallback stays for any
+     * caller that hands us a still-wrapped payload.
+     */
+    const dataObj = (response as { data?: unknown })?.data ?? response;
+
+    if (Array.isArray(dataObj)) {
+      items = dataObj;
+    } else if (dataObj && typeof dataObj === 'object') {
+      const bag = dataObj as Record<string, unknown>;
+      if (Array.isArray(bag.supports)) {
+        items = bag.supports as SupportHistoryItem[];
+      } else if (Array.isArray(bag.items)) {
+        items = bag.items as SupportHistoryItem[];
+      } else if (Array.isArray(bag.records)) {
+        items = bag.records as SupportHistoryItem[];
+      } else if (Array.isArray(bag.payments)) {
+        items = bag.payments as SupportHistoryItem[];
+      } else if (Array.isArray(bag.history)) {
+        items = bag.history as SupportHistoryItem[];
+      } else {
+        /*
+         * Last resort for a shape we haven't seen: the schema allows `data` to hold
+         * several keyed arrays, so gather every one of them rather than the first, and
+         * order newest first since any grouping is lost when they're flattened.
+         */
+        items = Object.values(bag)
+          .filter((value): value is SupportHistoryItem[] => Array.isArray(value))
+          .flat()
+          .sort((a, b) => {
+            const left = a?.created_at ? Date.parse(a.created_at) : 0;
+            const right = b?.created_at ? Date.parse(b.created_at) : 0;
+            return right - left;
+          });
+      }
+    }
+
+    const pageSize = response?.page_size || params?.page_size || 10;
+    const total = response?.total ?? items.length;
+    const totalPages = response?.total_pages ?? (total > 0 ? Math.ceil(total / pageSize) : 1);
+
+    return {
+      ok: true,
+      items,
+      total,
+      page: response?.page || params?.page || 1,
+      page_size: pageSize,
+      total_pages: totalPages,
+      raw: response,
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      items: [],
+      total: 0,
+      page: params?.page || 1,
+      page_size: params?.page_size || 10,
+      total_pages: 0,
+      error: error?.message || 'Failed to fetch support history.',
+    };
+  }
+}
+

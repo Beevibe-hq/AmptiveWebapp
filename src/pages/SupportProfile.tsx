@@ -1,18 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import {  QrCode, Share2, MoreHorizontal, Youtube, Twitch, Heart, Check, ArrowLeft, Star, Briefcase, Eye, Settings, CreditCard, Users, Coffee, Crown, Zap, Gift , Loader2 } from "lucide-react";
+import { QrCode, Share2, MoreHorizontal, Youtube, Twitch, Heart, Check, ArrowLeft, Star, Briefcase, Eye, Settings, CreditCard, Users, Coffee, Crown, Zap, Gift, Loader2, Copy, Link } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
 import SupportCard from '@/components/SupportCard';
 import Navbar from '@/components/Navbar';
 import SupportEditModal from '@/components/SupportEditModal';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getSupportProfile, getSupportProfileByUsername, getSupportProfileBySlug, getSupportPayments, mergeSupportProfileIdentity, SupportProfile as SupportProfileType } from '@/lib/api/support';
+import { getSupportProfile, getSupportProfileByUsername, getSupportProfileBySlug, mergeSupportProfileIdentity, paySupportCreator, getSupportHistory, SupportProfile as SupportProfileType } from '@/lib/api/support';
 import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { playSwoosh, playSuccessChime } from '@/utils/audio';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { useSEO } from '@/hooks/useSEO';
+
+/** Cap on the note a supporter leaves, so it stays readable in the activity list. */
+const SUPPORT_MESSAGE_LIMIT = 200;
+
+/**
+ * Shows enough of a supporter's address for the creator to recognise them, without
+ * putting a full contact address on screen: `jac•••@gmail.com`.
+ */
+function maskEmail(email?: string | null): string | null {
+  if (!email || !email.includes('@')) return null;
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return null;
+  const head = local.slice(0, 3);
+  return local.length > head.length ? `${head}•••@${domain}` : `${local}@${domain}`;
+}
 
 export default function SupportProfile() {
   const { id } = useParams<{ id: string }>();
@@ -27,20 +42,44 @@ export default function SupportProfile() {
   const [activeTab, setActiveTab] = useState<'activity' | 'tip-card'>('activity');
   const [payments, setPayments] = useState<any[]>([]);
 
-  useSEO({
-    title: profile ? (profile.full_name || profile.name || profile.username || 'Creator Profile') : 'Loading Profile...',
-    description: profile ? (profile.support_message || profile.support_tagline || 'Support my creative work on Amptive.') : 'Support creators on Amptive.',
-    image: profile?.support_avatar_url || profile?.avatar_url,
-    type: 'profile',
-  });
-
   const [selectedTier, setSelectedTier] = useState<number | 'custom' | null>(null);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [supportMessage, setSupportMessage] = useState<string>('');
+  const [supporterName, setSupporterName] = useState<string>('');
+  const [supporterEmail, setSupporterEmail] = useState<string>('');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentChannel, setPaymentChannel] = useState<string>('paystack');
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success'>('idle');
-  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [shadowColor, setShadowColor] = useState<string | null>(null);
+  const [isDownloadingCard, setIsDownloadingCard] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [windowSize, setWindowSize] = useState({ 
+    width: typeof window !== 'undefined' ? window.innerWidth : 1200, 
+    height: typeof window !== 'undefined' ? window.innerHeight : 800 
+  });
 
+  const queryParams = new URLSearchParams(window.location.search);
+  const viewAs = queryParams.get('viewAs');
+  const isOwner = Boolean(currentUserId && profile?.user_id && currentUserId === profile.user_id && viewAs !== 'public');
+
+  const handleCopySupportLink = async () => {
+    const linkSlug = profile?.support_slug || profile?.username || profile?.user_id || id;
+    const link = `https://getamptive.com/${linkSlug}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2500);
+      } catch (e) {
+        alert(`Your support link is: ${link}`);
+      }
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -48,112 +87,148 @@ export default function SupportProfile() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleSupportNow = () => {
+  const handleSupportNow = async () => {
+    setPaymentError(null);
+    const amountNum = selectedTier === 'custom' ? Number(customAmount) : Number(selectedTier);
+    if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
+      setPaymentError('Please select or enter a valid amount.');
+      return;
+    }
+
+    const trimmedEmail = supporterEmail.trim();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setPaymentError('Please enter a valid email address to receive your payment confirmation.');
+      return;
+    }
+
+    const primaryUsername = profile?.username || (profile as any)?.user?.username;
+    const fallbackUsername = profile?.support_slug || id;
+
+    const targets = Array.from(new Set([primaryUsername, fallbackUsername].filter(Boolean) as string[]));
+
+    if (targets.length === 0) {
+      setPaymentError('Unable to resolve creator username.');
+      return;
+    }
+
     setPaymentStatus('processing');
     playSwoosh();
-    setTimeout(() => {
-      setPaymentStatus('success');
-      playSuccessChime();
-    }, 2500);
+
+    const channelsToTry = Array.from(new Set([paymentChannel, 'paystack', 'flutterwave']));
+
+    try {
+      let lastError = 'Payment initialization failed. Please try again.';
+
+      for (const target of targets) {
+        for (const channel of channelsToTry) {
+          const result = await paySupportCreator(target, {
+            amount: amountNum,
+            message: supportMessage.trim() || undefined,
+            payment_channel: channel,
+            email: trimmedEmail,
+            // Signed-in supporters are identified by their token, so this is only sent
+            // for anonymous ones.
+            supporter_name: currentUserId ? undefined : supporterName.trim() || undefined,
+          });
+
+          if (result.ok && result.data) {
+            if (result.data.payment_url) {
+              window.location.href = result.data.payment_url;
+              return;
+            }
+            setPaymentStatus('success');
+            playSuccessChime();
+            return;
+          }
+
+          lastError = result.error || lastError;
+          // If the error is 404 (user not found), stop channel iterations for this target and try next target
+          if (lastError.toLowerCase().includes('not found')) {
+            break;
+          }
+        }
+      }
+
+      setPaymentStatus('idle');
+      setPaymentError(lastError);
+    } catch (err: any) {
+      setPaymentStatus('idle');
+      setPaymentError(err?.message || 'An unexpected error occurred during checkout.');
+    }
   };
 
-  const getCaptureElement = async () => {
-    const originalElement = document.getElementById('support-card-target');
-    if (!originalElement) return { element: null, cleanup: () => {} };
-
-    // If already on desktop, just use the element directly
-    if (window.innerWidth >= 768) {
-      return { 
-        element: originalElement, 
-        cleanup: () => {} 
-      };
-    }
-
-    // On mobile, we need to force desktop layout for the download.
-    // We achieve this by placing a clone of the card inside a desktop-sized iframe.
-    const iframe = document.createElement('iframe');
-    iframe.style.width = '1024px';
-    iframe.style.height = '1024px';
-    iframe.style.position = 'absolute';
-    iframe.style.left = '-9999px';
-    iframe.style.visibility = 'hidden';
-    document.body.appendChild(iframe);
-
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!iframeDoc) {
-      document.body.removeChild(iframe);
-      return { element: originalElement, cleanup: () => {} };
-    }
-
-    // Set base URL so relative paths (like mask-image: url('/amptivelogo.svg')) work
-    const base = document.createElement('base');
-    base.href = window.location.origin;
-    iframeDoc.head.appendChild(base);
-
-    // Copy stylesheets to the iframe so Tailwind classes work
-    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'));
-    styles.forEach(style => iframeDoc.head.appendChild(style.cloneNode(true)));
-    
-    // Copy body classes for global fonts
-    iframeDoc.body.className = document.body.className;
-
-    // Clone the target element
-    const clonedElement = originalElement.cloneNode(true) as HTMLElement;
-    iframeDoc.body.appendChild(clonedElement);
-
-    // Give the iframe a tiny bit of time to apply CSS and load images
-    await new Promise(resolve => setTimeout(resolve, 400));
-
-    return { 
-      element: clonedElement, 
-      cleanup: () => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      } 
-    };
+  const getCaptureElement = (): HTMLElement | null => {
+    return document.getElementById('support-card-export-target') || document.getElementById('support-card-target');
   };
 
   const handleDownloadCard = async () => {
-    const { element, cleanup } = await getCaptureElement();
-    if (!element) return;
+    const element = getCaptureElement();
+    if (!element) {
+      console.error('Support card target element not found');
+      return;
+    }
+
+    setIsDownloadingCard(true);
+
     try {
+      // Use pixelRatio 7 to generate a true 4K Ultra HD PNG (3920px vertical resolution)
       const dataUrl = await toPng(element, {
-        pixelRatio: 6,
+        pixelRatio: 7,
+        cacheBust: true,
         backgroundColor: undefined,
+        style: {
+          transform: 'none',
+        },
       });
+
       const link = document.createElement('a');
       link.href = dataUrl;
       link.download = `${profile?.username || 'support'}-card.png`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
     } catch (err) {
-      console.error('Download card error:', err);
+      console.error('Download card primary error, trying blob fallback:', err);
+      try {
+        const blob = await toBlob(element, { pixelRatio: 2, cacheBust: true });
+        if (blob) {
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = `${profile?.username || 'support'}-card.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+        }
+      } catch (fallbackErr) {
+        console.error('Download card fallback error:', fallbackErr);
+        alert('Could not download card image. Please try taking a screenshot instead.');
+      }
     } finally {
-      cleanup();
+      setIsDownloadingCard(false);
     }
   };
 
   const handleShareCard = async () => {
-    const { element, cleanup } = await getCaptureElement();
+    const element = getCaptureElement();
     if (!element) return;
     try {
-      const blob = await toBlob(element, { pixelRatio: 2 });
+      const blob = await toBlob(element, { pixelRatio: 2, cacheBust: true });
       if (!blob) return;
       if (navigator.canShare && navigator.canShare({ files: [new File([blob], 'support-card.png', { type: 'image/png' })] })) {
         const file = new File([blob], 'support-card.png', { type: 'image/png' });
         await navigator.share({
           files: [file],
           title: `${profile?.full_name}'s Amptive Support Card`,
-          text: `Check out my Amptive Support Profile: amptive.io/${profile?.username}`,
+          text: `Check out my Amptive Support Profile: getamptive.com/${profile?.username}`,
         });
       } else {
-        await navigator.clipboard.writeText(`https://amptive.io/${profile?.username}`);
+        await navigator.clipboard.writeText(`https://getamptive.com/${profile?.username}`);
         alert('Profile link copied to clipboard!');
       }
     } catch (err) {
       console.error('Share card error:', err);
-    } finally {
-      cleanup();
     }
   };
 
@@ -183,18 +258,33 @@ export default function SupportProfile() {
   };
 
   useEffect(() => {
+    /*
+     * Support history is private to the creator: the endpoint reports payments received
+     * by whoever is authenticated, and takes no "whose profile" parameter. So it is only
+     * ever correct to call it on your own page — asking for it while viewing someone
+     * else's would render the viewer's own payments as if they were the creator's.
+     */
     const fetchActivity = async () => {
-      if (!profile?.user_id) return;
+      if (!profile?.user_id || !isOwner) {
+        setPayments([]);
+        setSupporterCount(0);
+        return;
+      }
 
-      const { data, error } = await getSupportPayments(profile.user_id);
-      if (!error && data) {
-        setPayments(data);
-        setSupporterCount(data.length);
+      const historyRes = await getSupportHistory({
+        date_filter: timeRange === '7' ? 'last_7_days' : timeRange === '30' ? 'last_30_days' : timeRange === '90' ? 'last_90_days' : 'all_time',
+        page: 1,
+        page_size: 50,
+      });
+
+      if (historyRes.ok) {
+        setPayments(historyRes.items);
+        setSupporterCount(historyRes.total || historyRes.items.length);
       }
     };
 
     fetchActivity();
-  }, [profile?.user_id]);
+  }, [profile?.user_id, isOwner, timeRange]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -203,6 +293,9 @@ export default function SupportProfile() {
       try {
         const user = await getCurrentUser();
         setCurrentUserId(user?.user_id || user?.id || null);
+        if (user?.email) {
+          setSupporterEmail(user.email);
+        }
 
         // The canonical lookup is the backend's support slug; fall back to the older
         // user-id / username lookups for legacy links.
@@ -320,9 +413,6 @@ export default function SupportProfile() {
     );
   }
 
-  const queryParams = new URLSearchParams(window.location.search);
-  const viewAs = queryParams.get('viewAs');
-  const isOwner = currentUserId === profile.user_id && viewAs !== 'public';
   const displayName = profile.full_name || profile.name || profile.username || 'Amptive Creator';
   const profileAvatarUrl = profile.support_avatar_url || profile.avatar_url;
   const avatarInitials = displayName
@@ -423,10 +513,30 @@ export default function SupportProfile() {
                 <Settings size={20} />
                 <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Settings</span>
               </button>
+              <button 
+                onClick={handleCopySupportLink} 
+                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-emerald-600 shadow-sm group relative"
+                title="Copy link"
+              >
+                {copiedLink ? <Check size={20} className="text-emerald-600" /> : <Copy size={20} />}
+                <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                  {copiedLink ? 'Copied!' : 'Copy'}
+                </span>
+              </button>
               <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-green-600 shadow-sm"><Share2 size={20} /></button>
             </>
           ) : (
             <>
+              <button 
+                onClick={handleCopySupportLink} 
+                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-emerald-600 shadow-sm group relative"
+                title="Copy link"
+              >
+                {copiedLink ? <Check size={20} className="text-emerald-600" /> : <Copy size={20} />}
+                <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                  {copiedLink ? 'Copied!' : 'Copy'}
+                </span>
+              </button>
               <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all shadow-sm"><Share2 size={20} /></button>
               <button className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all shadow-sm"><MoreHorizontal size={20} /></button>
             </>
@@ -481,8 +591,8 @@ export default function SupportProfile() {
                 <p className="text-gray-500 font-medium">
                   {profile.support_message || profile.support_tagline || (profile.profile_type === 'creator' ? 'Professional Content Creator + Educator' : 'Premium Business Partner')}
                 </p>
-                <div className="flex justify-center">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-50 border border-black/5 rounded-full text-xs font-semibold text-gray-500 mt-2.5 shadow-sm">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-50 border border-black/5 rounded-full text-xs font-semibold text-gray-500 mt-1.5 shadow-sm">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       fill="currentColor"
@@ -498,6 +608,25 @@ export default function SupportProfile() {
                       {supporterCount !== null ? (supporterCount >= 1000 ? `${(supporterCount / 1000).toFixed(1)}k` : supporterCount) : '0'} Monthly Supporters
                     </span>
                   </div>
+
+                  {/* Copy Support Link Pill */}
+                  <button 
+                    onClick={handleCopySupportLink}
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-gray-50/90 border border-gray-200/80 rounded-full text-xs font-medium text-gray-700 hover:bg-gray-100 transition-all shadow-xs group active:scale-95 mt-1 cursor-pointer"
+                  >
+                    <span className="text-gray-400 font-normal">getamptive.com/</span>
+                    <span className="font-bold text-gray-900">{profile.support_slug || profile.username || 'creator'}</span>
+                    <span className="w-px h-3 bg-gray-200 mx-0.5" />
+                    {copiedLink ? (
+                      <span className="flex items-center gap-1 text-emerald-600 font-bold">
+                        <Check size={13} className="text-emerald-600" /> Copied!
+                      </span>
+                    ) : (
+                      <span className="flex items-center text-gray-400 group-hover:text-black transition-colors">
+                        <Copy size={13} />
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -689,7 +818,7 @@ export default function SupportProfile() {
                                       <>
                                         <div className="flex items-center gap-2">
                                           <h4 className="font-bold text-gray-900 text-base truncate whitespace-nowrap">
-                                            {payment.sender_name || 'A supporter'}
+                                            {payment.supporter_name || payment.sender_name || 'A supporter'}
                                           </h4>
                                           <span className="text-gray-300 font-bold text-xs hidden sm:inline">•</span>
                                           <span className="text-gray-400 text-sm font-bold hidden sm:inline">
@@ -704,7 +833,7 @@ export default function SupportProfile() {
                                             <>
                                               <span className="text-gray-300 font-bold text-[10px] sm:hidden">•</span>
                                               <p className="text-gray-400 text-xs truncate max-w-[150px] xs:max-w-[200px] sm:max-w-none">
-                                                {payment.sender_email || 'anonymous@supporter.com'}
+                                                {maskEmail(payment.supporter_email || payment.sender_email) || 'No email on record'}
                                               </p>
                                             </>
                                           )}
@@ -771,15 +900,39 @@ export default function SupportProfile() {
                   <div className="flex justify-center gap-3 mt-6">
                     <button 
                       onClick={handleDownloadCard}
-                      className="px-4 py-2.5 md:px-6 md:py-3 bg-black text-white rounded-full font-bold text-xs md:text-sm hover:bg-gray-800 transition-all shadow-sm flex items-center gap-2 hover:scale-105 active:scale-95"
+                      disabled={isDownloadingCard}
+                      className="px-4 py-2.5 md:px-6 md:py-3 bg-black text-white rounded-full font-bold text-xs md:text-sm hover:bg-gray-800 transition-all shadow-sm flex items-center gap-2 hover:scale-105 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                      Download PNG
+                      {isDownloadingCard ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Generating PNG...</span>
+                        </>
+                      ) : (
+                        <span>Download PNG</span>
+                      )}
                     </button>
                     <button 
                       onClick={handleShareCard}
                       className="px-4 py-2.5 md:px-6 md:py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-full font-bold text-xs md:text-sm hover:bg-gray-100 transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
                     >
                       <Share2 size={14} className="md:w-4 md:h-4" /> Share Card
+                    </button>
+                    <button 
+                      onClick={handleCopySupportLink}
+                      className="px-4 py-2.5 md:px-6 md:py-3 bg-white border border-gray-200 text-gray-900 rounded-full font-bold text-xs md:text-sm hover:bg-gray-50 transition-all flex items-center gap-2 hover:scale-105 active:scale-95 shadow-sm"
+                    >
+                      {copiedLink ? (
+                        <>
+                          <Check size={14} className="md:w-4 md:h-4 text-emerald-600" />
+                          <span className="text-emerald-600">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} className="md:w-4 md:h-4 text-gray-600" />
+                          <span>Copy</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </motion.div>
@@ -788,8 +941,9 @@ export default function SupportProfile() {
           ) : paymentStatus === 'processing' ? (
             <div className="max-w-4xl mx-auto px-4 md:px-0 flex flex-col items-center justify-center text-center space-y-6 py-24 min-h-[50vh]">
               <motion.img 
-                src="/images/paper_plane.svg"
-                className="w-40 h-40 md:w-56 md:h-56 drop-shadow-xl"
+                src="/images/paper_plane.png"
+                alt="Sending support illustration"
+                className="w-40 h-40 md:w-56 md:h-56 drop-shadow-2xl object-contain"
                 initial={{ x: -1000, y: 1000, opacity: 0, rotate: -15 }}
                 animate={{ 
                   x: [ -1000, 0, 0, 0, 1000 ], 
@@ -893,63 +1047,78 @@ export default function SupportProfile() {
                 <h3 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight leading-tight">Support {displayName}</h3>
               </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/*
+                Pitched to match the fields further down: hairline borders, 16px radius and
+                a single grey for every chip. Four pastel colours and black type at 30px
+                made this step shout over the form it leads into, and the decorative blob
+                behind each card was noise the page didn't need.
+              */}
+              <div className="mx-auto grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-3">
                 {(profile.support_amounts || [500, 1000, 2500, 5000]).map((amount, index) => {
-                  const tierStyles = [
-                    { icon: <Coffee size={28} className="text-amber-500" />, bg: 'bg-amber-50', ring: 'ring-amber-500' },
-                    { icon: <Gift size={28} className="text-pink-500" />, bg: 'bg-pink-50', ring: 'ring-pink-500' },
-                    { icon: <Zap size={28} className="text-purple-500" />, bg: 'bg-purple-50', ring: 'ring-purple-500' },
-                    { icon: <Heart size={28} className="text-rose-500" />, bg: 'bg-rose-50', ring: 'ring-rose-500' },
-                  ];
-                  const style = tierStyles[index % tierStyles.length];
+                  const TierIcon = [Coffee, Gift, Zap, Heart][index % 4];
+                  const isSelected = selectedTier === amount;
 
                   return (
                     <motion.button
                       key={amount}
-                      whileHover={{ y: -4 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={`relative p-8 rounded-[32px] border-2 transition-all flex flex-col items-center justify-center h-full min-h-[200px] overflow-hidden group ${selectedTier === amount ? `border-transparent bg-white ring-2 ${style.ring}` : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50/50'}`}
+                      whileTap={{ scale: 0.99 }}
+                      role="radio"
+                      aria-checked={isSelected}
+                      className={`relative flex h-full min-h-[132px] flex-col items-start rounded-2xl border p-5 text-left transition-colors ${
+                        isSelected
+                          ? 'border-gray-900 bg-white'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
                       onClick={() => setSelectedTier(amount)}
                     >
-                      <div className={`absolute -right-8 -top-8 w-32 h-32 rounded-full opacity-[0.25] transition-transform duration-500 group-hover:scale-150 ${style.bg}`} />
-                      
-                      <div className="relative z-10 flex flex-col items-center">
-                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 ${style.bg} ${selectedTier === amount ? 'scale-110 transition-transform' : ''}`}>
-                          {style.icon}
-                        </div>
-                        <h4 className="font-black text-gray-900 text-2xl md:text-3xl tracking-tight">₦{amount.toLocaleString()}</h4>
-                      </div>
-                      
-                      {selectedTier === amount && (
-                        <div className="absolute top-5 right-5 w-6 h-6 rounded-full bg-black flex items-center justify-center text-white z-20 shadow-sm">
-                          <Check size={14} />
-                        </div>
-                      )}
+                      {/* Always present, filled when chosen — an empty ring is what tells
+                          people these are a pick-one set before they touch anything. */}
+                      <span
+                        className={`absolute right-4 top-4 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-colors ${
+                          isSelected ? 'border-gray-900' : 'border-gray-200'
+                        }`}
+                      >
+                        {isSelected && <span className="h-2 w-2 rounded-full bg-gray-900" />}
+                      </span>
+
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-50 text-gray-400">
+                        <TierIcon size={16} />
+                      </span>
+
+                      {/* Currency set small and raised so the number carries the weight. */}
+                      <span className="mt-auto flex items-baseline pt-4 text-gray-900">
+                        <span className="self-start pt-1 text-[13px] font-semibold text-gray-400">₦</span>
+                        <span className="text-2xl font-bold tracking-tight">{amount.toLocaleString()}</span>
+                      </span>
                     </motion.button>
                   );
                 })}
                 
                 {/* Custom Tier */}
                 <motion.button
-                  whileHover={{ y: -4 }}
-                  whileTap={{ scale: 0.98 }}
-                  className={`relative p-8 rounded-[32px] border-2 transition-all flex flex-col items-center justify-center h-full min-h-[200px] overflow-hidden group ${selectedTier === 'custom' ? 'border-transparent bg-white ring-2 ring-gray-900' : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50/50'}`}
+                  whileTap={{ scale: 0.99 }}
+                  role="radio"
+                  aria-checked={selectedTier === 'custom'}
+                  className={`relative flex h-full min-h-[132px] flex-col items-start rounded-2xl border p-5 text-left transition-colors ${
+                    selectedTier === 'custom'
+                      ? 'border-gray-900 bg-white'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
                   onClick={() => setSelectedTier('custom')}
                 >
-                  <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-gray-100 opacity-50 transition-transform duration-500 group-hover:scale-150" />
-                  
-                  <div className="relative z-10 flex flex-col items-center">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 bg-gray-100 ${selectedTier === 'custom' ? 'scale-110 transition-transform' : ''}`}>
-                      <CreditCard size={28} className="text-gray-700" />
-                    </div>
-                    <h4 className="font-black text-gray-900 text-xl md:text-2xl tracking-tight">Custom</h4>
-                  </div>
-                  
-                  {selectedTier === 'custom' && (
-                    <div className="absolute top-5 right-5 w-6 h-6 rounded-full bg-black flex items-center justify-center text-white z-20 shadow-sm">
-                      <Check size={14} />
-                    </div>
-                  )}
+                  <span
+                    className={`absolute right-4 top-4 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-colors ${
+                      selectedTier === 'custom' ? 'border-gray-900' : 'border-gray-200'
+                    }`}
+                  >
+                    {selectedTier === 'custom' && <span className="h-2 w-2 rounded-full bg-gray-900" />}
+                  </span>
+
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-50 text-gray-400">
+                    <CreditCard size={16} />
+                  </span>
+
+                  <span className="mt-auto pt-4 text-2xl font-bold tracking-tight text-gray-900">Custom</span>
                 </motion.button>
               </div>
 
@@ -960,39 +1129,126 @@ export default function SupportProfile() {
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="mt-6"
+                    className="mt-8"
                   >
-                    <div className="relative">
-                      <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-gray-900">₦</span>
-                      <input 
-                        type="number" 
-                        value={customAmount}
-                        onChange={(e) => setCustomAmount(e.target.value)}
-                        placeholder="Enter amount"
-                        className="w-full pl-12 pr-6 py-6 rounded-[32px] border-2 border-black bg-white text-2xl font-black focus:outline-none shadow-sm"
-                        autoFocus
-                      />
+                    {/*
+                      Typed straight onto the card rather than into a bordered box: the
+                      amount is the biggest decision on this page, and a box around it
+                      made it read as just another field. Aligned with the detail fields
+                      below so the whole step sits on one edge.
+                    */}
+                    <div className="mx-auto max-w-xl text-left">
+                      <label htmlFor="custom-amount" className="mb-2 block text-[13px] font-medium text-gray-500">
+                        Enter amount
+                      </label>
+                      <div className="flex items-baseline gap-1.5 border-b border-gray-200 pb-2 focus-within:border-gray-900 transition-colors">
+                        <span className="text-4xl font-semibold text-gray-900 sm:text-5xl">₦</span>
+                        <input
+                          id="custom-amount"
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          value={customAmount}
+                          onChange={(e) => setCustomAmount(e.target.value)}
+                          placeholder="0.00"
+                          // Already far above 16px, so it can't trigger the iOS focus
+                          // zoom the global rule guards against.
+                          data-keep-font-size
+                          // Spinners would sit oddly against type this large.
+                          className="w-full border-0 bg-transparent p-0 text-4xl font-semibold text-gray-900 caret-gray-900 outline-none placeholder:text-gray-300 focus:outline-none focus:ring-0 sm:text-5xl [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          autoFocus
+                        />
+                      </div>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Optional Message Input */}
+              {/* Supporter Details & Message Inputs */}
               <AnimatePresence>
                 {selectedTier && (
                   <motion.div
                     initial={{ opacity: 0, height: 0, y: -20 }}
                     animate={{ opacity: 1, height: 'auto', y: 0 }}
                     exit={{ opacity: 0, height: 0, y: -20 }}
-                    className="mt-6"
+                    className="mt-8"
                   >
-                    <textarea
-                      value={supportMessage}
-                      onChange={(e) => setSupportMessage(e.target.value)}
-                      placeholder="Leave a message (optional)"
-                      rows={3}
-                      className="w-full px-6 py-4 rounded-3xl border-2 border-gray-100 bg-white text-gray-900 focus:border-black focus:ring-0 focus:outline-none transition-colors resize-none"
-                    />
+                    {/*
+                      Quiet by design: hairline borders, small muted labels and plenty of
+                      space, so the fields recede and the amount above them stays the
+                      loudest thing on the card. Heavier borders and bold labels made this
+                      step compete with the tiers instead of following them.
+                    */}
+                    <div className="mx-auto max-w-xl space-y-6 text-left">
+                      {/* Only signed-out supporters need to type a name — for signed-in
+                          ones the backend takes it from their account. */}
+                      {!currentUserId && (
+                        <div>
+                          <label htmlFor="supporter-name" className="mb-2 block text-[13px] font-medium text-gray-500">
+                            Your name <span className="text-gray-300">· optional</span>
+                          </label>
+                          <input
+                            id="supporter-name"
+                            type="text"
+                            value={supporterName}
+                            onChange={(e) => setSupporterName(e.target.value)}
+                            placeholder="So they know who to thank"
+                            autoComplete="name"
+                            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-gray-900 transition-colors placeholder:text-gray-300 focus:border-gray-900 focus:outline-none focus:ring-0"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label htmlFor="supporter-email" className="mb-2 block text-[13px] font-medium text-gray-500">
+                          Email
+                        </label>
+                        <input
+                          id="supporter-email"
+                          type="email"
+                          value={supporterEmail}
+                          onChange={(e) => {
+                            setSupporterEmail(e.target.value);
+                            if (paymentError) setPaymentError(null);
+                          }}
+                          placeholder="Where we'll send your receipt"
+                          autoComplete="email"
+                          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-gray-900 transition-colors placeholder:text-gray-300 focus:border-gray-900 focus:outline-none focus:ring-0"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="supporter-message" className="mb-2 block text-[13px] font-medium text-gray-500">
+                          Add a message <span className="text-gray-300">· optional</span>
+                        </label>
+                        <div className="relative">
+                          <textarea
+                            id="supporter-message"
+                            value={supportMessage}
+                            onChange={(e) => setSupportMessage(e.target.value)}
+                            placeholder="Say something nice — they'll see this with your support."
+                            rows={3}
+                            maxLength={SUPPORT_MESSAGE_LIMIT}
+                            className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 pb-9 pt-3 text-[15px] leading-relaxed text-gray-900 transition-colors placeholder:text-gray-300 focus:border-gray-900 focus:outline-none focus:ring-0"
+                          />
+                          {/* Sits inside the field, out of the way of the typing line. */}
+                          <span className="pointer-events-none absolute bottom-3 right-4 text-xs tabular-nums text-gray-400">
+                            {supportMessage.length}/{SUPPORT_MESSAGE_LIMIT}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {paymentError && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -5 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        className="mt-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-semibold text-center"
+                      >
+                        {paymentError}
+                      </motion.div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1002,9 +1258,16 @@ export default function SupportProfile() {
                 <button 
                   onClick={handleSupportNow}
                   className="w-full max-w-md py-5 bg-black text-white rounded-full font-black text-xl hover:scale-105 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2" 
-                  disabled={!selectedTier || (selectedTier === 'custom' && !customAmount) || paymentStatus === 'processing'}
+                  disabled={!selectedTier || (selectedTier === 'custom' && !customAmount) || !supporterEmail || paymentStatus === 'processing'}
                 >
-                  {paymentStatus === 'processing' ? <Loader2 className="animate-spin" /> : 'Support Now'}
+                  {paymentStatus === 'processing' ? (
+                    <>
+                      <Loader2 className="animate-spin w-6 h-6" />
+                      <span>Initiating Payment...</span>
+                    </>
+                  ) : (
+                    'Support Now'
+                  )}
                 </button>
                 <p className="text-gray-400 text-sm flex items-center gap-2">
                   <span className="w-4 h-4 rounded-full bg-green-500/10 flex items-center justify-center"><Check size={10} className="text-green-500" /></span>

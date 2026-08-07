@@ -209,6 +209,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
         >
           {/* Card Body */}
           <div 
+            id="support-card-export-target"
             className={`rounded-2xl md:rounded-[40px] relative transition-all duration-500 shadow-none ${is3DAnim ? '' : 'md:shadow-xl'} p-0 ${!is3DAnim ? 'overflow-hidden' : 'support-card-demo-3d'}`}
             style={{ transformStyle: is3DAnim ? "preserve-3d" : undefined }}
           >

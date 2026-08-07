@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { login, signInWithGoogle } from '@/lib/api/auth';
+import { login, signInWithGooglePopup, signInWithX, signInWithFacebook } from '@/lib/api/auth';
 import { isProfileComplete } from '@/lib/api/profiles';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -67,10 +67,57 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
     try {
       setLoading(true);
       setError(null);
-      await signInWithGoogle();
+
+      const result = await signInWithGooglePopup();
+
+      if (!result.status) {
+        setError(result.message || result.error || 'Google sign-in failed.');
+        return;
+      }
+
+      const u = result.user || result.data?.user;
+      const reqComp = Boolean(result.requires_profile_completion || result.data?.requires_profile_completion);
+      const isNew = Boolean(result.is_new_user || result.data?.is_new_user);
+      const needsCompletion = reqComp || isNew || !isProfileComplete(u);
+
+      await refreshUser();
+
+      if (needsCompletion) {
+        const from = location.state?.from || '/';
+        navigate(`/complete-profile?email=${encodeURIComponent(u?.email || '')}&isSocial=true`, {
+          state: { from, isSocial: true },
+          replace: true,
+        });
+      } else {
+        const redirectTo = location.state?.from || '/';
+        navigate(redirectTo, { replace: true });
+        onSuccess?.();
+      }
     } catch (err: any) {
-      console.error('Google sign in error:', err);
-      setError(err?.message || 'Failed to initialize Google Sign In');
+      setError(err?.message || 'Failed to sign in with Google.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleXSignIn = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await signInWithX();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to initialize X (Twitter) Sign-In.');
+      setLoading(false);
+    }
+  };
+
+  const handleFacebookSignIn = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await signInWithFacebook();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to initialize Facebook Sign-In.');
       setLoading(false);
     }
   };
@@ -178,9 +225,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         <div style={{ marginBottom: '10px' }}>
           <button
             type="button"
-            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
-            disabled
-            onClick={() => setShowSocialTooltip(true)}
+            style={socialButtonStyle}
+            disabled={loading}
+            onClick={handleXSignIn}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>
@@ -194,9 +241,9 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         <div>
           <button
             type="button"
-            style={{ ...socialButtonStyle, opacity: 0.5, cursor: 'not-allowed' }}
-            disabled
-            onClick={() => setShowSocialTooltip(true)}
+            style={socialButtonStyle}
+            disabled={loading}
+            onClick={handleFacebookSignIn}
           >
             <div style={socialButtonContainer}>
               <svg aria-hidden="true" role="graphics-symbol" viewBox="0 0 24 24" style={socialIconStyle}>

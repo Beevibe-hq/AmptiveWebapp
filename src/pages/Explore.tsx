@@ -226,12 +226,51 @@ async function geocodeVenue(
     }
 }
 
+export function isAmptiveAppOrVirtualEvent(event: StandaloneEvent): boolean {
+    const isVirtual = !event.venue ||
+                      event.venue?.venue_type === 'virtual' || 
+                      event.location?.type === 'online' || 
+                      (event as any).is_online || 
+                      (event as any).is_virtual;
+
+    const locationText = [
+        event.location?.venue,
+        event.location?.city,
+        event.location?.address,
+        event.location?.name,
+        (event as any).location_name,
+        (event as any).location,
+        event.venue?.name,
+        event.venue?.address_line1,
+        event.venue?.city,
+        (event as any).venue_name,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return (
+        isVirtual ||
+        locationText.includes('amptive') ||
+        locationText.includes('virtual') ||
+        locationText.includes('online') ||
+        (!event.venue?.city && !event.location?.city && !event.venue?.address_line1 && !event.venue?.name && !event.location?.venue)
+    );
+}
+
 function getEventCoords(
     event: StandaloneEvent,
     index: number,
     geocoded?: Record<string, { lat: number; lng: number }>
 ): { lat: number; lng: number } | null {
-    // 1. Direct explicit latitude/longitude check across all possible venue/location fields
+    // 1. Virtual & Amptive App / Amptive Island events get pinned directly on Amptive Island in the ocean!
+    if (isAmptiveAppOrVirtualEvent(event)) {
+        const angle = (index * 137.5) * (Math.PI / 180);
+        const radius = 0.025 * Math.sqrt(index + 1);
+        return {
+            lat: -59.5000 + Math.cos(angle) * radius,
+            lng: -42.0000 + Math.sin(angle) * radius
+        };
+    }
+
+    // 2. Direct explicit latitude/longitude check across all possible venue/location fields for physical venues
     const rawLat = event.venue?.latitude ?? 
                    event.location?.latitude ?? 
                    (event as any).latitude ?? 
@@ -254,31 +293,13 @@ function getEventCoords(
         return { lat, lng };
     }
 
-    // 1b. Position resolved by geocoding the venue address — the real location of the
+    // 3. Position resolved by geocoding the venue address — the real location of the
     // venue the organiser typed, and the only accurate source while the API returns no
     // coordinates of its own.
     const resolved = geocoded?.[(event as any).event_id];
     if (resolved) return resolved;
 
-    // 2. Virtual & Amptive App events get pinned directly on Amptive Island in the ocean!
-    const isVirtual = !event.venue ||
-                      event.venue?.venue_type === 'virtual' || 
-                      event.location?.type === 'online' || 
-                      (event as any).is_online || 
-                      (event as any).is_virtual;
-    const venueStr = (event.location?.venue || event.venue?.name || (event as any).venue_name || '').toLowerCase();
-    const isAmptiveApp = venueStr.includes('amptive') || venueStr.includes('app') || venueStr.includes('virtual') || venueStr.includes('online');
-
-    if (isVirtual || isAmptiveApp || (!event.venue?.city && !event.location?.city && !event.venue?.address_line1)) {
-        const angle = (index * 137.5) * (Math.PI / 180);
-        const radius = 0.025 * Math.sqrt(index + 1);
-        return {
-            lat: -59.5000 + Math.cos(angle) * radius,
-            lng: -42.0000 + Math.sin(angle) * radius
-        };
-    }
-
-    // 3. Check city/venue name substring match against known city coordinates
+    // 4. Check city/venue name substring match against known city coordinates
     const locationText = [
         event.location?.city,
         event.venue?.city,
@@ -301,7 +322,7 @@ function getEventCoords(
         }
     }
 
-    // 4. Fallback for any physical event: place on default Lagos region with a slight micro-offset based on index
+    // 5. Fallback for any physical event: place on default Lagos region with a slight micro-offset based on index
     const angle = (index * 137.5) * (Math.PI / 180);
     const radius = 0.0015 * Math.sqrt(index + 1);
     return {
@@ -528,9 +549,7 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
             if (geocoded[event.event_id]) return false;
             const hasCoords = getEventCoords(event, 0) !== null
                 && (event.venue?.latitude ?? event.location?.latitude ?? event.latitude) != null;
-            if (hasCoords) return false;
-            const isVirtual = event.venue?.venue_type === 'virtual' || event.location?.type === 'online' || event.is_online || event.is_virtual;
-            if (isVirtual) return false;
+            if (isAmptiveAppOrVirtualEvent(event)) return false;
             return Boolean(venueQueryForEvent(event));
         });
 

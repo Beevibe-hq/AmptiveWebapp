@@ -21,6 +21,11 @@ export default defineConfig({
         target: 'https://amptive-staging.getamptive.com',
         changeOrigin: true,
       },
+      '/twitter-token': {
+        target: 'https://api.twitter.com/2/oauth2/token',
+        changeOrigin: true,
+        rewrite: () => '',
+      },
     },
   },
   optimizeDeps: {

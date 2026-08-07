@@ -32,11 +32,16 @@
    leaves the page scaled up. The @layer base rule above sets 16px, but Tailwind utilities
    (text-sm, text-xs, text-[15px], …) sit in a later layer and win — so fields styled that
    way still triggered the zoom. Forcing 16px on touch-sized screens stops it; desktop
-   keeps its intended typography. */
+   keeps its intended typography.
+
+   Fields that are deliberately larger than 16px can opt out with `data-keep-font-size`.
+   Zoom only triggers *below* 16px, so this rule is meant as a floor — without the opt-out
+   it also drags oversized fields (an amount entry, say) down to 16px, leaving them
+   mismatched against the type beside them. */
 @media (max-width: 767px) {
-  input:not([type='checkbox']):not([type='radio']):not([type='range']),
-  select,
-  textarea {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([data-keep-font-size]),
+  select:not([data-keep-font-size]),
+  textarea:not([data-keep-font-size]) {
     font-size: 16px !important;
   }
 }
