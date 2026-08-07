@@ -124,6 +124,7 @@ function mapSupportProfilePayload(data: Partial<SupportProfile>): Record<string,
     // syncing through PATCH /users/me (which enforced unrelated name rules).
     name: data.full_name ?? data.name,
     avatar_url: data.support_avatar_url ?? data.avatar_url,
+    cover_photo_url: data.support_banner_url ?? undefined,
     support_enabled: supportEnabled,
     profile_type: profileType,
     support_profile_type: profileType,
@@ -180,6 +181,7 @@ function normalizeSupportRecord(record: SupportProfile | null): SupportProfile |
     name: fullName,
     avatar_url: avatarUrl,
     support_avatar_url: record.support_avatar_url || avatarUrl,
+    support_banner_url: record.support_banner_url || (record as any).cover_photo_url || undefined,
     support_enabled: supportEnabled,
     accept_tips: supportEnabled,
     profile_type: rawProfileType === 'event_organizer' ? 'organizer' : rawProfileType,
@@ -287,7 +289,8 @@ export async function getSupportProfile(userId: string): Promise<SupportProfile 
 export async function getSupportProfileByUsername(username: string): Promise<SupportProfile | null> {
   try {
     const response = await api.get<unknown>(
-      `${USERS_PREFIX}/by-username/${encodeURIComponent(username)}`
+      `${USERS_PREFIX}/by-username/${encodeURIComponent(username)}`,
+      { skipAuth: true }
     );
     return normalizeSupportRecord(unwrapSupportProfile(response));
   } catch {
@@ -301,8 +304,8 @@ export async function updateSupportProfile(data: Partial<SupportProfile>): Promi
   console.log('[Support] updateSupportProfile → payload being sent:', JSON.stringify(payload));
 
   try {
-    const patchResponse = await api.put<SupportProfile>(`${SUPPORT_PREFIX}/`, payload);
-    console.log('[Support] updateSupportProfile → PUT response:', JSON.stringify(patchResponse));
+    const patchResponse = await api.patch<SupportProfile>(`${SUPPORT_PREFIX}/`, payload);
+    console.log('[Support] updateSupportProfile → PATCH response:', JSON.stringify(patchResponse));
     return { ok: true };
   } catch (patchError: any) {
     // Fall back to POST creation when the backend says there's no profile yet.
