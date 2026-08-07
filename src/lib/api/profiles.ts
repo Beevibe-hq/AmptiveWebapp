@@ -83,6 +83,7 @@ function mapUpdatePayload(data: Partial<UserProfile>): UpdateProfilePayload {
     instagram_url: orOmit(data.instagram_url),
     linkedin_url: orOmit(data.linkedin_url),
     website_url: orOmit(data.website_url),
+    profile_type: orOmit(data.profile_type),
   };
 }
 

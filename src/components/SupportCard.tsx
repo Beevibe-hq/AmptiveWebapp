@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { QrCode, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
+import { formatSupportUrl } from '@/utils/supportUrl';
 
 interface SupportCardProps {
   name?: string;
@@ -685,7 +686,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                             {/* QR Image Frame */}
                             <div className="bg-slate-50 p-1.5 rounded-sm flex items-center justify-center relative w-[180px] h-[180px] md:w-[220px] md:h-[220px]">
                               <QRCodeSVG 
-                                value={`https://getamptive.com/${username}`}
+                                value={formatSupportUrl(profileType, username)}
                                 size={256}
                                 level="H"
                                 className="w-full h-full" 
@@ -717,7 +718,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           <div className={`p-1 rounded-lg border-2 border-black/5 relative z-10 ${current.variant === 'bold-cosmic' ? 'bg-[#e6e8e1]' : 'bg-white'}`}>
                             <div className={`p-1 rounded-lg flex items-center justify-center relative ${current.variant === 'bold-cosmic' ? 'bg-[#e6e8e1]' : 'bg-white'}`} style={{ width: current.variant === 'bold-pink' ? '210px' : '180px', height: current.variant === 'bold-pink' ? '210px' : '180px' }}>
                               <QRCodeSVG 
-                                value={`https://getamptive.com/${username}`}
+                                value={formatSupportUrl(profileType, username)}
                                 size={current.variant === 'bold-pink' ? 200 : 172}
                                 level="H"
                                 bgColor={current.variant === 'bold-cosmic' ? "#E6E8E1" : "#FFFFFF"}
@@ -754,7 +755,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           <div className="bg-white p-1 rounded-lg border-2 border-black/5 relative z-10">
                             <div className="bg-white p-1 rounded-lg flex items-center justify-center relative" style={{ width: '210px', height: '210px' }}>
                               <QRCodeSVG 
-                                value={`https://getamptive.com/${username}`}
+                                value={formatSupportUrl(profileType, username)}
                                 size={200}
                                 level="H"
                                 className="w-[200px] h-[200px]" 
@@ -925,7 +926,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           style={qrPopOutStyle}
                         >
                           <QRCodeSVG 
-                            value={`https://getamptive.com/${username}`}
+                            value={formatSupportUrl(profileType, username)}
                             size={200}
                             level="H"
                             bgColor="#E2F4E9"
@@ -1014,7 +1015,7 @@ const SupportCard: React.FC<SupportCardProps> = ({
                           style={qrPopOutStyle}
                         >
                           <QRCodeSVG 
-                            value={`https://getamptive.com/${username}`}
+                            value={formatSupportUrl(profileType, username)}
                             size={200}
                             level="H"
                             bgColor="#DEE2FD"

@@ -19,6 +19,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     full_name: profile.full_name || '',
+    profile_type: profile.profile_type || 'creator',
     support_tagline: profile.support_tagline || '',
     support_avatar_url: profile.support_avatar_url || profile.avatar_url || '',
     support_banner_url: profile.support_banner_url || '',
@@ -51,6 +52,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
     if (isOpen) {
       setFormData({
         full_name: profile.full_name || '',
+        profile_type: profile.profile_type || 'creator',
         support_tagline: profile.support_tagline || '',
         support_avatar_url: profile.support_avatar_url || profile.avatar_url || '',
         support_banner_url: profile.support_banner_url || '',
@@ -198,6 +200,8 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
       console.log('Saving profile...');
       const updates = {
         full_name: formData.full_name,
+        profile_type: formData.profile_type,
+        support_profile_type: formData.profile_type,
         support_tagline: formData.support_tagline,
         support_message: formData.support_tagline,
         support_avatar_url: formData.support_avatar_url,
@@ -379,6 +383,46 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
 
             {/* Input Fields */}
             <div className="p-6 space-y-6">
+              {/* Profile Type Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500 ml-1">Profile Category</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, profile_type: 'creator' }))}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      formData.profile_type === 'creator'
+                        ? 'bg-black text-white border-black shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    Creator
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, profile_type: 'business' }))}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      formData.profile_type === 'business'
+                        ? 'bg-black text-white border-black shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    Business
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, profile_type: 'organizer' }))}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      formData.profile_type === 'organizer' || formData.profile_type === 'event_organizer'
+                        ? 'bg-black text-white border-black shadow-sm'
+                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    Event Organiser
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center ml-1">
                   <label className="text-xs font-medium text-gray-500">

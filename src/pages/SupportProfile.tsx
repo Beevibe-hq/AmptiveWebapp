@@ -13,6 +13,7 @@ import { extractDominantColors } from '@/utils/colorExtractor';
 import { playSwoosh, playSuccessChime } from '@/utils/audio';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { useSEO } from '@/hooks/useSEO';
+import { formatSupportUrl, getSupportDomainPrefix } from '@/utils/supportUrl';
 
 /** Cap on the note a supporter leaves, so it stays readable in the activity list. */
 const SUPPORT_MESSAGE_LIMIT = 200;
@@ -64,7 +65,7 @@ export default function SupportProfile() {
 
   const handleCopySupportLink = async () => {
     const linkSlug = profile?.support_slug || profile?.username || profile?.user_id || id;
-    const link = `https://getamptive.com/${linkSlug}`;
+    const link = formatSupportUrl(profile, linkSlug);
     try {
       await navigator.clipboard.writeText(link);
       setCopiedLink(true);
@@ -221,10 +222,10 @@ export default function SupportProfile() {
         await navigator.share({
           files: [file],
           title: `${profile?.full_name}'s Amptive Support Card`,
-          text: `Check out my Amptive Support Profile: getamptive.com/${profile?.username}`,
+          text: `Check out my Amptive Support Profile: ${formatSupportUrl(profile, profile?.username || id)}`,
         });
       } else {
-        await navigator.clipboard.writeText(`https://getamptive.com/${profile?.username}`);
+        await navigator.clipboard.writeText(formatSupportUrl(profile, profile?.username || id));
         alert('Profile link copied to clipboard!');
       }
     } catch (err) {
@@ -614,7 +615,7 @@ export default function SupportProfile() {
                     onClick={handleCopySupportLink}
                     className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-gray-50/90 border border-gray-200/80 rounded-full text-xs font-medium text-gray-700 hover:bg-gray-100 transition-all shadow-xs group active:scale-95 mt-1 cursor-pointer"
                   >
-                    <span className="text-gray-400 font-normal">getamptive.com/</span>
+                    <span className="text-gray-400 font-normal">{getSupportDomainPrefix(profile)}/</span>
                     <span className="font-bold text-gray-900">{profile.support_slug || profile.username || 'creator'}</span>
                     <span className="w-px h-3 bg-gray-200 mx-0.5" />
                     {copiedLink ? (

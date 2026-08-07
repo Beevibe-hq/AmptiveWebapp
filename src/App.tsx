@@ -165,6 +165,7 @@ function MainLayout() {
           <Route path="/faqs" element={<FAQs />} />
           <Route path="/community-guidelines" element={<CommunityGuidelines />} />
           <Route path="/dashboard/*" element={<Dashboard />} />
+          <Route path="/:id" element={<SupportProfile />} />
         </Routes>
       </main>
       {!hideFooter && <Footer />}

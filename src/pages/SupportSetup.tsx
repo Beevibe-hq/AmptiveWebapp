@@ -10,6 +10,7 @@ import SupportCard from '@/components/SupportCard';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { getEmojiFallback } from '@/utils/avatar';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatSupportUrl } from '@/utils/supportUrl';
 
 interface CharacterProgressProps {
     current: number;
@@ -416,6 +417,7 @@ export default function SupportSetup() {
                 support_card_variant: supportCardVariant,
                 flutterwave_subaccount_id: flutterwaveSubaccountId,
                 profile_type: profileType,
+                support_profile_type: profileType,
                 support_socials: socials,
                 updated_at: new Date().toISOString(),
             };
@@ -424,13 +426,16 @@ export default function SupportSetup() {
             if (!ok) throw new Error(error || 'Failed to update support settings');
             const refreshedProfile = await getMySupportProfile();
             if (refreshedProfile) {
-                setExistingProfile(refreshedProfile);
+                setExistingProfile({
+                    ...refreshedProfile,
+                    profile_type: profileType || refreshedProfile.profile_type,
+                });
                 setSupportEnabled(refreshedProfile.support_enabled ?? refreshedProfile.accept_tips ?? supportEnabled);
                 setSupportMessage(refreshedProfile.support_message || refreshedProfile.support_tagline || supportMessage);
                 setSupportButtonText(refreshedProfile.support_button_text || supportButtonText);
                 setSupportAmounts(refreshedProfile.support_amounts || supportAmounts);
                 setFlutterwaveSubaccountId(refreshedProfile.flutterwave_subaccount_id || flutterwaveSubaccountId);
-                setProfileType((refreshedProfile.profile_type as typeof profileType) || profileType);
+                setProfileType(profileType || (refreshedProfile.profile_type as typeof profileType));
                 setAvatarUrl(refreshedProfile.avatar_url || avatarUrl);
                 setSocials(refreshedProfile.support_socials || socials);
             }
@@ -464,9 +469,7 @@ export default function SupportSetup() {
 
     const getSupportLinkUrl = () => {
         const base = (existingProfile?.support_slug as string) || existingProfile?.username || user?.id || '';
-        if (profileType === 'business') return `https://supportmybusiness.getamptive.com/${base}`;
-        if (profileType === 'organizer') return `https://supportmyevents.getamptive.com/${base}`;
-        return `https://supportmywork.getamptive.com/${base}`;
+        return formatSupportUrl(profileType, base);
     };
 
     if (initialLoading) {
