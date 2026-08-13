@@ -344,7 +344,7 @@ export default function SupportSetup() {
     const [existingProfile, setExistingProfile] = useState<SupportProfile | null>(null);
 
     const getSupportPageSlug = (profile?: SupportProfile | null) => (
-        (profile?.support_slug as string) || profile?.username || profile?.user_id || user?.username || user?.user_id || user?.id
+        profile?.username || (profile?.support_slug as string) || profile?.user_id || user?.username || user?.user_id || user?.id
     );
 
     // Auth Check & Data Fetch
@@ -468,7 +468,7 @@ export default function SupportSetup() {
     };
 
     const getSupportLinkUrl = () => {
-        const base = (existingProfile?.support_slug as string) || existingProfile?.username || user?.id || '';
+        const base = existingProfile?.username || (existingProfile?.support_slug as string) || user?.id || '';
         return formatSupportUrl(profileType, base);
     };
 

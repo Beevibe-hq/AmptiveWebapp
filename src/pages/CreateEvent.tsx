@@ -1153,9 +1153,16 @@ const CreateEvent = () => {
                         placeholder="Description"
                       />
                     </div>
+                  </div>
+                </section>
 
-                    <div ref={communityMenuRef} className="relative">
-                      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Community</label>
+                {/* Community */}
+                <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 border-b border-gray-100/50 pb-2 lg:mx-2">
+                    Community
+                  </div>
+
+                  <div ref={communityMenuRef} className="relative lg:px-2">
                       <button
                         type="button"
                         onClick={() => setCommunityMenuOpen(prev => !prev)}
@@ -1214,13 +1221,11 @@ const CreateEvent = () => {
                         </div>
                       )}
                     </div>
-                  </div>
                 </section>
 
                 {/* Schedule */}
                 <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                    <Calendar className="h-4 w-4 text-rose-500" />
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900  border-b border-gray-100/50 pb-2 lg:mx-2">
                     Schedule
                   </div>
 
@@ -1265,8 +1270,7 @@ const CreateEvent = () => {
 
                 {/* Location */}
                 <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                    <MapPin className="h-4 w-4 text-emerald-500" />
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900  border-b border-gray-100/50 pb-2 lg:mx-2">
                     Location
                   </div>
 
@@ -1290,8 +1294,7 @@ const CreateEvent = () => {
 
                 {/* Tickets */}
                 <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
-                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                    <Ticket className="h-4 w-4 text-blue-600" />
+                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900  border-b border-gray-100/50 pb-2 lg:mx-2">
                     Tickets
                   </div>
 
@@ -1308,7 +1311,7 @@ const CreateEvent = () => {
                               <div className="flex items-center gap-3">
                                 <div className={`flex-shrink-0 w-5 h-5 rounded-full border border-black/10 shadow-[inset_-2px_-2px_4px_rgba(0,0,0,0.2),inset_2px_2px_4px_rgba(255,255,255,0.7),0_2px_4px_rgba(0,0,0,0.1)] ${TICKET_THEMES[ticket.color_theme || 'silver'].gradient}`} />
                                 <h5 className="font-bold text-gray-900">{ticket.label}</h5>
-                                <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
+                                <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold ">
                                   {formatTicketPrice(ticket.price, ticket.currency)}
                                 </span>
                               </div>
@@ -1354,8 +1357,7 @@ const CreateEvent = () => {
                 {/* Early Bird Settings */}
                 {form.tickets.length > 0 && (
                   <section className="group space-y-6 rounded-3xl p-1 transition-all duration-500">
-                    <div className="flex items-center gap-2 text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                      <Sparkles className="h-4 w-4 text-blue-600" />
+                    <div className="flex items-center gap-2 text-sm font-bold text-gray-900  border-b border-gray-100/50 pb-2 lg:mx-2">
                       Early Bird Settings
                     </div>
 
@@ -1402,7 +1404,7 @@ const CreateEvent = () => {
                           {ticket.has_early_bird && (
                             <div className="grid gap-6 sm:grid-cols-2 pt-4 border-t border-gray-50 animate-in fade-in slide-in-from-top-2 duration-300">
                               <div>
-                                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                <label className="block text-xs font-semibold text-gray-700  mb-2">
                                   Units to be sold
                                 </label>
                                 <input
@@ -1436,7 +1438,7 @@ const CreateEvent = () => {
                                 )}
                               </div>
                               <div>
-                                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                <label className="block text-xs font-semibold text-gray-700  mb-2">
                                   Percentage Drop (%)
                                 </label>
                                 <div className="relative">
@@ -1476,8 +1478,7 @@ const CreateEvent = () => {
                 {/* Event Settings */}
                 {form.venueType === 'virtual' && (
                   <section className="group space-y-4 rounded-3xl p-1 transition-all duration-500">
-                    <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100/50 pb-2 lg:mx-2">
-                      <Sparkles className="h-4 w-4 text-amber-500" />
+                    <div className="flex items-center gap-2 text-[13px] font-bold text-gray-900  border-b border-gray-100/50 pb-2 lg:mx-2">
                       Settings
                     </div>
 
@@ -2077,7 +2078,7 @@ const CreateEvent = () => {
                     <div className="flex-1 min-w-0">
                       <label htmlFor="physicalTickets" className="text-sm font-medium text-gray-700 cursor-not-allowed flex items-center gap-2 flex-wrap">
                         <span>Enable Physical Ticket Delivery</span>
-                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wider">
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold ">
                           Coming Soon
                         </span>
                       </label>
@@ -2107,7 +2108,7 @@ const CreateEvent = () => {
 
                 {/* Right: Live Preview */}
                 <div className={`flex flex-col items-center justify-center lg:justify-start ${mobileTab === 'preview' ? 'block' : 'hidden lg:flex'} lg:bg-gray-50 lg:rounded-3xl lg:px-6 lg:pb-2 lg:pt-[100px] lg:border lg:border-gray-100`}>
-                  <h5 className="hidden text-xs font-bold text-gray-400 uppercase tracking-wider mb-6 lg:block">Live Preview</h5>
+                  <h5 className="hidden text-xs font-bold text-gray-400  mb-6 lg:block">Live Preview</h5>
 
                   {/* Card Preview */}
                   <div className="group relative w-full max-w-[360px] sm:max-w-[420px] min-h-[15rem] [perspective:1600px]">
@@ -2160,7 +2161,7 @@ const CreateEvent = () => {
                                 <span className={`text-3xl font-bold ${theme.text} truncate`}>
                                   {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
                                 </span>
-                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold  ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
                                   {hasPreviewEarlyBird ? 'Early Bird' : 'Per guest'}
                                 </span>
                               </div>

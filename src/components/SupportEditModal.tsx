@@ -100,6 +100,8 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
     ctx.translate(bWidth / 2, bHeight / 2);
     ctx.rotate(rotRad);
     ctx.translate(-image.width / 2, -image.height / 2);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(image, 0, 0);
 
     const data = ctx.getImageData(pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height);
@@ -107,7 +109,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
     canvas.height = pixelCrop.height;
     ctx.putImageData(data, 0, 0);
 
-    return canvas.toDataURL('image/jpeg', 0.9);
+    return canvas.toDataURL('image/jpeg', 0.95);
   }
 
   // Helper: DataURL to Blob

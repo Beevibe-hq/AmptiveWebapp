@@ -16,9 +16,11 @@ type EventRecord = {
     id: string;
     title: string;
     start_time?: string | null;
+    ended_at?: string | null;
     venue?: string | null;
     user_id?: string | null;
     event_id?: string;
+    thumbnail_url?: string | null;
 };
 
 export default function CheckoutPage() {
@@ -40,15 +42,14 @@ export default function CheckoutPage() {
     const [processing, setProcessing] = useState(false);
     const [success, setSuccess] = useState(false);
     const [activeTab, setActiveTab] = useState<'details' | 'preview'>('details');
-    const [wantsPhysicalDelivery, setWantsPhysicalDelivery] = useState(false);
     const [lastDirection, setLastDirection] = useState(1);
     const [checkoutStep, setCheckoutStep] = useState<'selection' | 'attendees' | 'summary'>('selection');
     const [attendees, setAttendees] = useState<Array<{ ticketId: string; name: string; email: string; phone?: string; isMe: boolean }>>([]);
     const [showBulkForm, setShowBulkForm] = useState(false);
+    const [isGuest, setIsGuest] = useState(false);
+    const [authModalOpen, setAuthModalOpen] = useState(false);
 
-    const isGuest = !currentUser;
-
-    const PHYSICAL_DELIVERY_FEE = 5000;
+    const PLATFORM_FEE = 0;
 
     // Pre-fill attendee name/email when isMe is true
     useEffect(() => {
@@ -75,6 +76,9 @@ export default function CheckoutPage() {
             try {
                 const user = await getCurrentUser().catch(() => null);
                 setCurrentUser(user);
+                if (!user) {
+                    setIsGuest(true);
+                }
 
                 const eventData = await getEvent(id);
                 if (!eventData) throw new Error('Event not found');
@@ -82,9 +86,11 @@ export default function CheckoutPage() {
                     ...eventData,
                     id: eventData.event_id || '',
                     title: eventData.title || '',
-                    start_time: eventData.scheduled_for || null,
+                    start_time: eventData.scheduled_for || eventData.started_at || null,
+                    ended_at: eventData.ended_at || null,
                     venue: eventData.location?.venue || null,
                     user_id: eventData.host?.user_id || null,
+                    thumbnail_url: eventData.thumbnail_url || null,
                 });
 
                 const ticketData = await getTicketsForEvent(id);
@@ -209,11 +215,8 @@ export default function CheckoutPage() {
         }));
     };
 
-    const ticketCost = tickets.reduce((sum, ticket) => {
-        return sum + getTicketLineTotal(ticket, selection[ticket.id] || 0);
-    }, 0);
-
-    const totalAmount = ticketCost + (wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0);
+    const ticketCost = tickets.reduce((sum, ticket) => sum + getTicketLineTotal(ticket, selection[ticket.id] || 0), 0);
+    const totalAmount = ticketCost;
 
     // How many tickets are in the basket. The checkout button keys off this rather than the
     // price: a free ticket is a valid selection worth ₦0, and gating on the amount meant
@@ -221,10 +224,6 @@ export default function CheckoutPage() {
     const selectedTicketCount = Object.values(selection).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
 
     const handlePayment = async () => {
-        // if (!currentUser) {
-        //     navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
-        //     return;
-        // }
         if (!event) return;
 
         if (checkoutStep === 'selection') {
@@ -293,10 +292,10 @@ export default function CheckoutPage() {
                 return {
                     ticket_type_id: ticketId,
                     quantity: qty,
-                    unit_price: latestTicket ? getTicketUnitPrice(latestTicket) : 0,
+                    unit_price: latestTicket ? getTicketUnitPrice(latestTicket, qty) : 0,
                     line_total: latestTicket ? getTicketLineTotal(latestTicket, qty) : 0,
                     base_price: latestTicket?.price || 0,
-                    early_bird_applied: latestTicket ? getTicketEarlyBirdRemaining(latestTicket) > 0 && getTicketUnitPrice(latestTicket) < (latestTicket.price || 0) : false,
+                    early_bird_applied: latestTicket ? getTicketEarlyBirdRemaining(latestTicket) > 0 && getTicketUnitPrice(latestTicket, 1) < (latestTicket.price || 0) : false,
                 };
             });
 
@@ -311,9 +310,9 @@ export default function CheckoutPage() {
             const request: CheckoutRequest = {
                 items,
                 attendees: attendeesList,
-                wants_physical_delivery: wantsPhysicalDelivery,
+                wants_physical_delivery: false,
                 metadata: {
-                    physical_delivery_fee: wantsPhysicalDelivery ? PHYSICAL_DELIVERY_FEE : 0,
+                    physical_delivery_fee: 0,
                     ticket_pricing: ticketPricing,
                 },
             };
@@ -814,6 +813,21 @@ export default function CheckoutPage() {
         );
     };
 
+    const isPastEvent = (() => {
+        if (!event) return false;
+        const now = new Date();
+        if (event.ended_at) {
+            return new Date(event.ended_at) < now;
+        }
+        if (event.start_time) {
+            // Assume event is over if it's 12 hours past the scheduled time
+            const eventEnd = new Date(event.start_time);
+            eventEnd.setHours(eventEnd.getHours() + 12);
+            return eventEnd < now;
+        }
+        return false;
+    })();
+
     const availableTickets = tickets.filter(t => !isTicketSoldOut(t));
     const soldOutTickets = tickets.filter(isTicketSoldOut);
 
@@ -836,17 +850,28 @@ export default function CheckoutPage() {
                             Back to selection
                         </button>
                     )}
-                    <h1 className="text-[28px] md:text-[40px] font-bold text-gray-900 leading-tight tracking-tight" style={{ letterSpacing: '-0.04em' }}>
-                        {event.title}
-                    </h1>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4 text-base md:text-lg font-medium text-gray-500">
-                        <div className="flex items-center gap-2">
-                            <span>{event.start_time ? new Date(event.start_time).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Date TBD'}</span>
+                    <div className="flex flex-row justify-between gap-4 md:gap-8 items-start">
+                        <div className="flex-1 min-w-0">
+                            <h1 className="text-[28px] md:text-[40px] font-bold text-gray-900 leading-tight tracking-tight break-words" style={{ letterSpacing: '-0.04em' }}>
+                                {event.title}
+                            </h1>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4 text-base md:text-lg font-medium text-gray-500">
+                                <div className="flex items-center gap-2">
+                                    <span>{event.start_time ? new Date(event.start_time).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Date TBD'}</span>
+                                </div>
+                                <span className="hidden md:block w-1.5 h-1.5 rounded-full bg-gray-300"></span>
+                                <div className="flex items-center gap-2">
+                                    <span>{event.start_time ? new Date(event.start_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'Time TBD'}</span>
+                                </div>
+                            </div>
                         </div>
-                        <span className="hidden md:block w-1.5 h-1.5 rounded-full bg-gray-300"></span>
-                        <div className="flex items-center gap-2">
-                            <span>{event.start_time ? new Date(event.start_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'Time TBD'}</span>
-                        </div>
+                        {event.thumbnail_url && (
+                            <img 
+                                src={event.thumbnail_url} 
+                                alt={event.title}
+                                className="hidden md:block w-24 h-24 object-cover rounded-xl shadow-sm flex-shrink-0 mt-3"
+                            />
+                        )}
                     </div>
                     <div className="h-px bg-gray-100 w-full mt-6 sm:mt-10"></div>
 
@@ -877,6 +902,19 @@ export default function CheckoutPage() {
                             animate={{ opacity: 1, y: 0 }}
                             className={`order-1 lg:order-1 space-y-8 font-sans ${activeTab === 'details' ? 'block' : 'hidden lg:block'}`}
                         >
+                            {isPastEvent ? (
+                                <div className="p-8 rounded-[2rem] border border-red-100 bg-red-50/50 text-center space-y-4 my-10">
+                                    <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="font-bold text-xl text-gray-900 tracking-tight">Event Has Ended</h3>
+                                    <p className="text-sm font-medium text-gray-500 max-w-sm mx-auto">
+                                        Ticket sales are closed because this event has already taken place.
+                                    </p>
+                                </div>
+                            ) : (
                             <div className="space-y-8">
                                 {availableTickets.length > 0 && (
                                     <div>
@@ -909,13 +947,18 @@ export default function CheckoutPage() {
                                                                         {hasEarlyBirdPrice && (
                                                                             <>
                                                                                 <span className="text-xs font-medium text-gray-300 line-through">{formatPrice(ticket.price)}</span>
-                                                                                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-100">Early bird</span>
+                                                                                <span className="inline-flex items-center justify-center p-0.5 rounded shrink-0 text-orange-600 border border-orange-600/80 bg-orange-50 select-none" title="Early Bird Available"><svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 fill-orange-600" viewBox="0 0 256 256"><path d="M236.44,73.34,213.21,57.86A60,60,0,0,0,156,16h-.29C122.79,16.16,96,43.47,96,76.89V96.63L11.63,197.88l-.1.12A16,16,0,0,0,24,224h88A104.11,104.11,0,0,0,216,120V100.28l20.44-13.62a8,8,0,0,0,0-13.32ZM126.15,133.12l-60,72a8,8,0,1,1-12.29-10.24l60-72a8,8,0,1,1,12.29,10.24ZM164,80a12,12,0,1,1,12-12A12,12,0,0,1,164,80Z"></path></svg></span>
                                                                             </>
                                                                         )}
                                                                     </div>
                                                                     {hasEarlyBirdPrice && (
                                                                         <span className="mt-1 block text-xs font-medium text-amber-600">
                                                                             {earlyBirdRemaining} early bird left
+                                                                        </span>
+                                                                    )}
+                                                                    {selection[ticket.id] > earlyBirdRemaining && earlyBirdRemaining > 0 && (
+                                                                        <span className="mt-1.5 block text-xs font-medium text-amber-700 bg-amber-50/80 px-2.5 py-1 rounded-lg border border-amber-200/50 w-fit">
+                                                                            {earlyBirdRemaining} early bird @ {formatPrice(unitPrice)} + {selection[ticket.id] - earlyBirdRemaining} regular @ {formatPrice(ticket.price)}
                                                                         </span>
                                                                     )}
                                                                     {remainingCount !== null && remainingCount <= 50 && remainingCount > 0 && (
@@ -1074,29 +1117,6 @@ export default function CheckoutPage() {
                                 )}
 
                                 <div className="pt-10 border-t border-gray-100 space-y-6">
-                                    {/* Physical Ticket Delivery */}
-                                    <div className={`flex items-start gap-4 p-5 rounded-2xl border transition-all duration-300 ${wantsPhysicalDelivery ? 'bg-blue-50/50 border-blue-200' : 'bg-gray-50 border-gray-100 hover:border-gray-200'}`}>
-                                        <div className="pt-0.5">
-                                            <input
-                                                type="checkbox"
-                                                id="physicalTickets"
-                                                checked={wantsPhysicalDelivery}
-                                                onChange={(e) => setWantsPhysicalDelivery(e.target.checked)}
-                                                className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all"
-                                            />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <label htmlFor="physicalTickets" className="text-base font-bold text-gray-900 cursor-pointer flex items-center gap-3">
-                                                <span>Physical Ticket Delivery</span>
-                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors ${wantsPhysicalDelivery ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'}`}>
-                                                    ₦5,000
-                                                </span>
-                                            </label>
-                                            <p className="mt-1 text-sm text-gray-500 leading-relaxed font-medium">
-                                                Receive high-quality printed tickets at your address. Perfect for keepsakes!
-                                            </p>
-                                        </div>
-                                    </div>
 
                                     <div className="flex justify-between text-sm font-medium pt-2">
                                         <span className="text-gray-500">Subtotal</span>
@@ -1106,28 +1126,12 @@ export default function CheckoutPage() {
                                         <span className="text-gray-500">Service Fee</span>
                                         <span className="text-gray-900">{formatPrice(0)}</span>
                                     </div>
-                                    {wantsPhysicalDelivery && (
-                                        <div className="flex justify-between text-sm font-medium">
-                                            <span className="text-gray-500">Delivery Fee</span>
-                                            <span className="text-gray-900 font-bold text-blue-600">{formatPrice(PHYSICAL_DELIVERY_FEE)}</span>
-                                        </div>
-                                    )}
                                     <div className="flex justify-between items-center text-2xl font-black text-gray-900 pt-2">
                                         <span>Total</span>
                                         <span>{formatPrice(totalAmount)}</span>
                                     </div>
 
-                                    <div className="bg-blue-50/50 border border-blue-100/50 p-4 rounded-2xl flex gap-3 mt-4">
-                                        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                                            <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-blue-900">Digital Ticket Delivery</p>
-                                            <p className="text-xs text-blue-700/80 leading-relaxed">
-                                                Sending to: <span className="font-bold">{currentUser?.email || 'guest@example.com'}</span>
-                                            </p>
-                                        </div>
-                                    </div>
+
 
                                     <button
                                         onClick={handlePayment}
@@ -1150,6 +1154,7 @@ export default function CheckoutPage() {
                                     </p>
                                 </div>
                             </div>
+                            )}
                         </motion.div>
                     )}
 
@@ -1221,13 +1226,6 @@ export default function CheckoutPage() {
                                                 );
                                             })}
                                         </div>
-
-                                        {wantsPhysicalDelivery && (
-                                            <div className="flex justify-between items-center py-2 text-blue-600">
-                                                <span className="text-sm font-bold">Physical Delivery Fee</span>
-                                                <span className="font-bold">{formatPrice(PHYSICAL_DELIVERY_FEE)}</span>
-                                            </div>
-                                        )}
 
                                         <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
                                             <span className="text-lg font-black text-gray-900">Total</span>

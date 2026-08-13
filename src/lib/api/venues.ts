@@ -16,6 +16,7 @@ export interface Venue {
   place_id?: string | null;
   place_provider?: string | null;
   platform_note?: string | null;
+  host_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -75,6 +76,10 @@ export async function deleteVenue(venueId: string): Promise<{ ok: boolean; error
     await $venues.delete(venueId);
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    const errorMsg = (e as Error).message;
+    if (errorMsg.includes("Only the venue owner can perform this action")) {
+      return { ok: false, error: "Backend error: You are the owner but the server rejected the deletion. It may be tied to an event." };
+    }
+    return { ok: false, error: errorMsg };
   }
 }

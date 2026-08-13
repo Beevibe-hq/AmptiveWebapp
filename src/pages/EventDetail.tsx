@@ -539,7 +539,15 @@ const EventDetail = () => {
   const renderActionContent = (mobile = false) => {
     const isDraft = event.status?.toLowerCase() === 'draft';
     const isOrganizer = currentUser?.id === event.host?.user_id;
-    const isEventEnded = event.ended_at && new Date(event.ended_at) < new Date();
+    const isEventEnded = (() => {
+      if (event.ended_at && new Date(event.ended_at) < new Date()) return true;
+      if (event.scheduled_for) {
+        const eventEnd = new Date(event.scheduled_for);
+        eventEnd.setHours(eventEnd.getHours() + 12);
+        return eventEnd < new Date();
+      }
+      return false;
+    })();
     const hasTickets = tickets.length > 0;
 
     // Base classes
@@ -798,10 +806,7 @@ const EventDetail = () => {
 
               {/* Description */}
               <section className="group pt-8 border-t border-gray-100">
-                <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info h-4 w-4 text-blue-500">
-                    <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
-                  </svg>
+                <div className="text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-4">
                   About Event
                 </div>
                 <div>
@@ -859,9 +864,8 @@ const EventDetail = () => {
                   <div className="space-y-8">
                     {availableTickets.length > 0 && (
                       <div>
-                        <div className="mb-6 flex items-center gap-2 border-b border-gray-200/60 pb-2 text-[13px] font-semibold text-gray-600">
-                          <Ticket className="h-4 w-4 text-blue-500" />
-                          <span>Available tickets</span>
+                        <div className="text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
+                          Available tickets
                         </div>
                         {hasEarlyBirdTickets && (
                           <div className="mb-5 border-l-2 border-orange-500 pl-3">
@@ -956,9 +960,8 @@ const EventDetail = () => {
 
                     {soldOutTickets.length > 0 && (
                       <div>
-                        <div className="flex items-center gap-2 text-[13px] font-semibold text-gray-500 border-b border-gray-200/60 pb-2 mb-6">
-                          <Ticket className="h-4 w-4 text-rose-400" />
-                          <span>Sold out</span>
+                        <div className="text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
+                          Sold out
                         </div>
                         <div className="flex overflow-x-auto pb-4 snap-x gap-4 md:gap-6 -mx-4 px-4 md:mx-0 md:px-0 hide-scrollbar">
                           {soldOutTickets.map((ticket) => {
@@ -1034,8 +1037,7 @@ const EventDetail = () => {
               {/* Location Map Section */}
               {!isVirtualEvent && (physicalLatitude !== null || physicalLongitude !== null || fallbackMapQuery) ? (
                 <section className="pt-12 border-t border-gray-100">
-                  <div className="flex items-center gap-2 text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
-                    <MapPin className="h-4 w-4 text-blue-500" />
+                  <div className="text-sm font-bold text-gray-600 border-b border-gray-200/60 pb-2 mb-6">
                     Location
                   </div>
                   <VenueMap

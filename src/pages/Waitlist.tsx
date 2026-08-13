@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSEO } from '@/hooks/useSEO';
 import toast from 'react-hot-toast';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import { api } from '@/lib/api/client';
 
 type WaitlistRole = 'host' | 'monetize' | 'events' | 'listener';
 
@@ -135,12 +136,41 @@ export default function Waitlist() {
 
     setLoading(true);
     try {
-      // Simulate API submission
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      const apiUseCaseMap: Record<WaitlistRole | 'other', string> = {
+        'host': 'earn_from_live_audio',
+        'monetize': 'gifts_and_tip',
+        'events': 'event_ticketing',
+        'listener': 'listening_and_discovery',
+        'other': 'listening_and_discovery' // fallback
+      };
+
+      const response: any = await api.post('/waitlist', {
+        email: email.trim(),
+        use_case: apiUseCaseMap[userRole || 'other']
+      }, { skipAuth: true });
+      
       setStep('success');
+
+      // Check if they were already on the waitlist (older than 1 minute)
+      if (response && response.created_at) {
+        const createdDate = new Date(response.created_at);
+        const now = new Date();
+        const diffMs = now.getTime() - createdDate.getTime();
+        if (diffMs > 60000) { // 60 seconds
+          toast.success("You're already on the waitlist! We'll notify you when early access opens.", { duration: 5000 });
+          return;
+        }
+      }
+
       toast.success('Successfully joined the waitlist!');
-    } catch {
-      toast.error('Something went wrong. Please try again.');
+    } catch (err: any) {
+      // If the backend actually returned a 422 because it's a duplicate, we handle that just in case:
+      if (err.message && err.message.toLowerCase().includes('already')) {
+        toast.success("You're already on the waitlist! We'll notify you when early access opens.", { duration: 5000 });
+        setStep('success');
+      } else {
+        toast.error(err.message || 'Something went wrong. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

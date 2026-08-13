@@ -64,7 +64,7 @@ export default function SupportProfile() {
   const isOwner = Boolean(currentUserId && profile?.user_id && currentUserId === profile.user_id && viewAs !== 'public');
 
   const handleCopySupportLink = async () => {
-    const linkSlug = profile?.support_slug || profile?.username || profile?.user_id || id;
+    const linkSlug = profile?.username || profile?.support_slug || profile?.user_id || id;
     const link = formatSupportUrl(profile, linkSlug);
     try {
       await navigator.clipboard.writeText(link);
@@ -127,10 +127,9 @@ export default function SupportProfile() {
             message: supportMessage.trim() || undefined,
             payment_channel: channel,
             email: trimmedEmail,
-            // Signed-in supporters are identified by their token, so this is only sent
-            // for anonymous ones.
-            supporter_name: currentUserId ? undefined : supporterName.trim() || undefined,
-          });
+            supporter_name: supporterName.trim() || undefined,
+            sender_name: supporterName.trim() || undefined,
+          } as any);
 
           if (result.ok && result.data) {
             if (result.data.payment_url) {
@@ -297,6 +296,9 @@ export default function SupportProfile() {
         if (user?.email) {
           setSupporterEmail(user.email);
         }
+        if (user?.full_name || user?.name || user?.username) {
+          setSupporterName(user.full_name || user.name || user.username);
+        }
 
         // The canonical lookup is the backend's support slug; fall back to the older
         // user-id / username lookups for legacy links.
@@ -425,11 +427,6 @@ export default function SupportProfile() {
 
   return (
     <div className={paymentStatus === 'success' ? "min-h-screen overflow-x-hidden font-sans selection:bg-blue-100 selection:text-blue-900 bg-transparent" : "min-h-screen overflow-x-hidden bg-white font-sans selection:bg-blue-100 selection:text-blue-900"}>
-      {/* Top tint overlay */}
-      {topTintStyle && (
-        <div className="fixed top-0 left-0 right-0 h-80 md:h-96 lg:h-[28rem] z-0 pointer-events-none" style={topTintStyle}></div>
-      )}
-      
       {/* Ambient blurred avatar wash (success page only).
           `filter` (not `backdrop-filter`) is what blurs this layer's own background image;
           backdrop-filter only blurs what sits behind the element, which left the photo
@@ -457,7 +454,7 @@ export default function SupportProfile() {
             <Eye size={16} /> <span>You are previewing your profile as a supporter</span>
           </div>
           <button 
-            onClick={() => navigate(`/support/${(profile.support_slug as string) || profile.username || profile.user_id}`)}
+            onClick={() => navigate(`/support/${profile.username || (profile.support_slug as string) || profile.user_id}`)}
             className="px-4 py-1.5 bg-white text-indigo-600 rounded-full text-xs font-black hover:bg-indigo-50 transition-all shadow-sm active:scale-95"
           >
             Exit Preview
@@ -465,7 +462,7 @@ export default function SupportProfile() {
         </div>
       )}
       {!(viewAs === 'public' && currentUserId === profile.user_id) && (
-        <Navbar hideMenu={true} />
+        <Navbar hideMenu={true} forceSupportMode={true} />
       )}
       
       {/* Banner Section */}
@@ -499,7 +496,7 @@ export default function SupportProfile() {
           {isOwner ? (
             <>
               <button 
-                onClick={() => navigate(`/support/${(profile.support_slug as string) || profile.username || profile.user_id}?viewAs=public`)}
+                onClick={() => navigate(`/support/${profile.username || (profile.support_slug as string) || profile.user_id}?viewAs=public`)}
                 className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-blue-600 group relative"
                 title="View as public"
               >
@@ -616,7 +613,7 @@ export default function SupportProfile() {
                     className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-gray-50/90 border border-gray-200/80 rounded-full text-xs font-medium text-gray-700 hover:bg-gray-100 transition-all shadow-xs group active:scale-95 mt-1 cursor-pointer"
                   >
                     <span className="text-gray-400 font-normal">{getSupportDomainPrefix(profile)}/</span>
-                    <span className="font-bold text-gray-900">{profile.support_slug || profile.username || 'creator'}</span>
+                    <span className="font-bold text-gray-900">{profile.username || profile.support_slug || 'creator'}</span>
                     <span className="w-px h-3 bg-gray-200 mx-0.5" />
                     {copiedLink ? (
                       <span className="flex items-center gap-1 text-emerald-600 font-bold">
@@ -819,7 +816,7 @@ export default function SupportProfile() {
                                       <>
                                         <div className="flex items-center gap-2">
                                           <h4 className="font-bold text-gray-900 text-base truncate whitespace-nowrap">
-                                            {payment.supporter_name || payment.sender_name || 'A supporter'}
+                                            {payment.supporter_name || payment.sender_name || (payment as any).name || (payment as any).full_name || (payment as any).supporterName || 'A supporter'}
                                           </h4>
                                           <span className="text-gray-300 font-bold text-xs hidden sm:inline">•</span>
                                           <span className="text-gray-400 text-sm font-bold hidden sm:inline">
@@ -1057,6 +1054,12 @@ export default function SupportProfile() {
               <div className="mx-auto grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-3">
                 {(profile.support_amounts || [500, 1000, 2500, 5000]).map((amount, index) => {
                   const TierIcon = [Coffee, Gift, Zap, Heart][index % 4];
+                  const colorConfig = [
+                    { bg: 'bg-orange-50', text: 'text-orange-500' },
+                    { bg: 'bg-purple-50', text: 'text-purple-500' },
+                    { bg: 'bg-amber-50', text: 'text-amber-500' },
+                    { bg: 'bg-rose-50', text: 'text-rose-500' }
+                  ][index % 4];
                   const isSelected = selectedTier === amount;
 
                   return (
@@ -1082,7 +1085,7 @@ export default function SupportProfile() {
                         {isSelected && <span className="h-2 w-2 rounded-full bg-gray-900" />}
                       </span>
 
-                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-50 text-gray-400">
+                      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${colorConfig.bg} ${colorConfig.text}`}>
                         <TierIcon size={16} />
                       </span>
 
@@ -1115,7 +1118,7 @@ export default function SupportProfile() {
                     {selectedTier === 'custom' && <span className="h-2 w-2 rounded-full bg-gray-900" />}
                   </span>
 
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-50 text-gray-400">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500">
                     <CreditCard size={16} />
                   </span>
 

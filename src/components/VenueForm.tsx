@@ -3,7 +3,8 @@ import {  MapPin, Globe, X , Loader2 } from "lucide-react";
 import type { Venue, VenueCreateRequest } from '@/lib/api/venues';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import VenuePinPicker from '@/components/VenuePinPicker';
-import { geocodeAddressQuery, tryDecodePlusCode, getPlusCodeFromCoords } from '@/lib/geocoding';
+import { geocodeAddressQuery, tryDecodePlusCode } from '@/lib/geocoding';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface VenueFormProps {
   initialVenue?: Venue | null;
@@ -45,6 +46,7 @@ export default function VenueForm({
   onSelectVenue,
   onDeleteVenue,
 }: VenueFormProps) {
+  const { user } = useAuth();
   const [venueType, setVenueType] = useState<'physical' | 'virtual'>(
     initialVenue?.venue_type || 'physical'
   );
@@ -78,6 +80,27 @@ export default function VenueForm({
 
   const isPhysicalAdded = false;
   const isVenueAdded = false;
+
+  const handleSelectExistingVenue = (venueId: string) => {
+    const venue = existingVenues?.find(v => v.venue_id === venueId);
+    if (!venue) return;
+    setVenueType(venue.venue_type as 'physical' | 'virtual');
+    setName(venue.name || '');
+    setDescription(venue.description || '');
+    setAddressLine1(venue.address_line1 || '');
+    setCity(venue.city || '');
+    setState(venue.state || '');
+    setCountry(venue.country || '');
+    setPostalCode(venue.postal_code || '');
+    setLatitude(venue.latitude ?? null);
+    setLongitude(venue.longitude ?? null);
+    setPlaceId(venue.place_id || '');
+    setPlaceProvider(venue.place_provider || '');
+    setPlatformNote(venue.platform_note || '');
+    setSearchQuery(venue.address_line1 || venue.name || '');
+    hasExplicitLocationRef.current = !!(venue.latitude && venue.longitude);
+    onSelectVenue?.(venueId);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -417,53 +440,43 @@ export default function VenueForm({
         {!isVenueAdded && (
           <>
             {existingVenues && existingVenues.length > 0 && (
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700">Already Added Venues</label>
-                <div className="grid gap-3 sm:grid-cols-2">
+              <div className="hidden sm:block">
+                <div className="flex flex-wrap gap-2">
                   {existingVenues.map((venue) => {
                     const isSelected = selectedVenueId === venue.venue_id;
+                    const isPhysical = venue.venue_type === 'physical';
+                    const isOwner = !venue.host_id || venue.host_id === user?.user_id || venue.host_id === user?.id;
+
                     return (
-                      <div
+                      <button
                         key={venue.venue_id}
-                        onClick={() => onSelectVenue?.(venue.venue_id)}
-                        className={`flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer transition-all duration-200 relative group ${
+                        type="button"
+                        onClick={() => handleSelectExistingVenue(venue.venue_id)}
+                        className={`group inline-flex w-fit items-center gap-1.5 rounded-full py-1.5 pl-2.5 transition-all duration-150 text-sm font-medium ${
                           isSelected
-                            ? 'border-blue-500 bg-blue-50/20 shadow-sm'
-                            : 'border-gray-100 hover:border-gray-200 bg-gray-50/30'
+                            ? 'bg-gray-900 text-white pr-2.5'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 pr-2.5'
                         }`}
                       >
-                        <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 ${
-                          venue.venue_type === 'physical' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
-                        }`}>
-                          {venue.venue_type === 'physical' ? (
-                            <MapPin className="h-4.5 w-4.5" />
-                          ) : (
-                            <Globe className="h-4.5 w-4.5" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0 pr-6">
-                          <div className={`text-sm font-semibold truncate ${isSelected ? 'text-blue-700 font-bold' : 'text-gray-900'}`}>
-                            {venue.name}
-                          </div>
-                          <div className="text-[11px] font-medium text-gray-400 truncate mt-0.5">
-                            {venue.venue_type === 'physical'
-                              ? [venue.city, venue.state].filter(Boolean).join(', ') || venue.address_line1
-                              : venue.platform_note || 'On the App'}
-                          </div>
-                        </div>
-                        {onDeleteVenue && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteVenue(venue);
-                            }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-rose-50 text-gray-400 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0"
+                        {isPhysical
+                          ? <MapPin className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-emerald-400' : 'text-gray-400'}`} />
+                          : <Globe className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-blue-400' : 'text-gray-400'}`} />
+                        }
+                        <span className="max-w-[140px] truncate">{venue.name}</span>
+                        {onDeleteVenue && isOwner && (
+                          <span
+                            role="button"
+                            onClick={(e) => { e.stopPropagation(); onDeleteVenue(venue); }}
+                            className={`ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
+                              isSelected
+                                ? 'opacity-50 hover:opacity-100 hover:bg-white/20 text-white'
+                                : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-500 hover:bg-rose-100'
+                            }`}
                           >
-                            <X className="h-4 w-4" />
-                          </button>
+                            <X className="h-3 w-3" />
+                          </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -586,6 +599,44 @@ export default function VenueForm({
                   )}
                 </div>
 
+                {/* Mobile-only venue pills — shown below search box */}
+                {existingVenues && existingVenues.length > 0 && (
+                  <div className="sm:hidden flex flex-nowrap gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                    {existingVenues.map((venue) => {
+                      const isSelected = selectedVenueId === venue.venue_id;
+                      const isPhysical = venue.venue_type === 'physical';
+                      const isOwner = !venue.host_id || venue.host_id === user?.user_id || venue.host_id === user?.id;
+                      return (
+                        <button
+                          key={venue.venue_id}
+                          type="button"
+                          onClick={() => handleSelectExistingVenue(venue.venue_id)}
+                          className={`group inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full py-1.5 pl-2.5 pr-2.5 transition-all duration-150 text-sm font-medium ${
+                            isSelected ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          {isPhysical
+                            ? <MapPin className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-emerald-400' : 'text-gray-400'}`} />
+                            : <Globe className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-blue-400' : 'text-gray-400'}`} />
+                          }
+                          <span className="max-w-[120px] truncate">{venue.name}</span>
+                          {onDeleteVenue && isOwner && (
+                            <span
+                              role="button"
+                              onClick={(e) => { e.stopPropagation(); onDeleteVenue(venue); }}
+                              className={`ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
+                                isSelected ? 'opacity-60 text-white' : 'opacity-0 group-active:opacity-100 text-gray-400'
+                              }`}
+                            >
+                              <X className="h-3 w-3" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Address Line 1</label>
@@ -653,31 +704,7 @@ export default function VenueForm({
                   }}
                 />
 
-                {latitude != null && longitude != null && (
-                  <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-200/80 rounded-2xl p-3.5 mt-2 text-xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg shrink-0 font-bold text-[10px]">
-                        PLUS CODE
-                      </div>
-                      <div className="min-w-0">
-                        <span className="font-mono font-semibold text-gray-900 truncate block">
-                          {getPlusCodeFromCoords(latitude, longitude)}
-                        </span>
-                        <span className="text-[11px] text-gray-500 truncate block">
-                          Exact 3m × 3m location generated automatically
-                        </span>
-                      </div>
-                    </div>
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 text-blue-600 font-semibold hover:underline"
-                    >
-                      View on Google Maps ↗
-                    </a>
-                  </div>
-                )}
+
               </div>
             ) : (
               <div className="space-y-4">

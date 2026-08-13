@@ -100,17 +100,17 @@ async function ensureValidToken(): Promise<boolean> {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (!token) return false;
 
-  if (isTokenExpiringSoon(0)) {
-    return false;
-  }
-
-  if (isTokenExpiringSoon()) {
+  const expiryStr = localStorage.getItem(ACCESS_TOKEN_EXPIRY_KEY);
+  if (expiryStr && isTokenExpiringSoon()) {
     if (!refreshPromise) {
       refreshPromise = refreshAccessToken();
     }
     const success = await refreshPromise;
     refreshPromise = null;
-    if (!success) return false;
+    if (!success) {
+      // If refresh fails, still attempt request with current token; backend 401 handler will catch invalid tokens
+      return true;
+    }
   }
 
   return true;

@@ -168,8 +168,6 @@ function normalizeSupportRecord(record: SupportProfile | null): SupportProfile |
 
   const rawProfileType = (record as any).support_profile_type ?? record.profile_type;
   const supportEnabled = (record as any).is_support_enabled ?? record.support_enabled ?? record.accept_tips;
-  console.log('[Support] normalizeSupportRecord → raw record keys:', Object.keys(record));
-  console.log('[Support] normalizeSupportRecord → record.support_profile_type:', (record as any).support_profile_type, '| record.profile_type:', record.profile_type, '| resolved rawProfileType:', rawProfileType);
 
   const accountUsername = record.username || user.username || (record as any).user_username || (record as any).support_slug || '';
 
@@ -220,7 +218,6 @@ export function mergeSupportProfileIdentity(
     record.profile_type ||
     (record as any).support_profile_type ||
     'creator';
-  console.log('[Support] mergeSupportProfileIdentity → record.profile_type:', record.profile_type, '| record.support_profile_type:', (record as any).support_profile_type, '| identity.profile_type:', (identity as any).profile_type, '| resolved:', profileType);
 
   return {
     ...identity,
@@ -289,7 +286,7 @@ export async function getSupportProfile(userId: string): Promise<SupportProfile 
 export async function getSupportProfileByUsername(username: string): Promise<SupportProfile | null> {
   try {
     const response = await api.get<unknown>(
-      `${USERS_PREFIX}/by-username/${encodeURIComponent(username)}`,
+      `${SUPPORT_PREFIX}/${encodeURIComponent(username)}`,
       { skipAuth: true }
     );
     return normalizeSupportRecord(unwrapSupportProfile(response));
@@ -300,12 +297,9 @@ export async function getSupportProfileByUsername(username: string): Promise<Sup
 
 export async function updateSupportProfile(data: Partial<SupportProfile>): Promise<{ ok: boolean; error?: string }> {
   const payload = compactPayload(mapSupportProfilePayload(data));
-  console.log('[Support] updateSupportProfile → input profile_type:', data.profile_type);
-  console.log('[Support] updateSupportProfile → payload being sent:', JSON.stringify(payload));
 
   try {
-    const patchResponse = await api.patch<SupportProfile>(`${SUPPORT_PREFIX}/`, payload);
-    console.log('[Support] updateSupportProfile → PATCH response:', JSON.stringify(patchResponse));
+    await api.patch<SupportProfile>(`${SUPPORT_PREFIX}/`, payload);
     return { ok: true };
   } catch (patchError: any) {
     // Fall back to POST creation when the backend says there's no profile yet.

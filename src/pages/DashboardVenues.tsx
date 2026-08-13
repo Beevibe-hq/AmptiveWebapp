@@ -4,6 +4,7 @@ import { listVenues, deleteVenue, createVenue, updateVenue } from '@/lib/api/ven
 import type { Venue, VenueCreateRequest } from '@/lib/api/venues';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import VenueForm from '@/components/VenueForm';
+import { useAuth } from '@/contexts/AuthContext';
 
 const getVenueLocation = (venue: Venue) => {
   if (venue.venue_type === 'virtual') {
@@ -97,6 +98,7 @@ function VenueMapVisual({ venue }: { venue: Venue }) {
 }
 
 export default function DashboardVenues() {
+  const { user } = useAuth();
   const [venues, setVenues] = useState<Venue[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -228,24 +230,26 @@ export default function DashboardVenues() {
                   </p>
                 )}
 
-                <div className="mt-1.5 grid grid-cols-[1fr_auto] gap-2">
-                  <button
-                    onClick={() => {
-                      setEditingVenue(venue);
-                      setShowForm(true);
-                    }}
-                    className="w-full rounded-lg bg-[#F1F7FE] px-3 py-1.5 text-center text-[13px] font-medium text-[#0C61D9] transition-colors group-hover:bg-blue-100"
-                  >
-                    Edit Venue
-                  </button>
-                  <button
-                    onClick={() => handleDelete(venue)}
-                    aria-label={`Delete ${venue.name}`}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-50 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                {(!venue.host_id || venue.host_id === user?.user_id || venue.host_id === user?.id) && (
+                  <div className="mt-1.5 grid grid-cols-[1fr_auto] gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingVenue(venue);
+                        setShowForm(true);
+                      }}
+                      className="w-full rounded-lg bg-[#F1F7FE] px-3 py-1.5 text-center text-[13px] font-medium text-[#0C61D9] transition-colors group-hover:bg-blue-100"
+                    >
+                      Edit Venue
+                    </button>
+                    <button
+                      onClick={() => handleDelete(venue)}
+                      aria-label={`Delete ${venue.name}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-50 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

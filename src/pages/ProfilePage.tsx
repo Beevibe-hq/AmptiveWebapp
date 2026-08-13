@@ -8,7 +8,7 @@ import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
 import { useAuth } from '@/contexts/AuthContext';
-import { getMySupportProfile } from '@/lib/api/support';
+import { getMySupportProfile, getSupportProfile, getSupportProfileByUsername } from '@/lib/api/support';
 
 type EventStatus = 'upcoming' | 'live' | 'past';
 
@@ -263,11 +263,35 @@ const ProfilePage = () => {
         let profileData: UserProfile | null = null;
         
         if (urlUserId && urlUserId !== user?.user_id) {
-          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
-          if (isUuid) {
+          let targetSupportProfile = null;
+          
+          // Fallback to hostData.user_id if available and it's a UUID, because by-username API might not exist
+          const isUrlUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+          const hasHostUserId = hostData?.user_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostData.user_id);
+          
+          if (isUrlUuid) {
             profileData = await getProfileByUserId(targetId);
+            targetSupportProfile = await getSupportProfile(targetId);
+          } else if (hasHostUserId) {
+            profileData = await getProfileByUserId(hostData.user_id!);
+            targetSupportProfile = await getSupportProfile(hostData.user_id!);
           } else {
             profileData = await getProfileByUsername(targetId);
+            targetSupportProfile = await getSupportProfileByUsername(targetId);
+          }
+
+          if (targetSupportProfile) {
+            profileData = {
+              ...(profileData || {}),
+              support_enabled: targetSupportProfile.support_enabled ?? targetSupportProfile.accept_tips ?? profileData?.support_enabled ?? false,
+              accept_tips: targetSupportProfile.accept_tips ?? targetSupportProfile.support_enabled ?? profileData?.accept_tips ?? false,
+              support_slug: (targetSupportProfile as any).support_slug ?? (profileData as any)?.support_slug,
+              name: profileData?.name || targetSupportProfile.full_name || targetSupportProfile.name || targetSupportProfile.username || '',
+              username: profileData?.username || targetSupportProfile.username || '',
+              avatar_url: profileData?.avatar_url || targetSupportProfile.avatar_url || '',
+              user_id: profileData?.user_id || profileData?.id || targetSupportProfile.user_id || targetSupportProfile.id || '',
+              id: profileData?.id || profileData?.user_id || targetSupportProfile.id || targetSupportProfile.user_id || '',
+            } as UserProfile;
           }
         } else {
           profileData = user;
@@ -1035,7 +1059,7 @@ const ProfilePage = () => {
           </h1>
           <p className="mt-2 sm:mt-3 text-gray-600 text-center">@{profile?.username || (urlUserId === user?.user_id || !urlUserId ? user?.username : undefined) || hostData?.username || urlUserId || 'user'}</p>
           <div className="mt-7 flex flex-row flex-wrap items-center justify-center gap-3">
-            {user?.id && profile?.user_id && user.id === profile.user_id && (
+            {isMyProfile && user?.id && profile?.user_id && user.id === profile.user_id ? (
               <>
                 <button
                   type="button"
@@ -1047,14 +1071,14 @@ const ProfilePage = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    const hasEnabledTips = profile?.support_enabled === true || (profile as any)?.accept_tips === true;
+                    const hasEnabledTips = profile?.support_enabled === true || (profile as any)?.accept_tips === true || (profile as any)?.is_support_enabled === true;
                     if (hasEnabledTips) {
-                      navigate(`/support/${(profile as any).support_slug || profile.username || profile.user_id}`);
+                      navigate(`/support/${profile.username || (profile as any).support_slug || profile.user_id}`);
                     } else {
                       navigate('/profile/support-setup');
                     }
                   }}
-                  title={(profile?.support_enabled === true || (profile as any)?.accept_tips === true) ? "View My Support Page" : "Setup Support Me"}
+                  title={(profile?.support_enabled === true || (profile as any)?.accept_tips === true || (profile as any)?.is_support_enabled === true) ? "View My Support Page" : "Setup Support Me"}
                   className="inline-flex items-center gap-2 px-4 py-2.5 md:py-3 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition-all duration-200 shadow-sm hover:scale-110 active:scale-95 group text-sm font-semibold"
                 >
                   <svg
@@ -1068,9 +1092,31 @@ const ProfilePage = () => {
                     <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                     <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                   </svg>
-                  <span>{(profile?.support_enabled === true || (profile as any)?.accept_tips === true) ? 'My Support Page' : 'Accept Gifts'}</span>
+                  <span>{(profile?.support_enabled === true || (profile as any)?.accept_tips === true || (profile as any)?.is_support_enabled === true) ? 'My Support Page' : 'Accept Gifts'}</span>
                 </button>
               </>
+            ) : (
+              (profile?.support_enabled === true || (profile as any)?.accept_tips === true || (profile as any)?.is_support_enabled === true) && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/support/${profile?.username || (profile as any)?.support_slug || profile?.user_id || hostData?.username || urlUserId}`)}
+                  title={`Support ${profile?.name?.split(' ')[0] || hostData?.full_name?.split(' ')[0] || 'User'}`}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 md:py-3 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition-all duration-200 shadow-sm hover:scale-110 active:scale-95 group text-sm font-bold"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                    className="w-5 h-5 transition-transform group-hover:rotate-12"
+                    aria-hidden="true"
+                  >
+                    <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
+                    <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                  </svg>
+                  <span>Support {profile?.name?.split(' ')[0] || hostData?.full_name?.split(' ')[0] || 'User'}</span>
+                </button>
+              )
             )}
           </div>
 

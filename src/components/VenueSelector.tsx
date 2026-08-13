@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapPin, Globe, Plus, Edit2, ChevronDown, Loader2, X } from "lucide-react";
 import { listVenues, createVenue, updateVenue, deleteVenue } from '@/lib/api/venues';
 import type { Venue, VenueCreateRequest } from '@/lib/api/venues';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import VenueForm from './VenueForm';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+import L from 'leaflet';
 
 const AMPTIVE_APP_VENUE_ID = 'virtual-amptive-app';
 const AMPTIVE_APP_VENUE: Venue = {
@@ -14,14 +15,120 @@ const AMPTIVE_APP_VENUE: Venue = {
   platform_note: 'Audience will join the live event inside the Amptive mobile app.',
 };
 
+/* ── Compact Leaflet preview matching EventDetail's VenueMap ── */
+function MiniVenueMap({
+  latitude,
+  longitude,
+  addressQuery,
+  hostAvatarUrl,
+  mapboxToken,
+  onClick,
+}: {
+  latitude?: number | null;
+  longitude?: number | null;
+  addressQuery?: string;
+  hostAvatarUrl?: string;
+  mapboxToken?: string;
+  onClick?: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+    let cancelled = false;
+
+    const lat = latitude || 6.5244;
+    const lng = longitude || 3.3792;
+    const hasCoords = !!(latitude && longitude);
+
+    const map = L.map(containerRef.current, {
+      center: [lat, lng],
+      zoom: 15,
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      touchZoom: false,
+      boxZoom: false,
+      keyboard: false,
+    });
+
+    if (mapboxToken) {
+      L.tileLayer(
+        `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}@2x?access_token=${mapboxToken}`,
+        { tileSize: 512, zoomOffset: -1, minZoom: 3, maxZoom: 20 }
+      ).addTo(map);
+    } else {
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd', minZoom: 3, maxZoom: 20,
+      }).addTo(map);
+    }
+
+    // Circular avatar pin marker matching EventDetail
+    const imgSrc = hostAvatarUrl || '/images/IMG_6053 2.JPG';
+    const iconHtml = `
+      <div style="position:relative;display:inline-flex;flex-direction:column;align-items:center;">
+        <div style="width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
+          <img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='/images/IMG_6053 2.JPG';" />
+        </div>
+        <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #ffffff;margin-top:-2px;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.12));"></div>
+      </div>
+    `;
+
+    const pinIcon = L.divIcon({
+      className: '',
+      html: iconHtml,
+      iconSize: [48, 58],
+      iconAnchor: [24, 58],
+    });
+
+    const marker = L.marker([lat, lng], { icon: pinIcon, interactive: false }).addTo(map);
+    mapRef.current = map;
+
+    // Geocode if no explicit coords
+    if (!hasCoords && addressQuery) {
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(addressQuery)}`)
+        .then(r => r.json())
+        .then(results => {
+          if (!cancelled && results?.[0]) {
+            const gLat = parseFloat(results[0].lat);
+            const gLng = parseFloat(results[0].lon);
+            if (!isNaN(gLat) && !isNaN(gLng)) {
+              map.setView([gLat, gLng], 15);
+              marker.setLatLng([gLat, gLng]);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      cancelled = true;
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [latitude, longitude, addressQuery, mapboxToken]);
+
+  return (
+    <button type="button" onClick={onClick} className="relative block w-full h-36 focus:outline-none overflow-hidden isolate z-0">
+      <style>{`.leaflet-tile-pane { filter: saturate(1.04) brightness(1.01); }`}</style>
+      <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+      <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-black/5" />
+    </button>
+  );
+}
+
 interface VenueSelectorProps {
   selectedVenueId?: string | null;
   onVenueSelect: (venueId: string | null, venueType?: 'physical' | 'virtual' | null) => void;
   deferVenueCreation?: boolean;
   onDraftVenue?: (draft: VenueCreateRequest | null) => void;
+  hostAvatarUrl?: string;
 }
 
-export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVenueCreation, onDraftVenue }: VenueSelectorProps) {
+export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVenueCreation, onDraftVenue, hostAvatarUrl }: VenueSelectorProps) {
   const [venues, setVenues] = useState<Venue[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -144,63 +251,107 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
     }
   }, [editingVenue, deferVenueCreation, onDraftVenue, onVenueSelect]);
 
+  const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+
+  // Has meaningful location data for map?
+  const hasMapLocation = selectedVenue && (
+    (selectedVenue.latitude && selectedVenue.longitude) ||
+    selectedVenue.address_line1 || selectedVenue.city
+  );
+
+  const venueFullAddress = selectedVenue
+    ? [
+        selectedVenue.address_line1,
+        selectedVenue.city,
+        selectedVenue.postal_code,
+        selectedVenue.state,
+        selectedVenue.country,
+      ].filter(Boolean).join(', ')
+    : '';
+
   return (
     <div className="relative">
-      <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Venue</label>
+      <label className="block text-[13px] font-medium text-gray-500 mb-1.5">Venue</label>
 
-      <button
-        type="button"
-        onClick={handleOpen}
-        className="w-full flex items-center justify-between rounded-2xl border border-gray-100/50 px-5 py-3.5 text-left bg-black/5 hover:bg-black/10 focus:outline-none focus:ring-4 focus:ring-blue-500/10 active:scale-[0.99] transition-all duration-200"
-      >
-        {loading ? (
-          <span className="flex items-center gap-2 text-gray-400">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-            <span className="text-sm font-medium">Loading venues...</span>
-          </span>
-        ) : selectedVenue ? (
-          <div className="flex items-center gap-3 min-w-0">
-            <div className={`p-2 rounded-xl shrink-0 ${
-              selectedVenue.venue_type === 'physical' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
-            }`}>
-              {selectedVenue.venue_type === 'physical' ? (
-                <MapPin className="h-4 w-4" />
-              ) : (
-                <Globe className="h-4 w-4" />
+      {/* ── Unselected / Loading state ── */}
+      {!selectedVenue ? (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="w-full flex items-center gap-2.5 rounded-2xl bg-black/5 hover:bg-black/[0.07] px-4 py-3.5 text-left focus:outline-none focus:ring-4 focus:ring-blue-500/10 active:scale-[0.99] transition-all duration-200"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />
+              <span className="text-sm font-medium text-gray-400">Loading venues…</span>
+            </>
+          ) : (
+            <>
+              <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
+              <span className="text-sm font-medium text-gray-400">Select or add a venue</span>
+            </>
+          )}
+        </button>
+      ) : (
+        /* ── Selected state: Google Maps result card style ── */
+        <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
+          {/* Dark header */}
+          <button
+            type="button"
+            onClick={handleOpen}
+            className="w-full flex items-start gap-3 px-4 py-3.5 bg-[#f2f2f2] hover:bg-[#ebebeb] text-left transition-colors duration-150 focus:outline-none"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-gray-500 mt-0.5">
+              <MapPin className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-900 truncate leading-tight">{selectedVenue.name}</p>
+              {venueFullAddress && (
+                <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">{venueFullAddress}</p>
               )}
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-bold text-gray-900 truncate">{selectedVenue.name}</div>
-              <div className="text-[11px] font-medium text-gray-500 truncate mt-0.5">
-                {selectedVenue.venue_type === 'physical'
-                  ? [selectedVenue.city, selectedVenue.state].filter(Boolean).join(', ') || selectedVenue.address_line1
-                  : 'On the App'}
-              </div>
+            {/* Clear button */}
+            <div onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  onVenueSelect(null);
+                  onDraftVenue?.(null);
+                  setDraftPayload(null);
+                }}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-black/10 transition-colors mt-0.5"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
-          </div>
-        ) : (
-          <span className="text-sm text-gray-500 font-medium">Select a venue</span>
-        )}
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          {selectedVenue && (
+          </button>
+
+          {/* Static map thumbnail */}
+          {/* Leaflet mini-map */}
+          {hasMapLocation ? (
+            <MiniVenueMap
+              latitude={selectedVenue.latitude}
+              longitude={selectedVenue.longitude}
+              addressQuery={[selectedVenue.address_line1, selectedVenue.city, selectedVenue.state, selectedVenue.country].filter(Boolean).join(', ')}
+              hostAvatarUrl={hostAvatarUrl}
+              mapboxToken={mapboxToken}
+              onClick={handleOpen}
+            />
+          ) : (
             <button
               type="button"
-              onClick={() => {
-                onVenueSelect(null);
-                onDraftVenue?.(null);
-                setDraftPayload(null);
-              }}
-              className="p-1 rounded-full hover:bg-black/10 text-gray-400 hover:text-gray-600 transition-colors"
+              onClick={handleOpen}
+              className="w-full flex items-center justify-center h-16 bg-gray-50 text-gray-400 text-xs gap-1.5 hover:bg-gray-100 transition-colors focus:outline-none"
             >
-              <X className="h-4 w-4" />
+              <MapPin className="h-3.5 w-3.5" />
+              No address to show map
             </button>
           )}
-          <ChevronDown className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-300 ${open ? 'rotate-180 text-blue-500' : ''}`} />
         </div>
-      </button>
+      )}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl w-full max-w-2xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
             <VenueForm
               initialVenue={editingVenue}
@@ -221,7 +372,6 @@ export default function VenueSelector({ selectedVenueId, onVenueSelect, deferVen
               onSelectVenue={(venueId) => {
                 const venue = venues.find(v => v.venue_id === venueId);
                 onVenueSelect(venueId, venue?.venue_type);
-                setOpen(false);
               }}
               onDeleteVenue={async (venue) => {
                 if (!confirm(`Delete "${venue.name}"? This cannot be undone.`)) return;

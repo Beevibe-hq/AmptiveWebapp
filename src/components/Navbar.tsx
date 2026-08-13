@@ -27,7 +27,7 @@ type NavLink = MenuItem | {
   path?: never;
 };
 
-const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
+const Navbar = ({ hideMenu = false, forceSupportMode = false }: { hideMenu?: boolean, forceSupportMode?: boolean }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -169,7 +169,7 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
   const isAuthPage = location.pathname === '/login' || location.pathname === '/login/' || location.pathname === '/signup' || location.pathname === '/signup/';
   const isCompleteProfilePage = location.pathname === '/complete-profile' || location.pathname === '/complete-profile/';
   const isOtpPage = location.pathname === '/verify-otp' || location.pathname === '/verify-otp/';
-  const isSupportPage = location.pathname.startsWith('/support/');
+  const isSupportPage = forceSupportMode || location.pathname.startsWith('/support/');
 
   const isExplorePage = location.pathname === '/explore' || location.pathname === '/explore/';
 
@@ -213,20 +213,20 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
                 <Logo variant={isSupportPage && !isScrolled ? 'white' : 'black'} />
                 <TextLogo variant={isSupportPage && !isScrolled ? 'white' : 'black'} />
               </Link>
-
-              {/* Search Icon - Only shown on mobile when search box is hidden */}
-              {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
-                <div className="sm:hidden">
-                  <button
-                    className="p-1.5 text-black hover:text-gray-800 animate-pulse-subtle"
-                    onClick={() => setIsSearchOverlayOpen(true)}
-                    aria-label="Search"
-                  >
-                    <Search className="h-5 w-5" strokeWidth={2.5} />
-                  </button>
-                </div>
-              )}
             </motion.div>
+
+            {/* Search Icon - Only shown on mobile when search box is hidden */}
+            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
+              <div className="sm:hidden">
+                <button
+                  className={`p-1.5 animate-pulse-subtle ${isSupportPage && !isScrolled ? 'text-white hover:text-white/80' : 'text-black hover:text-gray-800'}`}
+                  onClick={() => setIsSearchOverlayOpen(true)}
+                  aria-label="Search"
+                >
+                  <Search className="h-5 w-5" strokeWidth={2.5} />
+                </button>
+              </div>
+            )}
 
             {/* Search Box Trigger - shown on medium screens and up */}
             {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
@@ -235,10 +235,14 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.2 }}
                 onClick={() => setIsSearchOverlayOpen(true)}
-                className="relative hidden sm:flex items-center text-left bg-gray-100/80 hover:bg-gray-200/50 border border-transparent hover:border-gray-200/80 rounded-full px-3.5 py-2 text-sm text-gray-500 w-[180px] transition-all duration-200 cursor-pointer select-none"
+                className={`relative hidden sm:flex items-center text-left border rounded-full px-3.5 py-2 text-sm w-[180px] transition-all duration-200 cursor-pointer select-none ${
+                  isSupportPage && !isScrolled
+                    ? 'bg-white/20 hover:bg-white/30 border-white/10 hover:border-white/20 text-white/90'
+                    : 'bg-gray-100/80 hover:bg-gray-200/50 border-transparent hover:border-gray-200/80 text-gray-500'
+                }`}
               >
-                <Search className="w-4 h-4 text-gray-400 mr-2.5 shrink-0" />
-                <span className="truncate flex-1 text-gray-400 font-medium">Search...</span>
+                <Search className={`w-4 h-4 mr-2.5 shrink-0 ${isSupportPage && !isScrolled ? 'text-white/70' : 'text-gray-400'}`} />
+                <span className={`truncate flex-1 font-medium ${isSupportPage && !isScrolled ? 'text-white/70' : 'text-gray-400'}`}>Search...</span>
               </motion.button>
             )}
 
@@ -254,8 +258,8 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
                       <Link
                         to={link.path}
                         className={`text-[15px] font-semibold flex items-center ${isActive(link.path)
-                          ? 'text-black'
-                          : 'text-black/50 hover:text-black/90 transition-colors'
+                          ? (isSupportPage && !isScrolled ? 'text-white' : 'text-black')
+                          : (isSupportPage && !isScrolled ? 'text-white/80 hover:text-white transition-colors' : 'text-black/50 hover:text-black/90 transition-colors')
                           }`}
                       >
                         {link.name}
@@ -268,8 +272,8 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
                           setActiveDropdown(activeDropdown === link.name ? null : link.name);
                         }}
                         className={`text-[15px] font-semibold ${activeDropdown === link.name
-                          ? 'text-black'
-                          : 'text-black/50 hover:text-black/90 transition-colors'
+                          ? (isSupportPage && !isScrolled ? 'text-white' : 'text-black')
+                          : (isSupportPage && !isScrolled ? 'text-white/80 hover:text-white transition-colors' : 'text-black/50 hover:text-black/90 transition-colors')
                           }`}
                       >
                         {link.name}
@@ -313,8 +317,8 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
 
           {/* Right Section: Auth Buttons */}
           <div className="flex items-center space-x-4">
-            {/* Back to Profile Button - Only shown on support page */}
-            {isSupportPage && (
+            {/* Back to Profile Button - Only shown on support page for authenticated users */}
+            {isSupportPage && authUser && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -551,7 +555,11 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
                 ) : (
                   <Link
                     to="/login"
-                    className="bg-black text-white px-4 py-2 rounded-full text-[15px] font-bold hover:bg-gray-800 transition-colors whitespace-nowrap"
+                    className={`px-4 py-2 rounded-full text-[15px] font-bold transition-colors whitespace-nowrap ${
+                      isSupportPage && !isScrolled
+                        ? 'bg-white text-black hover:bg-gray-200'
+                        : 'bg-black text-white hover:bg-gray-800'
+                    }`}
                   >
                     Sign In
                   </Link>
@@ -595,11 +603,15 @@ const Navbar = ({ hideMenu = false }: { hideMenu?: boolean }) => {
               <div className="flex items-center lg:hidden ml-2">
                 <button
                   onClick={() => setIsMobileMenuOpen(true)}
-                  className="inline-flex items-center justify-center p-2 text-gray-700 rounded-md hover:bg-gray-100 focus:outline-none"
+                  className={`inline-flex items-center justify-center p-2 rounded-md focus:outline-none transition-colors ${
+                    isSupportPage && !isScrolled
+                      ? 'text-white hover:bg-white/20'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
                   aria-label="Open menu"
                 >
                   <svg
-                    className="w-6 h-6 text-black"
+                    className={`w-6 h-6 ${isSupportPage && !isScrolled ? 'text-white' : 'text-black'}`}
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"

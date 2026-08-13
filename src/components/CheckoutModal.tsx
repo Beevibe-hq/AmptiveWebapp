@@ -151,10 +151,10 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                 return {
                     ticket_type_id: ticketId,
                     quantity: qty,
-                    unit_price: latestTicket ? getTicketUnitPrice(latestTicket) : 0,
+                    unit_price: latestTicket ? getTicketUnitPrice(latestTicket, qty) : 0,
                     line_total: latestTicket ? getTicketLineTotal(latestTicket, qty) : 0,
                     base_price: latestTicket?.price || 0,
-                    early_bird_applied: latestTicket ? getTicketEarlyBirdRemaining(latestTicket) > 0 && getTicketUnitPrice(latestTicket) < (latestTicket.price || 0) : false,
+                    early_bird_applied: latestTicket ? getTicketEarlyBirdRemaining(latestTicket) > 0 && getTicketUnitPrice(latestTicket, 1) < (latestTicket.price || 0) : false,
                 };
             });
 
@@ -295,8 +295,9 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                                     const isSoldOut = isTicketSoldOut(ticket);
                                     const remainingCount = getTicketRemaining(ticket);
                                     const earlyBirdRemaining = getTicketEarlyBirdRemaining(ticket);
-                                    const unitPrice = getTicketUnitPrice(ticket);
+                                    const unitPrice = getTicketUnitPrice(ticket, 1);
                                     const hasEarlyBirdPrice = earlyBirdRemaining > 0 && unitPrice < (ticket.price || 0);
+                                    const selectedQty = selection[ticket.id] || 0;
 
                                     return (
                                         <div 
@@ -333,12 +334,15 @@ export default function CheckoutModal({ isOpen, onClose, event, tickets, current
                                                                     currency: ticket.currency || 'NGN'
                                                                 }).format(ticket.price)}
                                                             </span>
-                                                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-100">
-                                                                Early bird
-                                                            </span>
+                                                            <span className="inline-flex items-center justify-center p-0.5 rounded shrink-0 text-orange-600 border border-orange-600/80 bg-orange-50 select-none" title="Early Bird Available"><svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 fill-orange-600" viewBox="0 0 256 256"><path d="M236.44,73.34,213.21,57.86A60,60,0,0,0,156,16h-.29C122.79,16.16,96,43.47,96,76.89V96.63L11.63,197.88l-.1.12A16,16,0,0,0,24,224h88A104.11,104.11,0,0,0,216,120V100.28l20.44-13.62a8,8,0,0,0,0-13.32ZM126.15,133.12l-60,72a8,8,0,1,1-12.29-10.24l60-72a8,8,0,1,1,12.29,10.24ZM164,80a12,12,0,1,1,12-12A12,12,0,0,1,164,80Z"></path></svg></span>
                                                         </>
                                                     )}
                                                 </div>
+                                                {selectedQty > earlyBirdRemaining && earlyBirdRemaining > 0 && (
+                                                    <p className="mt-1 text-xs font-medium text-amber-700">
+                                                        {earlyBirdRemaining} early bird @ {new Intl.NumberFormat(undefined, { style: 'currency', currency: ticket.currency || 'NGN' }).format(unitPrice)} + {selectedQty - earlyBirdRemaining} regular @ {new Intl.NumberFormat(undefined, { style: 'currency', currency: ticket.currency || 'NGN' }).format(ticket.price)}
+                                                    </p>
+                                                )}
                                             </div>
 
                                             {isSoldOut ? (

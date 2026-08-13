@@ -119,7 +119,18 @@ function MainLayout() {
     location.pathname === '/purchase/confirmed' ||
     isDashboard;
 
-  const hideNavbar = isDashboard || location.pathname.startsWith('/support/');
+  const knownRootPrefixes = [
+    '/waitlist', '/explore', '/events', '/invest', '/store', 
+    '/community', '/help', '/ai-tool', '/ai-chat', '/chat-mode', 
+    '/download', '/login', '/signup', '/verify-otp', '/complete-profile', 
+    '/auth', '/paystack', '/purchase', '/profile', '/my-tickets', 
+    '/blog', '/privacy', '/privacy-policy', '/terms', '/terms-of-service', 
+    '/faqs', '/community-guidelines', '/dashboard'
+  ];
+  
+  const isSupportAlias = location.pathname !== '/' && !knownRootPrefixes.some(prefix => location.pathname.startsWith(prefix));
+  
+  const hideNavbar = isDashboard || location.pathname.startsWith('/support/') || isSupportAlias;
 
   return (
     <div className="min-h-screen font-sans">
