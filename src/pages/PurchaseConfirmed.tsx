@@ -111,6 +111,7 @@ export default function PurchaseConfirmed() {
                 numberOfPieces={250}
                 colors={['#4ade80', '#22c55e', '#16a34a', '#86efac', '#10b981', '#34d399']}
                 gravity={0.15}
+                style={{ zIndex: 100 }}
             />
 
             <div className="flex flex-col items-center z-10 w-full max-w-md min-h-[400px] justify-center">

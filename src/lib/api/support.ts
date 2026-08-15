@@ -169,7 +169,7 @@ function normalizeSupportRecord(record: SupportProfile | null): SupportProfile |
   const rawProfileType = (record as any).support_profile_type ?? record.profile_type;
   const supportEnabled = (record as any).is_support_enabled ?? record.support_enabled ?? record.accept_tips;
 
-  const accountUsername = record.username || user.username || (record as any).user_username || (record as any).support_slug || '';
+  const accountUsername = record.username || user.username || (record as any).user_username || '';
 
   return {
     ...record,
@@ -333,18 +333,6 @@ export async function updateSupportProfile(data: Partial<SupportProfile>): Promi
   }
 }
 
-export async function getSupportProfileBySlug(slug: string): Promise<SupportProfile | null> {
-  try {
-    const response = await api.get<unknown>(
-      `${SUPPORT_PREFIX}/${encodeURIComponent(slug)}`,
-      { skipAuth: true }
-    );
-    const profile = normalizeSupportRecord(unwrapSupportProfile(response));
-    return profile;
-  } catch {
-    return null;
-  }
-}
 
 export async function getSupportPayments(
   receiverId?: string
@@ -525,3 +513,87 @@ export async function getSupportHistory(
   }
 }
 
+export interface SupportActivityParams {
+  page?: number;
+  page_size?: number;
+}
+
+/**
+ * Fetch a creator's public support activity (successful supports for the current month).
+ * This is an unauthenticated endpoint — anyone can call it.
+ */
+export async function getSupportActivity(
+  username: string,
+  params?: SupportActivityParams
+): Promise<{
+  ok: boolean;
+  items: SupportHistoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  error?: string;
+}> {
+  try {
+    const query = new URLSearchParams();
+    if (params?.page !== undefined) query.set('page', String(params.page));
+    if (params?.page_size !== undefined) query.set('page_size', String(params.page_size));
+
+    const queryString = query.toString();
+    const endpoint = `${SUPPORT_PREFIX}/${encodeURIComponent(username)}/activity${queryString ? `?${queryString}` : ''}`;
+
+    const response = await api.get<SupportHistoryResponse>(endpoint, { skipAuth: true });
+
+    let items: SupportHistoryItem[] = [];
+
+    // Same unwrapping logic as getSupportHistory — api.get may or may not strip the envelope.
+    const dataObj = (response as { data?: unknown })?.data ?? response;
+
+    if (Array.isArray(dataObj)) {
+      items = dataObj;
+    } else if (dataObj && typeof dataObj === 'object') {
+      const bag = dataObj as Record<string, unknown>;
+      if (Array.isArray(bag.supports)) {
+        items = bag.supports as SupportHistoryItem[];
+      } else if (Array.isArray(bag.items)) {
+        items = bag.items as SupportHistoryItem[];
+      } else if (Array.isArray(bag.records)) {
+        items = bag.records as SupportHistoryItem[];
+      } else if (Array.isArray(bag.payments)) {
+        items = bag.payments as SupportHistoryItem[];
+      } else {
+        items = Object.values(bag)
+          .filter((value): value is SupportHistoryItem[] => Array.isArray(value))
+          .flat()
+          .sort((a, b) => {
+            const left = a?.created_at ? Date.parse(a.created_at) : 0;
+            const right = b?.created_at ? Date.parse(b.created_at) : 0;
+            return right - left;
+          });
+      }
+    }
+
+    const pageSize = response?.page_size || params?.page_size || 10;
+    const total = response?.total ?? items.length;
+    const totalPages = response?.total_pages ?? (total > 0 ? Math.ceil(total / pageSize) : 1);
+
+    return {
+      ok: true,
+      items,
+      total,
+      page: response?.page || params?.page || 1,
+      page_size: pageSize,
+      total_pages: totalPages,
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      items: [],
+      total: 0,
+      page: params?.page || 1,
+      page_size: params?.page_size || 10,
+      total_pages: 0,
+      error: error?.message || 'Failed to fetch support activity.',
+    };
+  }
+}

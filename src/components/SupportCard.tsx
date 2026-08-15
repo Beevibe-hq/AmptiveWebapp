@@ -193,25 +193,27 @@ const SupportCard: React.FC<SupportCardProps> = ({
             x: { type: "spring", stiffness: 300, damping: 30 },
             opacity: { duration: 0.2 }
           }}
-          drag="x"
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={1}
-          onDragEnd={(_, { offset, velocity }) => {
-            const swipe = offset.x;
-            const swipeThreshold = 50;
-            if (swipe < -swipeThreshold || velocity.x < -500) {
-              nextCard();
-            } else if (swipe > swipeThreshold || velocity.x > 500) {
-              prevCard();
+          {...(!isDisplayOnly ? {
+            drag: "x",
+            dragConstraints: { left: 0, right: 0 },
+            dragElastic: 1,
+            onDragEnd: (_: any, { offset, velocity }: any) => {
+              const swipe = offset.x;
+              const swipeThreshold = 50;
+              if (swipe < -swipeThreshold || velocity.x < -500) {
+                nextCard();
+              } else if (swipe > swipeThreshold || velocity.x > 500) {
+                prevCard();
+              }
             }
-          }}
-          className="max-w-[300px] md:max-w-[352px] mx-auto transform cursor-grab active:cursor-grabbing origin-center scale-[0.8] md:scale-100"
+          } : {})}
+          className={`w-full max-w-[352px] mx-auto transform origin-center ${isDisplayOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
           style={{ transformStyle: "preserve-3d" }}
         >
           {/* Card Body */}
           <div 
             id="support-card-export-target"
-            className={`rounded-2xl md:rounded-[40px] relative transition-all duration-500 shadow-none ${is3DAnim ? '' : 'md:shadow-xl'} p-0 ${!is3DAnim ? 'overflow-hidden' : 'support-card-demo-3d'}`}
+            className={`rounded-2xl md:rounded-[40px] relative transition-all duration-500 shadow-none p-0 ${!is3DAnim ? 'overflow-hidden' : 'support-card-demo-3d'}`}
             style={{ transformStyle: is3DAnim ? "preserve-3d" : undefined }}
           >
             {/* Base Background Layer */}

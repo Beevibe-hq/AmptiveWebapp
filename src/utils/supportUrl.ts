@@ -29,7 +29,7 @@ export function formatSupportUrl(profileTypeOrObj?: any, slugOrUsername?: string
   const domain = getSupportDomainPrefix(profileTypeOrObj);
   let base = slugOrUsername;
   if (!base && profileTypeOrObj && typeof profileTypeOrObj === 'object') {
-    base = profileTypeOrObj.username || profileTypeOrObj.support_slug || profileTypeOrObj.user_id;
+    base = profileTypeOrObj.username || profileTypeOrObj.user_id;
   }
   const cleanBase = base ? String(base).replace(/^\/+/, '') : '';
   return `https://${domain}/${cleanBase}`;

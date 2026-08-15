@@ -193,6 +193,16 @@ async function executeRequest<T>(
       throw new Error(stdResponse.message || `Request failed with status ${stdResponse.status_code}`);
     }
     if ('data' in stdResponse) {
+      if (stdResponse.data && typeof stdResponse.data === 'object' && !Array.isArray(stdResponse.data)) {
+        const result = { ...(stdResponse.data as object) } as Record<string, unknown>;
+        const rootObj = data as Record<string, unknown>;
+        ['total', 'page', 'page_size', 'total_pages', 'metadata'].forEach((key) => {
+          if (key in rootObj && !(key in result)) {
+            result[key] = rootObj[key];
+          }
+        });
+        return result as T;
+      }
       return stdResponse.data as T;
     }
     return data as T;

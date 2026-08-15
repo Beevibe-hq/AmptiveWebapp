@@ -285,7 +285,6 @@ const ProfilePage = () => {
               ...(profileData || {}),
               support_enabled: targetSupportProfile.support_enabled ?? targetSupportProfile.accept_tips ?? profileData?.support_enabled ?? false,
               accept_tips: targetSupportProfile.accept_tips ?? targetSupportProfile.support_enabled ?? profileData?.accept_tips ?? false,
-              support_slug: (targetSupportProfile as any).support_slug ?? (profileData as any)?.support_slug,
               name: profileData?.name || targetSupportProfile.full_name || targetSupportProfile.name || targetSupportProfile.username || '',
               username: profileData?.username || targetSupportProfile.username || '',
               avatar_url: profileData?.avatar_url || targetSupportProfile.avatar_url || '',
@@ -308,7 +307,6 @@ const ProfilePage = () => {
               support_card_variant: supportProfile.support_card_variant ?? profileData?.support_card_variant,
               profile_type: supportProfile.profile_type ?? profileData?.profile_type,
               support_socials: supportProfile.support_socials ?? profileData?.support_socials,
-              support_slug: (supportProfile as any).support_slug ?? (profileData as any)?.support_slug,
               username: supportProfile.username || profileData?.username || '',
               user_id: supportProfile.user_id || profileData?.user_id || profileData?.id || '',
               id: supportProfile.user_id || profileData?.id || profileData?.user_id || '',
@@ -1073,7 +1071,7 @@ const ProfilePage = () => {
                   onClick={() => {
                     const hasEnabledTips = profile?.support_enabled === true || (profile as any)?.accept_tips === true || (profile as any)?.is_support_enabled === true;
                     if (hasEnabledTips) {
-                      navigate(`/support/${profile.username || (profile as any).support_slug || profile.user_id}`);
+                      navigate(`/support/${profile.username || profile.user_id}`);
                     } else {
                       navigate('/profile/support-setup');
                     }
@@ -1099,7 +1097,7 @@ const ProfilePage = () => {
               (profile?.support_enabled === true || (profile as any)?.accept_tips === true || (profile as any)?.is_support_enabled === true) && (
                 <button
                   type="button"
-                  onClick={() => navigate(`/support/${profile?.username || (profile as any)?.support_slug || profile?.user_id || hostData?.username || urlUserId}`)}
+                  onClick={() => navigate(`/support/${profile?.username || profile?.user_id || hostData?.username || urlUserId}`)}
                   title={`Support ${profile?.name?.split(' ')[0] || hostData?.full_name?.split(' ')[0] || 'User'}`}
                   className="inline-flex items-center gap-2 px-6 py-2.5 md:py-3 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition-all duration-200 shadow-sm hover:scale-110 active:scale-95 group text-sm font-bold"
                 >

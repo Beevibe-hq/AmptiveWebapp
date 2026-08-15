@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { QrCode, Share2, MoreHorizontal, Youtube, Twitch, Heart, Check, ArrowLeft, Star, Briefcase, Eye, Settings, CreditCard, Users, Coffee, Crown, Zap, Gift, Loader2, Copy, Link } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
 import SupportCard from '@/components/SupportCard';
+import DownloadCardModal from '@/components/DownloadCardModal';
 import Navbar from '@/components/Navbar';
 import SupportEditModal from '@/components/SupportEditModal';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getSupportProfile, getSupportProfileByUsername, getSupportProfileBySlug, mergeSupportProfileIdentity, paySupportCreator, getSupportHistory, SupportProfile as SupportProfileType } from '@/lib/api/support';
+import { getSupportProfile, getSupportProfileByUsername, mergeSupportProfileIdentity, paySupportCreator, getSupportHistory, getSupportActivity, SupportProfile as SupportProfileType, SupportHistoryItem } from '@/lib/api/support';
 import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
@@ -30,6 +31,33 @@ function maskEmail(email?: string | null): string | null {
   return local.length > head.length ? `${head}•••@${domain}` : `${local}@${domain}`;
 }
 
+const AVATAR_PALETTES = [
+  { bg: 'from-violet-500 to-indigo-600', text: 'text-white', heartColor: 'text-violet-500' },
+  { bg: 'from-rose-500 to-pink-500', text: 'text-white', heartColor: 'text-rose-500' },
+  { bg: 'from-emerald-500 to-teal-600', text: 'text-white', heartColor: 'text-emerald-500' },
+  { bg: 'from-amber-500 to-orange-500', text: 'text-white', heartColor: 'text-amber-500' },
+  { bg: 'from-sky-500 to-blue-600', text: 'text-white', heartColor: 'text-sky-500' },
+  { bg: 'from-fuchsia-500 to-purple-600', text: 'text-white', heartColor: 'text-fuchsia-500' },
+];
+
+function getSupporterPalette(idStr: string) {
+  let hash = 0;
+  for (let i = 0; i < idStr.length; i++) {
+    hash = (hash << 5) - hash + idStr.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
+
+function getSupportActionWord(profileType?: string | null): string {
+  const t = (profileType || '').toLowerCase();
+  if (t === 'creator') return 'Gift';
+  if (t === 'business') return 'Tip';
+  if (t === 'organizer' || t === 'event_organizer' || t === 'event') return 'Support';
+  return 'Gift';
+}
+
 export default function SupportProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -40,8 +68,12 @@ export default function SupportProfile() {
   const [timeRange, setTimeRange] = useState<'all' | '7' | '30' | '90'>('all');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [supporterCount, setSupporterCount] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'activity' | 'tip-card'>('activity');
+  const [activeTab, setActiveTab] = useState<'activity' | 'tip-card'>('tip-card');
   const [payments, setPayments] = useState<any[]>([]);
+  const [publicActivity, setPublicActivity] = useState<SupportHistoryItem[]>([]);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityTotalPages, setActivityTotalPages] = useState(1);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   const [selectedTier, setSelectedTier] = useState<number | 'custom' | null>(null);
   const [customAmount, setCustomAmount] = useState<string>('');
@@ -53,6 +85,7 @@ export default function SupportProfile() {
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success'>('idle');
   const [shadowColor, setShadowColor] = useState<string | null>(null);
   const [isDownloadingCard, setIsDownloadingCard] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [windowSize, setWindowSize] = useState({ 
     width: typeof window !== 'undefined' ? window.innerWidth : 1200, 
@@ -62,9 +95,10 @@ export default function SupportProfile() {
   const queryParams = new URLSearchParams(window.location.search);
   const viewAs = queryParams.get('viewAs');
   const isOwner = Boolean(currentUserId && profile?.user_id && currentUserId === profile.user_id && viewAs !== 'public');
+  const actionWord = getSupportActionWord(profile?.profile_type);
 
   const handleCopySupportLink = async () => {
-    const linkSlug = profile?.username || profile?.support_slug || profile?.user_id || id;
+    const linkSlug = profile?.username || profile?.user_id || id;
     const link = formatSupportUrl(profile, linkSlug);
     try {
       await navigator.clipboard.writeText(link);
@@ -102,10 +136,16 @@ export default function SupportProfile() {
       return;
     }
 
-    const primaryUsername = profile?.username || (profile as any)?.user?.username;
-    const fallbackUsername = profile?.support_slug || id;
+    // The backend requires supporter_name to contain at least a first and last name
+    // when provided. Validate before sending to avoid a 422.
+    const trimmedName = supporterName.trim();
+    if (trimmedName && trimmedName.split(/\s+/).filter(Boolean).length < 2) {
+      setPaymentError('Please enter your full name (first and last name).');
+      return;
+    }
 
-    const targets = Array.from(new Set([primaryUsername, fallbackUsername].filter(Boolean) as string[]));
+    const primaryUsername = profile?.username || (profile as any)?.user?.username || id;
+    const targets = Array.from(new Set([primaryUsername].filter(Boolean) as string[]));
 
     if (targets.length === 0) {
       setPaymentError('Unable to resolve creator username.');
@@ -115,7 +155,8 @@ export default function SupportProfile() {
     setPaymentStatus('processing');
     playSwoosh();
 
-    const channelsToTry = Array.from(new Set([paymentChannel, 'paystack', 'flutterwave']));
+    // Try flutterwave first (paystack may not be configured for all creators)
+    const channelsToTry = Array.from(new Set([paymentChannel, 'flutterwave', 'paystack']));
 
     try {
       let lastError = 'Payment initialization failed. Please try again.';
@@ -127,9 +168,8 @@ export default function SupportProfile() {
             message: supportMessage.trim() || undefined,
             payment_channel: channel,
             email: trimmedEmail,
-            supporter_name: supporterName.trim() || undefined,
-            sender_name: supporterName.trim() || undefined,
-          } as any);
+            supporter_name: trimmedName || undefined,
+          });
 
           if (result.ok && result.data) {
             if (result.data.payment_url) {
@@ -145,6 +185,15 @@ export default function SupportProfile() {
           // If the error is 404 (user not found), stop channel iterations for this target and try next target
           if (lastError.toLowerCase().includes('not found')) {
             break;
+          }
+          // For 500 / channel-specific errors, keep trying the next channel — the
+          // current one may simply be misconfigured for this creator.
+          // For 422 validation errors, surface them immediately since all channels
+          // will reject the same invalid payload.
+          if (lastError.toLowerCase().includes('validation') || lastError.toLowerCase().includes('must contain')) {
+            setPaymentStatus('idle');
+            setPaymentError(lastError);
+            return;
           }
         }
       }
@@ -259,32 +308,48 @@ export default function SupportProfile() {
 
   useEffect(() => {
     /*
-     * Support history is private to the creator: the endpoint reports payments received
-     * by whoever is authenticated, and takes no "whose profile" parameter. So it is only
-     * ever correct to call it on your own page — asking for it while viewing someone
-     * else's would render the viewer's own payments as if they were the creator's.
+     * For the owner: the private /history endpoint reports payments they received.
+     * For guests: the public /activity endpoint shows the creator's successful
+     * supports for the current month — no auth required.
      */
     const fetchActivity = async () => {
-      if (!profile?.user_id || !isOwner) {
+      if (!profile?.user_id) {
         setPayments([]);
         setSupporterCount(0);
         return;
       }
 
-      const historyRes = await getSupportHistory({
-        date_filter: timeRange === '7' ? 'last_7_days' : timeRange === '30' ? 'last_30_days' : timeRange === '90' ? 'last_90_days' : 'all_time',
-        page: 1,
-        page_size: 50,
-      });
+      if (isOwner) {
+        const historyRes = await getSupportHistory({
+          date_filter: timeRange === '7' ? 'last_7_days' : timeRange === '30' ? 'last_30_days' : timeRange === '90' ? 'last_90_days' : 'all_time',
+          page: 1,
+          page_size: 50,
+        });
 
-      if (historyRes.ok) {
-        setPayments(historyRes.items);
-        setSupporterCount(historyRes.total || historyRes.items.length);
+        if (historyRes.ok) {
+          setPayments(historyRes.items);
+          setSupporterCount(historyRes.total || historyRes.items.length);
+        }
+      } else {
+        // Public activity for guests
+        const username = profile.username || id;
+        if (!username) return;
+        setActivityLoading(true);
+        const activityRes = await getSupportActivity(username, {
+          page: activityPage,
+          page_size: 10,
+        });
+        if (activityRes.ok) {
+          setPublicActivity(activityRes.items);
+          setSupporterCount(activityRes.total || activityRes.items.length);
+          setActivityTotalPages(activityRes.total_pages);
+        }
+        setActivityLoading(false);
       }
     };
 
     fetchActivity();
-  }, [profile?.user_id, isOwner, timeRange]);
+  }, [profile?.user_id, isOwner, timeRange, activityPage, id]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -300,14 +365,13 @@ export default function SupportProfile() {
           setSupporterName(user.full_name || user.name || user.username);
         }
 
-        // The canonical lookup is the backend's support slug; fall back to the older
-        // user-id / username lookups for legacy links.
-        let profileData: SupportProfileType | null = await getSupportProfileBySlug(id);
+        // Retrieve support profile by username or user ID
+        let profileData: SupportProfileType | null = await getSupportProfileByUsername(id);
         if (!profileData) {
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-          profileData = isUuid
-            ? await getSupportProfile(id)
-            : await getSupportProfileByUsername(id);
+          if (isUuid) {
+            profileData = await getSupportProfile(id);
+          }
         }
 
         // The support response intentionally contains support settings only. For the
@@ -454,7 +518,7 @@ export default function SupportProfile() {
             <Eye size={16} /> <span>You are previewing your profile as a supporter</span>
           </div>
           <button 
-            onClick={() => navigate(`/support/${profile.username || (profile.support_slug as string) || profile.user_id}`)}
+            onClick={() => navigate(`/support/${profile.username || profile.user_id}`)}
             className="px-4 py-1.5 bg-white text-indigo-600 rounded-full text-xs font-black hover:bg-indigo-50 transition-all shadow-sm active:scale-95"
           >
             Exit Preview
@@ -467,24 +531,26 @@ export default function SupportProfile() {
       
       {/* Banner Section */}
       {paymentStatus === 'idle' && (
-        <div className="relative w-full h-[280px] md:h-[350px] overflow-hidden bg-blue-600">
-        <div className="absolute inset-0 z-0">
-          {profile.support_banner_url ? (
-            <img 
-              src={profile.support_banner_url} 
-              alt="Support Banner" 
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <img 
-              src="/images/support_cover.svg" 
-              alt="Support Cover Pattern" 
-              className="w-full h-full object-cover"
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-transparent pointer-events-none" />
+        <div 
+          className="relative w-full h-[280px] md:h-[350px] overflow-hidden transition-colors duration-1000"
+          style={{ 
+            backgroundColor: shadowColor || '#4F46E5',
+            backgroundImage: !profile.support_banner_url ? `linear-gradient(135deg, ${shadowColor ? hexToRgba(shadowColor, 0.8) : 'rgba(255,255,255,0.2)'} 0%, transparent 100%)` : undefined
+          }}
+        >
+          <div className="absolute inset-0 z-0">
+            {profile.support_banner_url ? (
+              <img 
+                src={profile.support_banner_url} 
+                alt="Support Banner" 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full opacity-20 mix-blend-overlay bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc0MDAnIGhlaWdodD0nNDAwJz48ZmlsdGVyIGlkPSduJz48ZmVUdXJidWxlbmNlIHR5cGU9J2ZyYWN0YWxOb2lzZScgYmFzZUZyZXF1ZW5jeT0nMC44JyBzdGl0Y2hUaWxlcz0nc3RpdGNoJy8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9JzEwMCUnIGhlaWdodD0nMTAwJScgZmlsdGVyPSd1cmwoI24pJy8+PC9zdmc+')] bg-repeat" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-transparent pointer-events-none" />
+          </div>
         </div>
-      </div>
       )}
 
       {/* Main Content Area */}
@@ -496,7 +562,7 @@ export default function SupportProfile() {
           {isOwner ? (
             <>
               <button 
-                onClick={() => navigate(`/support/${profile.username || (profile.support_slug as string) || profile.user_id}?viewAs=public`)}
+                onClick={() => navigate(`/support/${profile.username || profile.user_id}?viewAs=public`)}
                 className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-blue-600 group relative"
                 title="View as public"
               >
@@ -543,25 +609,25 @@ export default function SupportProfile() {
 
         <div className="max-w-4xl mx-auto px-4">
           <div className="flex flex-col items-center">
-            <div className="relative">
-              <motion.div 
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="w-40 h-40 md:w-48 md:h-48 rounded-[40px] border-[6px] border-white overflow-hidden bg-white"
-              >
-                {profileAvatarUrl ? (
-                  <img
-                    src={profileAvatarUrl}
-                    alt={displayName}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gray-100 text-4xl font-bold text-gray-500">
-                    {avatarInitials}
-                  </div>
-                )}
-              </motion.div>
-            </div>
+              <div className="relative group">
+                <motion.div 
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="w-40 h-40 md:w-48 md:h-48 rounded-[40px] border-[6px] border-white/80 backdrop-blur-sm overflow-hidden bg-white"
+                >
+                  {profileAvatarUrl ? (
+                    <img
+                      src={profileAvatarUrl}
+                      alt={displayName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-gray-100 text-4xl font-bold text-gray-500">
+                      {avatarInitials}
+                    </div>
+                  )}
+                </motion.div>
+              </div>
 
             <div className="mt-8 text-center space-y-4">
               <div className="space-y-1">
@@ -613,7 +679,7 @@ export default function SupportProfile() {
                     className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-gray-50/90 border border-gray-200/80 rounded-full text-xs font-medium text-gray-700 hover:bg-gray-100 transition-all shadow-xs group active:scale-95 mt-1 cursor-pointer"
                   >
                     <span className="text-gray-400 font-normal">{getSupportDomainPrefix(profile)}/</span>
-                    <span className="font-bold text-gray-900">{profile.username || profile.support_slug || 'creator'}</span>
+                    <span className="font-bold text-gray-900">{profile.username || 'creator'}</span>
                     <span className="w-px h-3 bg-gray-200 mx-0.5" />
                     {copiedLink ? (
                       <span className="flex items-center gap-1 text-emerald-600 font-bold">
@@ -684,259 +750,9 @@ export default function SupportProfile() {
         </>
       )}
 
-      {/* Dynamic Content Based on Role */}
+      {/* Dynamic Content Based on Role & Tab */}
         <div className="mt-12">
-          {isOwner ? (
-            <>
-              {/* Tabs Section (Owner Only) */}
-              <div className="mb-12 border-b border-gray-100 flex justify-center gap-12">
-                <button 
-                  onClick={() => setActiveTab('activity')} 
-                  className={`pb-4 border-b-2 font-bold transition-all ${activeTab === 'activity' ? 'border-black text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-                >
-                  Activity
-                </button>
-                <button 
-                  onClick={() => setActiveTab('tip-card')} 
-                  className={`pb-4 border-b-2 font-bold transition-all ${activeTab === 'tip-card' ? 'border-black text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-                >
-                  Tip card
-                </button>
-              </div>
-
-              {activeTab === 'activity' ? (
-                <div className="max-w-4xl mx-auto space-y-8 px-4 md:px-0">
-                  {/* Earnings Overview */}
-                  {isOwner && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-white border border-gray-100 p-8 rounded-[32px] shadow-sm"
-                    >
-                      <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-2xl font-bold text-gray-900">Earnings</h3>
-                        <div className="relative">
-                          <button 
-                            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                            className="px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-gray-100 transition-all text-gray-900"
-                          >
-                            {timeRange === 'all' ? 'All time' : `Last ${timeRange} days`} <MoreHorizontal size={14} className="rotate-90" />
-                          </button>
-                          <AnimatePresence>
-                            {isDropdownOpen && (
-                              <>
-                                <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
-                                <motion.div 
-                                  initial={{ opacity: 0, scale: 0.95, y: -8 }}
-                                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                                  exit={{ opacity: 0, scale: 0.95, y: -8 }}
-                                  transition={{ duration: 0.15, ease: 'easeOut' }}
-                                  className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 origin-top-right"
-                                >
-                                  {[
-                                    { key: 'all', label: 'All time' },
-                                    { key: '7', label: 'Last 7 days' },
-                                    { key: '30', label: 'Last 30 days' },
-                                    { key: '90', label: 'Last 90 days' }
-                                  ].map((range) => (
-                                    <button
-                                      key={range.key}
-                                      onClick={() => {
-                                        setTimeRange(range.key as any);
-                                        setIsDropdownOpen(false);
-                                      }}
-                                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${timeRange === range.key ? 'bg-gray-50 text-black font-bold' : 'text-gray-700 hover:bg-gray-50'}`}
-                                    >
-                                      {range.label}
-                                    </button>
-                                  ))}
-                                </motion.div>
-                              </>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      </div>
-                      
-                      <div className="text-4xl font-bold text-gray-900 tracking-normal">
-                        ₦{filteredPayments
-                          .reduce((acc, curr) => acc + Number(curr.amount), 0)
-                          .toLocaleString()}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* Recent Activity Feed */}
-                  <div className="bg-white border border-gray-100 rounded-[32px] overflow-hidden shadow-sm">
-                    <div className="p-8 border-b border-gray-50">
-                      <h3 className="text-2xl font-bold text-gray-900">Recent</h3>
-                      <div className="flex items-center gap-2 mt-2 text-indigo-600 font-bold text-sm">
-                        <span>
-                          {filteredPayments.length} recent donations
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="divide-y divide-gray-50">
-                      {filteredPayments.length > 0 ? (
-                        filteredPayments.map((payment) => (
-                          <motion.div 
-                            key={payment.id}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="p-6 hover:bg-gray-50/50 transition-colors border-b border-gray-50 last:border-0"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4 flex-1 min-w-0">
-                                {/* Avatar */}
-                                <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="currentColor"
-                                    viewBox="0 0 24 24"
-                                    className="w-5 h-5"
-                                    aria-hidden="true"
-                                  >
-                                    <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
-                                    <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                                    <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                                  </svg>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  {(() => {
-                                    const date = new Date(payment.created_at);
-                                    const now = new Date();
-                                    const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
-                                    let timeStr = '';
-                                    if (diffSec < 60) timeStr = 'now';
-                                    else if (diffSec < 3600) timeStr = `${Math.floor(diffSec / 60)}m`;
-                                    else if (diffSec < 86400) timeStr = `${Math.floor(diffSec / 3600)}h`;
-                                    else timeStr = `${Math.floor(diffSec / 86400)}d`;
-
-                                    return (
-                                      <>
-                                        <div className="flex items-center gap-2">
-                                          <h4 className="font-bold text-gray-900 text-base truncate whitespace-nowrap">
-                                            {payment.supporter_name || payment.sender_name || (payment as any).name || (payment as any).full_name || (payment as any).supporterName || 'A supporter'}
-                                          </h4>
-                                          <span className="text-gray-300 font-bold text-xs hidden sm:inline">•</span>
-                                          <span className="text-gray-400 text-sm font-bold hidden sm:inline">
-                                            {timeStr}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-0.5">
-                                          <span className="text-gray-400 text-xs font-bold sm:hidden shrink-0">
-                                            {timeStr}
-                                          </span>
-                                          {isOwner && (
-                                            <>
-                                              <span className="text-gray-300 font-bold text-[10px] sm:hidden">•</span>
-                                              <p className="text-gray-400 text-xs truncate max-w-[150px] xs:max-w-[200px] sm:max-w-none">
-                                                {maskEmail(payment.supporter_email || payment.sender_email) || 'No email on record'}
-                                              </p>
-                                            </>
-                                          )}
-                                        </div>
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-
-                              <div className="text-right shrink-0 ml-4">
-                                <span className="font-black text-gray-900 text-xl tracking-normal">₦{Number(payment.amount).toLocaleString()}</span>
-                              </div>
-                            </div>
-
-                            {payment.message && (
-                              <div className="mt-4">
-                                <div className="text-gray-600 text-sm leading-relaxed bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
-                                  {payment.message}
-                                </div>
-                              </div>
-                            )}
-                          </motion.div>
-                        ))
-                      ) : (
-                        <div className="text-center py-24 bg-gray-50/30 rounded-[40px] border border-dashed border-gray-100">
-                          <div className="w-20 h-20 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center mx-auto mb-6">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                              className="w-10 h-10 text-gray-200"
-                              aria-hidden="true"
-                            >
-                              <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
-                              <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                              <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-                          <h3 className="text-xl font-bold text-gray-900 tracking-tight">No activity yet</h3>
-                          <p className="text-gray-500 text-sm mt-2 max-w-xs mx-auto">When people support your work, their contributions and messages will appear here.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="max-w-xl mx-auto py-4 space-y-6"
-                >
-                  <div id="support-card-target" className="p-4 md:p-8 -m-4 md:-m-8">
-                    <SupportCard 
-                      name={displayName}
-                      username={profile.username} 
-                      avatarUrl={profile.support_avatar_url || profile.avatar_url} 
-                      message={profile.support_message || profile.support_tagline || "Level up your journey with me."} 
-                      isDisplayOnly={true}
-                      variant={profile.support_card_variant || 0}
-                      profileType={profile.profile_type}
-                    />
-                  </div>
-                  <div className="flex justify-center gap-3 mt-6">
-                    <button 
-                      onClick={handleDownloadCard}
-                      disabled={isDownloadingCard}
-                      className="px-4 py-2.5 md:px-6 md:py-3 bg-black text-white rounded-full font-bold text-xs md:text-sm hover:bg-gray-800 transition-all shadow-sm flex items-center gap-2 hover:scale-105 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                      {isDownloadingCard ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Generating PNG...</span>
-                        </>
-                      ) : (
-                        <span>Download PNG</span>
-                      )}
-                    </button>
-                    <button 
-                      onClick={handleShareCard}
-                      className="px-4 py-2.5 md:px-6 md:py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-full font-bold text-xs md:text-sm hover:bg-gray-100 transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
-                    >
-                      <Share2 size={14} className="md:w-4 md:h-4" /> Share Card
-                    </button>
-                    <button 
-                      onClick={handleCopySupportLink}
-                      className="px-4 py-2.5 md:px-6 md:py-3 bg-white border border-gray-200 text-gray-900 rounded-full font-bold text-xs md:text-sm hover:bg-gray-50 transition-all flex items-center gap-2 hover:scale-105 active:scale-95 shadow-sm"
-                    >
-                      {copiedLink ? (
-                        <>
-                          <Check size={14} className="md:w-4 md:h-4 text-emerald-600" />
-                          <span className="text-emerald-600">Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={14} className="md:w-4 md:h-4 text-gray-600" />
-                          <span>Copy</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </>
-          ) : paymentStatus === 'processing' ? (
+          {paymentStatus === 'processing' ? (
             <div className="max-w-4xl mx-auto px-4 md:px-0 flex flex-col items-center justify-center text-center space-y-6 py-24 min-h-[50vh]">
               <motion.img 
                 src="/images/paper_plane.png"
@@ -960,9 +776,9 @@ export default function SupportProfile() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: [0, 1, 1, 0], y: [10, 0, 0, -10] }}
                 transition={{ duration: 2.5, times: [0, 0.2, 0.8, 1] }}
-                className="text-2xl font-black text-gray-900 drop-shadow-sm"
+                className="text-2xl font-bold text-gray-900 drop-shadow-sm"
               >
-                Sending your support...
+                Sending your {actionWord.toLowerCase()}...
               </motion.h3>
             </div>
           ) : paymentStatus === 'success' ? (
@@ -1027,258 +843,612 @@ export default function SupportProfile() {
                     </motion.div>
                   </div>
                 </motion.div>
-                <h1 className="text-3xl font-bold text-gray-900 mt-2 mb-4">Support Successful!</h1>
+                <h1 className="text-3xl font-bold text-gray-900 mt-2 mb-4">
+                  {actionWord === 'Gift' ? 'Gift Sent!' : `${actionWord} Successful!`}
+                </h1>
                 <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                  Thank you for supporting {displayName}. Your contribution of <strong className="text-gray-900">₦{Number(selectedTier === 'custom' ? customAmount : selectedTier).toLocaleString()}</strong> means a lot!
+                  Thank you for {actionWord === 'Gift' ? 'gifting' : actionWord === 'Tip' ? 'tipping' : 'supporting'} {displayName}. Your contribution of <strong className="text-gray-900">₦{Number(selectedTier === 'custom' ? customAmount : selectedTier).toLocaleString()}</strong> means a lot!
                 </p>
                 <button
                   onClick={() => setPaymentStatus('idle')}
                   className="px-8 py-3 bg-black text-white rounded-full font-bold hover:bg-gray-800 transition-all hover:scale-105 active:scale-95 shadow-lg"
                 >
-                  Support Again
+                  {actionWord} Again
                 </button>
               </motion.div>
             </div>
           ) : (
-            <div className="max-w-4xl mx-auto px-4 md:px-0">
-              <div className="text-center mb-12">
-                <h3 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight leading-tight">Support {displayName}</h3>
-              </div>
-              
-              {/*
-                Pitched to match the fields further down: hairline borders, 16px radius and
-                a single grey for every chip. Four pastel colours and black type at 30px
-                made this step shout over the form it leads into, and the decorative blob
-                behind each card was noise the page didn't need.
-              */}
-              <div className="mx-auto grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-3">
-                {(profile.support_amounts || [500, 1000, 2500, 5000]).map((amount, index) => {
-                  const TierIcon = [Coffee, Gift, Zap, Heart][index % 4];
-                  const colorConfig = [
-                    { bg: 'bg-orange-50', text: 'text-orange-500' },
-                    { bg: 'bg-purple-50', text: 'text-purple-500' },
-                    { bg: 'bg-amber-50', text: 'text-amber-500' },
-                    { bg: 'bg-rose-50', text: 'text-rose-500' }
-                  ][index % 4];
-                  const isSelected = selectedTier === amount;
-
-                  return (
-                    <motion.button
-                      key={amount}
-                      whileTap={{ scale: 0.99 }}
-                      role="radio"
-                      aria-checked={isSelected}
-                      className={`relative flex h-full min-h-[132px] flex-col items-start rounded-2xl border p-5 text-left transition-colors ${
-                        isSelected
-                          ? 'border-gray-900 bg-white'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                      onClick={() => setSelectedTier(amount)}
-                    >
-                      {/* Always present, filled when chosen — an empty ring is what tells
-                          people these are a pick-one set before they touch anything. */}
-                      <span
-                        className={`absolute right-4 top-4 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-colors ${
-                          isSelected ? 'border-gray-900' : 'border-gray-200'
-                        }`}
-                      >
-                        {isSelected && <span className="h-2 w-2 rounded-full bg-gray-900" />}
-                      </span>
-
-                      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${colorConfig.bg} ${colorConfig.text}`}>
-                        <TierIcon size={16} />
-                      </span>
-
-                      {/* Currency set small and raised so the number carries the weight. */}
-                      <span className="mt-auto flex items-baseline pt-4 text-gray-900">
-                        <span className="self-start pt-1 text-[13px] font-semibold text-gray-400">₦</span>
-                        <span className="text-2xl font-bold tracking-tight">{amount.toLocaleString()}</span>
-                      </span>
-                    </motion.button>
-                  );
-                })}
-                
-                {/* Custom Tier */}
-                <motion.button
-                  whileTap={{ scale: 0.99 }}
-                  role="radio"
-                  aria-checked={selectedTier === 'custom'}
-                  className={`relative flex h-full min-h-[132px] flex-col items-start rounded-2xl border p-5 text-left transition-colors ${
-                    selectedTier === 'custom'
-                      ? 'border-gray-900 bg-white'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                  onClick={() => setSelectedTier('custom')}
+            <>
+              {/* Tabs Section */}
+              <div className="mb-12 border-b border-gray-100 flex justify-center gap-12">
+                <button 
+                  onClick={() => setActiveTab('tip-card')} 
+                  className={`pb-4 border-b-2 font-bold transition-all ${activeTab === 'tip-card' ? 'border-black text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
                 >
-                  <span
-                    className={`absolute right-4 top-4 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-colors ${
-                      selectedTier === 'custom' ? 'border-gray-900' : 'border-gray-200'
-                    }`}
-                  >
-                    {selectedTier === 'custom' && <span className="h-2 w-2 rounded-full bg-gray-900" />}
-                  </span>
-
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500">
-                    <CreditCard size={16} />
-                  </span>
-
-                  <span className="mt-auto pt-4 text-2xl font-bold tracking-tight text-gray-900">Custom</span>
-                </motion.button>
+                  {isOwner ? 'Tip card' : actionWord}
+                </button>
+                <button 
+                  onClick={() => setActiveTab('activity')} 
+                  className={`pb-4 border-b-2 font-bold transition-all ${activeTab === 'activity' ? 'border-black text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                >
+                  Activity
+                </button>
               </div>
 
-              {/* Custom Amount Input */}
-              <AnimatePresence>
-                {selectedTier === 'custom' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mt-8"
-                  >
-                    {/*
-                      Typed straight onto the card rather than into a bordered box: the
-                      amount is the biggest decision on this page, and a box around it
-                      made it read as just another field. Aligned with the detail fields
-                      below so the whole step sits on one edge.
-                    */}
-                    <div className="mx-auto max-w-xl text-left">
-                      <label htmlFor="custom-amount" className="mb-2 block text-[13px] font-medium text-gray-500">
-                        Enter amount
-                      </label>
-                      <div className="flex items-baseline gap-1.5 border-b border-gray-200 pb-2 focus-within:border-gray-900 transition-colors">
-                        <span className="text-4xl font-semibold text-gray-900 sm:text-5xl">₦</span>
-                        <input
-                          id="custom-amount"
-                          type="number"
-                          inputMode="decimal"
-                          min="0"
-                          value={customAmount}
-                          onChange={(e) => setCustomAmount(e.target.value)}
-                          placeholder="0.00"
-                          // Already far above 16px, so it can't trigger the iOS focus
-                          // zoom the global rule guards against.
-                          data-keep-font-size
-                          // Spinners would sit oddly against type this large.
-                          className="w-full border-0 bg-transparent p-0 text-4xl font-semibold text-gray-900 caret-gray-900 outline-none placeholder:text-gray-300 focus:outline-none focus:ring-0 sm:text-5xl [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                          autoFocus
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Supporter Details & Message Inputs */}
-              <AnimatePresence>
-                {selectedTier && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0, y: -20 }}
-                    animate={{ opacity: 1, height: 'auto', y: 0 }}
-                    exit={{ opacity: 0, height: 0, y: -20 }}
-                    className="mt-8"
-                  >
-                    {/*
-                      Quiet by design: hairline borders, small muted labels and plenty of
-                      space, so the fields recede and the amount above them stays the
-                      loudest thing on the card. Heavier borders and bold labels made this
-                      step compete with the tiers instead of following them.
-                    */}
-                    <div className="mx-auto max-w-xl space-y-6 text-left">
-                      {/* Only signed-out supporters need to type a name — for signed-in
-                          ones the backend takes it from their account. */}
-                      {!currentUserId && (
-                        <div>
-                          <label htmlFor="supporter-name" className="mb-2 block text-[13px] font-medium text-gray-500">
-                            Your name <span className="text-gray-300">· optional</span>
-                          </label>
-                          <input
-                            id="supporter-name"
-                            type="text"
-                            value={supporterName}
-                            onChange={(e) => setSupporterName(e.target.value)}
-                            placeholder="So they know who to thank"
-                            autoComplete="name"
-                            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-gray-900 transition-colors placeholder:text-gray-300 focus:border-gray-900 focus:outline-none focus:ring-0"
-                          />
-                        </div>
-                      )}
-
-                      <div>
-                        <label htmlFor="supporter-email" className="mb-2 block text-[13px] font-medium text-gray-500">
-                          Email
-                        </label>
-                        <input
-                          id="supporter-email"
-                          type="email"
-                          value={supporterEmail}
-                          onChange={(e) => {
-                            setSupporterEmail(e.target.value);
-                            if (paymentError) setPaymentError(null);
-                          }}
-                          placeholder="Where we'll send your receipt"
-                          autoComplete="email"
-                          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[15px] text-gray-900 transition-colors placeholder:text-gray-300 focus:border-gray-900 focus:outline-none focus:ring-0"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="supporter-message" className="mb-2 block text-[13px] font-medium text-gray-500">
-                          Add a message <span className="text-gray-300">· optional</span>
-                        </label>
+              {activeTab === 'activity' ? (
+                isOwner ? (
+                  <div className="max-w-4xl mx-auto space-y-8 px-4 md:px-0">
+                    {/* Earnings Overview */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-white border border-gray-100 p-8 rounded-[32px] shadow-sm"
+                    >
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-2xl font-bold text-gray-900">Earnings</h3>
                         <div className="relative">
-                          <textarea
-                            id="supporter-message"
-                            value={supportMessage}
-                            onChange={(e) => setSupportMessage(e.target.value)}
-                            placeholder="Say something nice — they'll see this with your support."
-                            rows={3}
-                            maxLength={SUPPORT_MESSAGE_LIMIT}
-                            className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 pb-9 pt-3 text-[15px] leading-relaxed text-gray-900 transition-colors placeholder:text-gray-300 focus:border-gray-900 focus:outline-none focus:ring-0"
-                          />
-                          {/* Sits inside the field, out of the way of the typing line. */}
-                          <span className="pointer-events-none absolute bottom-3 right-4 text-xs tabular-nums text-gray-400">
-                            {supportMessage.length}/{SUPPORT_MESSAGE_LIMIT}
+                          <button 
+                            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                            className="px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-gray-100 transition-all text-gray-900"
+                          >
+                            {timeRange === 'all' ? 'All time' : `Last ${timeRange} days`} <MoreHorizontal size={14} className="rotate-90" />
+                          </button>
+                          <AnimatePresence>
+                            {isDropdownOpen && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
+                                <motion.div 
+                                  initial={{ opacity: 0, scale: 0.95, y: -8 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.95, y: -8 }}
+                                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                                  className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 origin-top-right"
+                                >
+                                  {[
+                                    { key: 'all', label: 'All time' },
+                                    { key: '7', label: 'Last 7 days' },
+                                    { key: '30', label: 'Last 30 days' },
+                                    { key: '90', label: 'Last 90 days' }
+                                  ].map((range) => (
+                                    <button
+                                      key={range.key}
+                                      onClick={() => {
+                                        setTimeRange(range.key as any);
+                                        setIsDropdownOpen(false);
+                                      }}
+                                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${timeRange === range.key ? 'bg-gray-50 text-black font-bold' : 'text-gray-700 hover:bg-gray-50'}`}
+                                    >
+                                      {range.label}
+                                    </button>
+                                  ))}
+                                </motion.div>
+                              </>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                      
+                      <div className="text-4xl font-bold text-gray-900 tracking-normal">
+                        ₦{filteredPayments
+                          .reduce((acc, curr) => acc + Number(curr.amount), 0)
+                          .toLocaleString()}
+                      </div>
+                    </motion.div>
+
+                    {/* Recent Activity Feed */}
+                    <div className="bg-white border border-gray-100 rounded-[32px] overflow-hidden shadow-sm">
+                      <div className="p-8 border-b border-gray-50">
+                        <h3 className="text-2xl font-bold text-gray-900">Recent</h3>
+                        <div className="flex items-center gap-2 mt-2 text-indigo-600 font-bold text-sm">
+                          <span>
+                            {filteredPayments.length} recent donations
                           </span>
                         </div>
                       </div>
+                      
+                      <div className="divide-y divide-gray-50">
+                        {filteredPayments.length > 0 ? (
+                          filteredPayments.map((payment) => (
+                            <motion.div 
+                              key={payment.id}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="p-6 hover:bg-gray-50/50 transition-colors border-b border-gray-50 last:border-0"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                  {/* Avatar */}
+                                  <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      fill="currentColor"
+                                      viewBox="0 0 24 24"
+                                      className="w-5 h-5"
+                                      aria-hidden="true"
+                                    >
+                                      <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
+                                      <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                      <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                    </svg>
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    {(() => {
+                                      const date = new Date(payment.created_at);
+                                      const now = new Date();
+                                      const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+                                      let timeStr = '';
+                                      if (diffSec < 60) timeStr = 'now';
+                                      else if (diffSec < 3600) timeStr = `${Math.floor(diffSec / 60)}m`;
+                                      else if (diffSec < 86400) timeStr = `${Math.floor(diffSec / 3600)}h`;
+                                      else timeStr = `${Math.floor(diffSec / 86400)}d`;
+
+                                      return (
+                                        <>
+                                          <div className="flex items-center gap-2">
+                                            <h4 className="font-bold text-gray-900 text-base truncate whitespace-nowrap">
+                                              {payment.supporter_name || payment.sender_name || (payment as any).name || (payment as any).full_name || (payment as any).supporterName || 'A supporter'}
+                                            </h4>
+                                            <span className="text-gray-300 font-bold text-xs hidden sm:inline">•</span>
+                                            <span className="text-gray-400 text-sm font-bold hidden sm:inline">
+                                              {timeStr}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-2 mt-0.5">
+                                            <span className="text-gray-400 text-xs font-bold sm:hidden shrink-0">
+                                              {timeStr}
+                                            </span>
+                                            {isOwner && (
+                                              <>
+                                                <span className="text-gray-300 font-bold text-[10px] sm:hidden">•</span>
+                                                <p className="text-gray-400 text-xs truncate max-w-[150px] xs:max-w-[200px] sm:max-w-none">
+                                                  {maskEmail(payment.supporter_email || payment.sender_email) || 'No email on record'}
+                                                </p>
+                                              </>
+                                            )}
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+
+                                <div className="text-right shrink-0 ml-4">
+                                  <span className="font-black text-gray-900 text-xl tracking-normal">₦{Number(payment.amount).toLocaleString()}</span>
+                                </div>
+                              </div>
+
+                              {payment.message && (
+                                <div className="mt-4">
+                                  <div className="text-gray-600 text-sm leading-relaxed bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
+                                    {payment.message}
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          ))
+                        ) : (
+                          <div className="text-center py-24 bg-gray-50/30 rounded-[40px] border border-dashed border-gray-100">
+                            <div className="w-20 h-20 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center mx-auto mb-6">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                                className="w-10 h-10 text-gray-200"
+                                aria-hidden="true"
+                              >
+                                <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
+                                <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 tracking-tight">No activity yet</h3>
+                            <p className="text-gray-500 text-sm mt-2 max-w-xs mx-auto">When people support your work, their contributions and messages will appear here.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Public Recent Activity Feed */
+                  <motion.div
+                    key="activity"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="max-w-4xl mx-auto px-4 md:px-0"
+                  >
+                    <div className="bg-white border border-gray-100 rounded-[32px] overflow-hidden shadow-sm">
+                      <div className="p-8 border-b border-gray-50">
+                        <h3 className="text-2xl font-bold text-gray-900">Recent</h3>
+                        <div className="flex items-center gap-2 mt-2 text-indigo-600 font-bold text-sm">
+                          <span>
+                            {publicActivity.length} recent {actionWord === 'Gift' ? 'gifts' : actionWord === 'Tip' ? 'tips' : 'donations'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-gray-50">
+                        {publicActivity.length > 0 ? (
+                          publicActivity.map((item, idx) => {
+                            const date = new Date(item.created_at);
+                            const now = new Date();
+                            const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+                            let timeStr = '';
+                            if (diffSec < 60) timeStr = 'now';
+                            else if (diffSec < 3600) timeStr = `${Math.floor(diffSec / 60)}m`;
+                            else if (diffSec < 86400) timeStr = `${Math.floor(diffSec / 3600)}h`;
+                            else timeStr = `${Math.floor(diffSec / 86400)}d`;
+
+                            const email = (item as any).supporter_email || (item as any).sender_email;
+
+                            return (
+                              <div
+                                key={item.id || idx}
+                                className="p-6 hover:bg-gray-50/50 transition-colors border-b border-gray-50 last:border-0"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                                    <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
+                                      <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="currentColor"
+                                        viewBox="0 0 24 24"
+                                        className="w-5 h-5"
+                                        aria-hidden="true"
+                                      >
+                                        <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
+                                        <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                        <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                      </svg>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <h4 className="font-bold text-gray-900 text-base truncate whitespace-nowrap">
+                                          {item.supporter_name || 'A supporter'}
+                                        </h4>
+                                        <span className="text-gray-300 font-bold text-xs hidden sm:inline">•</span>
+                                        <span className="text-gray-400 text-sm font-bold hidden sm:inline">
+                                          {timeStr}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="text-gray-400 text-xs font-bold sm:hidden shrink-0">
+                                          {timeStr}
+                                        </span>
+                                        {email && (
+                                          <>
+                                            <span className="text-gray-300 font-bold text-[10px] sm:hidden">•</span>
+                                            <p className="text-gray-400 text-xs truncate max-w-[150px] xs:max-w-[200px] sm:max-w-none">
+                                              {maskEmail(email)}
+                                            </p>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="text-right shrink-0 ml-4">
+                                    <span className="font-black text-gray-900 text-xl tracking-normal">
+                                      ₦{Number(item.amount).toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {item.message && (
+                                  <div className="mt-4">
+                                    <div className="text-gray-600 text-sm leading-relaxed bg-gray-50/50 p-4 rounded-2xl border border-gray-100/50">
+                                      {item.message}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-center py-24 bg-gray-50/30 rounded-[40px] border border-dashed border-gray-100">
+                            <div className="w-20 h-20 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center mx-auto mb-6">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                                className="w-10 h-10 text-gray-200"
+                                aria-hidden="true"
+                              >
+                                <path d="M9.375 3a1.875 1.875 0 0 0 0 3.75h1.875V3H9.375ZM12.75 3v3.75h1.875a1.875 1.875 0 1 0 0-3.75H12.75Z" />
+                                <path fillRule="evenodd" d="M1.5 7.5a1.5 1.5 0 0 1 1.5-1.5h18a1.5 1.5 0 0 1 1.5 1.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-18a1.5 1.5 0 0 1-1.5-1.5V7.5ZM12 6.75a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                <path fillRule="evenodd" d="M3.75 14.25a.75.75 0 0 1 .75-.75h15a.75.75 0 0 1 .75.75v3.75a3 3 0 0 1-3 3h-9.75a3 3 0 0 1-3-3v-3.75Zm8.25.75a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 tracking-tight">No activity yet</h3>
+                            <p className="text-gray-500 text-sm mt-2 max-w-xs mx-auto">When people support your work, their contributions and messages will appear here.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Pagination Bar */}
+                      {activityTotalPages > 1 && (
+                        <div className="p-4 bg-gray-50/40 border-t border-gray-50 flex items-center justify-between">
+                          <button
+                            onClick={() => setActivityPage((p) => Math.max(1, p - 1))}
+                            disabled={activityPage <= 1 || activityLoading}
+                            className="px-4 py-2 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-700 hover:bg-gray-50 hover:text-black disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            ← Prev
+                          </button>
+                          <span className="text-xs text-gray-500 font-medium tabular-nums">
+                            Page <strong className="text-gray-900">{activityPage}</strong> of {activityTotalPages}
+                          </span>
+                          <button
+                            onClick={() => setActivityPage((p) => Math.min(activityTotalPages, p + 1))}
+                            disabled={activityPage >= activityTotalPages || activityLoading}
+                            className="px-4 py-2 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-700 hover:bg-gray-50 hover:text-black disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            Next →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )
+              ) : (
+                isOwner ? (
+                  <motion.div 
+                    key="owner-card"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="max-w-xl mx-auto py-4 space-y-6"
+                  >
+                    <div id="support-card-target" className="p-4 md:p-8 -m-4 md:-m-8">
+                      <SupportCard 
+                        name={displayName}
+                        username={profile.username} 
+                        avatarUrl={profile.support_avatar_url || profile.avatar_url} 
+                        message={profile.support_message || profile.support_tagline || "Level up your journey with me."} 
+                        isDisplayOnly={true}
+                        variant={profile.support_card_variant || 0}
+                        profileType={profile.profile_type}
+                      />
+                    </div>
+                    <div className="flex justify-center gap-3 mt-6">
+                      <button 
+                        onClick={() => setIsDownloadModalOpen(true)}
+                        className="px-4 py-2.5 md:px-6 md:py-3 bg-black text-white rounded-full font-bold text-xs md:text-sm hover:bg-gray-800 transition-all shadow-sm flex items-center gap-2 hover:scale-105 active:scale-95"
+                      >
+                        <span>Download PNG</span>
+                      </button>
+                      <button 
+                        onClick={handleShareCard}
+                        className="px-4 py-2.5 md:px-6 md:py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-full font-bold text-xs md:text-sm hover:bg-gray-100 transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                      >
+                        <Share2 size={14} className="md:w-4 md:h-4" /> Share Card
+                      </button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    key="tip-card"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="max-w-2xl mx-auto px-4 md:px-0 relative"
+                  >
+                    <div className="text-center mb-10">
+                      <h3 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight pb-1">
+                        {actionWord} {displayName}
+                      </h3>
+                      <p className="text-gray-500 text-sm md:text-base font-medium mt-1">
+                        Choose an amount to show your appreciation
+                      </p>
+                    </div>
+                    
+                    <div className="mx-auto grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-3">
+                      {(profile.support_amounts || [500, 1000, 2500, 5000]).map((amount, index) => {
+                        const TierIcon = [Coffee, Gift, Zap, Heart][index % 4];
+                        const chip = [
+                          'bg-orange-50 text-orange-500',
+                          'bg-purple-50 text-purple-500',
+                          'bg-amber-50 text-amber-500',
+                          'bg-rose-50 text-rose-500',
+                        ][index % 4];
+                        const isSelected = selectedTier === amount;
+
+                        return (
+                          <motion.button
+                            key={amount}
+                            whileTap={{ scale: 0.99 }}
+                            role="radio"
+                            aria-checked={isSelected}
+                            className={`relative flex h-full min-h-[132px] flex-col items-start rounded-2xl border p-5 text-left transition-colors ${
+                              isSelected
+                                ? 'border-gray-900 bg-white'
+                                : 'border-gray-200 bg-white hover:border-gray-300'
+                            }`}
+                            onClick={() => setSelectedTier(amount)}
+                          >
+                            <span
+                              className={`absolute right-4 top-4 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-colors ${
+                                isSelected ? 'border-gray-900' : 'border-gray-200'
+                              }`}
+                            >
+                              {isSelected && <span className="h-2 w-2 rounded-full bg-gray-900" />}
+                            </span>
+
+                            <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${chip}`}>
+                              <TierIcon size={16} />
+                            </span>
+
+                            <span className="mt-auto flex items-baseline pt-4 text-gray-900">
+                              <span className="self-start pt-1 text-[13px] font-semibold text-gray-400">₦</span>
+                              <span className="text-2xl font-bold tracking-tight">{amount.toLocaleString()}</span>
+                            </span>
+                          </motion.button>
+                        );
+                      })}
+                      
+                      {/* Custom Tier */}
+                      <motion.button
+                        whileTap={{ scale: 0.99 }}
+                        role="radio"
+                        aria-checked={selectedTier === 'custom'}
+                        className={`relative flex h-full min-h-[132px] flex-col items-start rounded-2xl border p-5 text-left transition-colors ${
+                          selectedTier === 'custom'
+                            ? 'border-gray-900 bg-white'
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                        onClick={() => setSelectedTier('custom')}
+                      >
+                        <span
+                          className={`absolute right-4 top-4 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-colors ${
+                            selectedTier === 'custom' ? 'border-gray-900' : 'border-gray-200'
+                          }`}
+                        >
+                          {selectedTier === 'custom' && <span className="h-2 w-2 rounded-full bg-gray-900" />}
+                        </span>
+
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500">
+                          <CreditCard size={16} />
+                        </span>
+
+                        <span className="mt-auto pt-4 text-2xl font-bold tracking-tight text-gray-900">Custom</span>
+                      </motion.button>
                     </div>
 
-                    {paymentError && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: -5 }} 
-                        animate={{ opacity: 1, y: 0 }} 
-                        className="mt-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm font-semibold text-center"
-                      >
-                        {paymentError}
-                      </motion.div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    {/* Custom Amount Input */}
+                    <AnimatePresence>
+                      {selectedTier === 'custom' && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0, y: -10 }}
+                          animate={{ opacity: 1, height: 'auto', y: 0 }}
+                          exit={{ opacity: 0, height: 0, y: -10 }}
+                          className="mt-6"
+                        >
+                          <div className="mx-auto max-w-xl text-left">
+                            <label htmlFor="custom-amount" className="mb-1.5 block text-[13px] font-bold text-gray-600">
+                              Custom amount
+                            </label>
+                            <div className="relative flex items-center">
+                              <span className="pointer-events-none absolute left-4 text-base font-bold text-gray-400">₦</span>
+                              <input
+                                id="custom-amount"
+                                type="number"
+                                inputMode="decimal"
+                                min="1"
+                                value={customAmount}
+                                onChange={(e) => setCustomAmount(e.target.value)}
+                                placeholder="Enter custom amount"
+                                className="w-full rounded-2xl border border-gray-200/80 bg-white/80 pl-9 pr-4 py-3.5 text-[15px] font-semibold text-gray-900 transition-all placeholder:text-gray-400 focus:bg-white focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                autoFocus
+                              />
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
-              {/* Action Button */}
-              <div className="mt-12 flex flex-col items-center gap-4">
-                <button 
-                  onClick={handleSupportNow}
-                  className="w-full max-w-md py-5 bg-black text-white rounded-full font-black text-xl hover:scale-105 transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2" 
-                  disabled={!selectedTier || (selectedTier === 'custom' && !customAmount) || !supporterEmail || paymentStatus === 'processing'}
-                >
-                  {paymentStatus === 'processing' ? (
-                    <>
-                      <Loader2 className="animate-spin w-6 h-6" />
-                      <span>Initiating Payment...</span>
-                    </>
-                  ) : (
-                    'Support Now'
-                  )}
-                </button>
-                <p className="text-gray-400 text-sm flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-green-500/10 flex items-center justify-center"><Check size={10} className="text-green-500" /></span>
-                  Fast & Secure Payments with Flutterwave
-                </p>
-              </div>
-            </div>
+                    {/* Supporter Details & Message Inputs */}
+                    <AnimatePresence>
+                      {selectedTier && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0, y: -20 }}
+                          animate={{ opacity: 1, height: 'auto', y: 0 }}
+                          exit={{ opacity: 0, height: 0, y: -20 }}
+                          className="mt-6"
+                        >
+                          <div className="mx-auto max-w-xl space-y-5 text-left">
+                            {!currentUserId && (
+                              <div>
+                                <label htmlFor="supporter-name" className="mb-1.5 block text-[13px] font-bold text-gray-600">
+                                  Full name <span className="text-gray-400 font-medium">· optional</span>
+                                </label>
+                                <input
+                                  id="supporter-name"
+                                  type="text"
+                                  value={supporterName}
+                                  onChange={(e) => setSupporterName(e.target.value)}
+                                  placeholder="First and last name"
+                                  autoComplete="name"
+                                  className="w-full rounded-2xl border border-gray-200/80 bg-white/80 px-4 py-3.5 text-[15px] font-medium text-gray-900 transition-all placeholder:text-gray-400 focus:bg-white focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 shadow-sm"
+                                />
+                              </div>
+                            )}
+
+                            <div>
+                              <label htmlFor="supporter-email" className="mb-1.5 block text-[13px] font-bold text-gray-600">
+                                Email address
+                              </label>
+                              <input
+                                id="supporter-email"
+                                type="email"
+                                value={supporterEmail}
+                                onChange={(e) => {
+                                  setSupporterEmail(e.target.value);
+                                  if (paymentError) setPaymentError(null);
+                                }}
+                                placeholder="Where we'll send your receipt"
+                                autoComplete="email"
+                                className="w-full rounded-2xl border border-gray-200/80 bg-white/80 px-4 py-3.5 text-[15px] font-medium text-gray-900 transition-all placeholder:text-gray-400 focus:bg-white focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 shadow-sm"
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label htmlFor="supporter-message" className="mb-1.5 block text-[13px] font-bold text-gray-600">
+                                Add a message <span className="text-gray-400 font-medium">· optional</span>
+                              </label>
+                              <div className="relative">
+                                <textarea
+                                  id="supporter-message"
+                                  value={supportMessage}
+                                  onChange={(e) => setSupportMessage(e.target.value)}
+                                  placeholder="Say something nice — they'll see this with your support."
+                                  rows={3}
+                                  maxLength={SUPPORT_MESSAGE_LIMIT}
+                                  className="w-full resize-none rounded-2xl border border-gray-200/80 bg-white/80 px-4 pb-10 pt-4 text-[15px] font-medium leading-relaxed text-gray-900 transition-all placeholder:text-gray-400 focus:bg-white focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 shadow-sm"
+                                />
+                                <span className="pointer-events-none absolute bottom-3 right-4 text-xs font-bold tabular-nums text-gray-400">
+                                  {supportMessage.length}/{SUPPORT_MESSAGE_LIMIT}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {paymentError && (
+                            <motion.div 
+                              initial={{ opacity: 0, scale: 0.95 }} 
+                              animate={{ opacity: 1, scale: 1 }} 
+                              className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-sm font-semibold text-center flex items-center justify-center gap-2"
+                            >
+                              <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {paymentError}
+                            </motion.div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Action Button */}
+                    <div className="mt-8 flex flex-col items-center">
+                      <button 
+                        onClick={handleSupportNow}
+                        className="w-full max-w-md py-4 rounded-full bg-black font-bold text-white text-[15px] sm:text-base hover:bg-gray-800 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2" 
+                        disabled={!selectedTier || (selectedTier === 'custom' && !customAmount) || !supporterEmail || paymentStatus === 'processing'}
+                      >
+                        {paymentStatus === 'processing' ? (
+                          <>
+                            <Loader2 className="animate-spin w-5 h-5" />
+                            <span>Initiating Payment...</span>
+                          </>
+                        ) : (
+                          <span>{actionWord} with ₦{Number(selectedTier === 'custom' ? customAmount || 0 : selectedTier || 0).toLocaleString()}</span>
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                )
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1291,6 +1461,16 @@ export default function SupportProfile() {
           onClose={() => setIsEditModalOpen(false)}
           profile={profile}
           onSave={(updated) => setProfile(updated)}
+        />
+      )}
+
+      {/* Download Card Modal with Background Selection */}
+      {profile && (
+        <DownloadCardModal
+          isOpen={isDownloadModalOpen}
+          onClose={() => setIsDownloadModalOpen(false)}
+          profile={profile}
+          displayName={displayName}
         />
       )}
     </div>

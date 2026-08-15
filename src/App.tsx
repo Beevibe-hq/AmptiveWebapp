@@ -41,16 +41,29 @@ import Waitlist from './pages/Waitlist';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import { isWaitlistModeActive } from './utils/waitlistMode';
 
 function App() {
+  const isWaitlistLocked = isWaitlistModeActive();
+
   return (
     <ThemeProvider>
       <Router>
         <ScrollToTop />
-        <Routes>
-          <Route path="/dashboard/*" element={<DashboardWithSplash />} />
-          <Route path="*" element={<MainLayout />} />
-        </Routes>
+        {isWaitlistLocked ? (
+          <Routes>
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
+            <Route path="*" element={<Waitlist isLockedMode={true} />} />
+          </Routes>
+        ) : (
+          <Routes>
+            <Route path="/dashboard/*" element={<DashboardWithSplash />} />
+            <Route path="*" element={<MainLayout />} />
+          </Routes>
+        )}
         <Toaster position="top-center" richColors closeButton expand={false} />
       </Router>
     </ThemeProvider>

@@ -1,28 +1,25 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Sparkles } from 'lucide-react';
-// Filled glyphs for the goal cards — lucide is stroke-only, and thin outlines read as
-// wispy inside the icon chip.
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Sparkles, Key, Check, Share2, Lock } from 'lucide-react';
 import { IoRadio, IoGift, IoTicket, IoHeadset } from 'react-icons/io5';
 import type { IconType } from 'react-icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSEO } from '@/hooks/useSEO';
 import toast from 'react-hot-toast';
-import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import { api } from '@/lib/api/client';
+import { unlockPreviewAccess, isWaitlistModeActive } from '@/utils/waitlistMode';
 
 type WaitlistRole = 'host' | 'monetize' | 'events' | 'listener';
 
-/**
- * The four things someone can be here for. Kept as data rather than four near-identical
- * blocks of markup, which is how the copy and the styling drifted apart in the first place.
- */
+interface WaitlistProps {
+  isLockedMode?: boolean;
+}
+
 const WAITLIST_GOALS: {
   role: WaitlistRole;
   icon: IconType;
   title: string;
   description: string;
-  /** Pastel wash behind the card's texture. */
   tint: [number, number, number];
 }[] = [
   {
@@ -55,25 +52,9 @@ const WAITLIST_GOALS: {
   },
 ];
 
-/** One tile of the scale pattern. Height is twice the width so the shapes interlock. */
 const TEXTURE_TILE_W = 88;
 const TEXTURE_TILE_H = 176;
 
-/**
- * The soft scalloped wash behind each card: a pastel base under an interlocking arc
- * pattern, covering the whole card.
- *
- * The shapes come from two radial gradients anchored to opposite edges of a tile that is
- * twice as tall as it is wide — that is what makes them mesh seamlessly. Anchoring
- * highlights inside the tile instead leaves a bright edge on every tile row, which reads
- * as horizontal banding rather than scallops.
- *
- * They are filled and soft-edged rather than rings: a hard stop makes the pattern read as
- * a chain of outlined circles instead of quilted padding.
- *
- * Built from gradients rather than an image so it stays sharp at any card size, retints
- * from one rgb triple, and costs nothing to download.
- */
 const cardTexture = ([r, g, b]: [number, number, number]) => {
   const puff = 'rgba(255, 255, 255, 0.62)';
   const tint = `rgba(${r}, ${g}, ${b}, 0.85)`;
@@ -91,21 +72,11 @@ const cardTexture = ([r, g, b]: [number, number, number]) => {
   };
 };
 
-/**
- * A white veil over the lower half, so the copy normally sits on clean paper. Hovering
- * fades it away and lets the colour flood the whole card.
- *
- * It has to be its own layer rather than a stop inside the texture above: gradients are
- * not interpolable, so a transition between two background-images would snap. Opacity on
- * a separate element animates properly.
- */
 const CARD_VEIL: React.CSSProperties = {
-  backgroundImage:
-    'linear-gradient(to bottom, rgba(255,255,255,0) 34%, rgba(255,255,255,0.92) 68%, rgb(255,255,255) 100%)',
+  background: 'linear-gradient(to bottom, rgba(255, 255, 255, 0) 36%, rgba(255, 255, 255, 0.94) 78%, rgb(255, 255, 255) 100%)',
 };
 
-
-export default function Waitlist() {
+export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
   useSEO({
     title: 'Join the Amptive Waitlist | Early Access',
     description: 'Be among the first to experience Amptive live audio shows, direct monetization, and creator gifting.',
@@ -117,8 +88,12 @@ export default function Waitlist() {
   const [userRole, setUserRole] = useState<WaitlistRole | null>(null);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  /** Which goal card the pointer or keyboard is currently on, so its colour floods. */
   const [hoveredRole, setHoveredRole] = useState<WaitlistRole | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Team Access Modal State
+  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+  const [passcodeInput, setPasscodeInput] = useState('');
 
   const selectedGoal = WAITLIST_GOALS.find(goal => goal.role === userRole);
 
@@ -141,22 +116,22 @@ export default function Waitlist() {
         'monetize': 'gifts_and_tip',
         'events': 'event_ticketing',
         'listener': 'listening_and_discovery',
-        'other': 'listening_and_discovery' // fallback
+        'other': 'listening_and_discovery'
       };
 
-      const response: any = await api.post('/waitlist', {
+      const response = await api.post('/waitlist/join', {
         email: email.trim(),
-        use_case: apiUseCaseMap[userRole || 'other']
+        full_name: 'Waitlist Member',
+        use_case: apiUseCaseMap[userRole || 'other'] || 'listening_and_discovery'
       }, { skipAuth: true });
       
       setStep('success');
 
-      // Check if they were already on the waitlist (older than 1 minute)
       if (response && response.created_at) {
         const createdDate = new Date(response.created_at);
         const now = new Date();
         const diffMs = now.getTime() - createdDate.getTime();
-        if (diffMs > 60000) { // 60 seconds
+        if (diffMs > 60000) {
           toast.success("You're already on the waitlist! We'll notify you when early access opens.", { duration: 5000 });
           return;
         }
@@ -164,7 +139,6 @@ export default function Waitlist() {
 
       toast.success('Successfully joined the waitlist!');
     } catch (err: any) {
-      // If the backend actually returned a 422 because it's a duplicate, we handle that just in case:
       if (err.message && err.message.toLowerCase().includes('already')) {
         toast.success("You're already on the waitlist! We'll notify you when early access opens.", { duration: 5000 });
         setStep('success');
@@ -176,8 +150,54 @@ export default function Waitlist() {
     }
   };
 
+  const handleShare = async () => {
+    const url = typeof window !== 'undefined' ? window.location.origin : 'https://getamptive.com';
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      toast.success('Link copied! Share it with friends 🎉');
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      toast.success('Waitlist link: ' + url);
+    }
+  };
+
+  const handleUnlockPasscode = (e: React.FormEvent) => {
+    e.preventDefault();
+    const success = unlockPreviewAccess(passcodeInput);
+    if (success) {
+      toast.success('Preview access granted! Unlocking web app...');
+      setShowPasscodeModal(false);
+      window.location.href = '/';
+    } else {
+      toast.error('Invalid passcode. Please try again.');
+    }
+  };
+
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB] flex flex-col justify-between font-sans pt-20 sm:pt-24 md:pt-32">
+    <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB] flex flex-col justify-between font-sans pt-12 sm:pt-16 md:pt-24">
+      {/* Header Logo */}
+      <div className="container mx-auto px-6 pt-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <img
+            src="/amptivelogo.svg"
+            alt="Amptive Logo"
+            className="h-7 sm:h-8 w-auto"
+            style={{ filter: 'brightness(0)' }}
+          />
+        </div>
+
+        {/* Sneak Peek / Team Access Button */}
+        <button
+          type="button"
+          onClick={() => setShowPasscodeModal(true)}
+          className="text-xs font-semibold text-gray-400 hover:text-gray-900 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-gray-100/80 cursor-pointer"
+        >
+          <Lock size={12} />
+          <span>Team preview</span>
+        </button>
+      </div>
+
       {/* Main Form Body */}
       <main className="container relative z-10 mx-auto px-4 pt-6 sm:pt-10 pb-8 flex-1 flex items-start sm:items-center justify-center">
         <AnimatePresence mode="wait">
@@ -209,14 +229,11 @@ export default function Waitlist() {
                     key={goal.role}
                     type="button"
                     onClick={() => handleSelectRole(goal.role)}
-                    // Driven from state rather than a `group-hover:` class so the veil's
-                    // opacity is one explicit value, and keyboard focus reveals the colour
-                    // the same way a pointer does.
                     onMouseEnter={() => setHoveredRole(goal.role)}
                     onMouseLeave={() => setHoveredRole(current => (current === goal.role ? null : current))}
                     onFocus={() => setHoveredRole(goal.role)}
                     onBlur={() => setHoveredRole(current => (current === goal.role ? null : current))}
-                    className="group relative flex min-h-[300px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white text-left transition-colors hover:border-black/20 focus:outline-none focus-visible:border-black"
+                    className="group relative flex min-h-[300px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white text-left transition-colors hover:border-black/20 focus:outline-none focus-visible:border-black cursor-pointer shadow-xs hover:shadow-md"
                   >
                     <span
                       aria-hidden="true"
@@ -232,7 +249,6 @@ export default function Waitlist() {
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/5 text-black">
                         <goal.icon className="h-5 w-5" />
                       </span>
-                      {/* Pushed to the bottom, where the texture has faded out to white. */}
                       <h3 className="mt-auto text-[17px] font-bold leading-snug text-black">
                         {goal.title}
                       </h3>
@@ -244,15 +260,17 @@ export default function Waitlist() {
                 ))}
               </div>
 
-              <div className="mt-8 text-center px-4">
-                <button
-                  type="button"
-                  onClick={() => navigate('/')}
-                  className="text-xs font-medium text-gray-500 hover:text-black transition-colors underline underline-offset-4"
-                >
-                  Return to Homepage
-                </button>
-              </div>
+              {!isLockedMode && (
+                <div className="mt-8 text-center px-4">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/')}
+                    className="text-xs font-medium text-gray-500 hover:text-black transition-colors underline underline-offset-4 cursor-pointer"
+                  >
+                    Return to Homepage
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -275,8 +293,6 @@ export default function Waitlist() {
                 </p>
               </div>
 
-              {/* Field and button metrics mirror SignupForm, so the two flows feel like
-                  one product rather than two. */}
               <form onSubmit={handleSubmitDetails}>
                 <label htmlFor="waitlist-email" className="block text-sm font-medium text-gray-700 mb-1">
                   Email
@@ -296,15 +312,25 @@ export default function Waitlist() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="h-10 w-full rounded-full bg-black text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-70"
+                  className="h-10 w-full rounded-full bg-black text-sm font-medium text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer shadow-sm"
                 >
                   {loading ? 'Joining...' : 'Continue'}
                 </button>
               </form>
+
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => setStep('type')}
+                  className="text-xs font-medium text-gray-500 hover:text-black transition-colors cursor-pointer"
+                >
+                  ← Back to options
+                </button>
+              </div>
             </motion.div>
           )}
 
-          {/* STEP 3: Success Confirmation matching reference screenshot 1:1 */}
+          {/* STEP 3: Success Confirmation */}
           {step === 'success' && (
             <motion.div
               key="step-success"
@@ -313,42 +339,118 @@ export default function Waitlist() {
               transition={{ duration: 0.4 }}
               className="max-w-sm w-full mx-auto py-4 px-2 text-center relative"
             >
-                {/* Clean Static Amptive Logo */}
-                <div className="mb-6 flex items-center justify-center">
-                  <img
-                    src="/amptivelogo.svg"
-                    alt="Amptive Logo"
-                    className="h-12 md:h-14 w-auto"
-                    style={{
-                      filter: 'brightness(0)'
-                    }}
-                  />
-                </div>
+              <div className="mb-6 flex items-center justify-center">
+                <img
+                  src="/amptivelogo.svg"
+                  alt="Amptive Logo"
+                  className="h-12 md:h-14 w-auto"
+                  style={{ filter: 'brightness(0)' }}
+                />
+              </div>
 
-                {/* Title */}
-                <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight leading-tight sm:whitespace-nowrap">
-                  Early Access Unlocked!
-                </h1>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight leading-tight sm:whitespace-nowrap">
+                Early Access Unlocked!
+              </h1>
 
-                {/* Subtitle */}
-                <p className="text-sm font-medium text-gray-500 mt-2.5 max-w-sm mx-auto leading-relaxed">
-                  We'll email <span className="font-bold text-gray-900">{email}</span> the moment early access opens!
-                </p>
+              <p className="text-sm font-medium text-gray-500 mt-2.5 max-w-sm mx-auto leading-relaxed">
+                We'll email <span className="font-bold text-gray-900">{email}</span> the moment early access opens!
+              </p>
 
-              {/* Action Button */}
-              <div className="relative z-10 mt-8">
+              <div className="relative z-10 mt-8 space-y-3">
                 <button
                   type="button"
-                  onClick={() => navigate('/')}
-                  className="w-full h-12 rounded-full bg-black text-white text-sm font-semibold hover:bg-gray-900 transition-colors shadow-md flex items-center justify-center cursor-pointer"
+                  onClick={handleShare}
+                  className="w-full h-12 rounded-full bg-black text-white text-sm font-bold hover:bg-gray-800 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                 >
-                  Go to Home
+                  {copiedLink ? (
+                    <>
+                      <Check size={16} className="text-emerald-400" />
+                      <span>Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 size={16} />
+                      <span>Share with Friends</span>
+                    </>
+                  )}
                 </button>
+
+                {!isLockedMode && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/')}
+                    className="text-xs font-semibold text-gray-500 hover:text-gray-900 transition-colors"
+                  >
+                    Return to Homepage
+                  </button>
+                )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
+
+      {/* Footer */}
+      <footer className="container mx-auto px-6 py-6 text-center text-xs text-gray-400">
+        <p>© {new Date().getFullYear()} Amptive Technologies. All rights reserved.</p>
+      </footer>
+
+      {/* Passcode Unlock Modal */}
+      <AnimatePresence>
+        {showPasscodeModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPasscodeModal(false)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl z-10 border border-gray-100"
+            >
+              <div className="text-center mb-5">
+                <div className="w-12 h-12 rounded-full bg-black/5 flex items-center justify-center mx-auto mb-3 text-black">
+                  <Key size={20} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900">Team Preview Access</h3>
+                <p className="text-xs text-gray-500 mt-1">Enter your team passcode to unlock preview mode for this device.</p>
+              </div>
+
+              <form onSubmit={handleUnlockPasscode} className="space-y-4">
+                <input
+                  type="password"
+                  placeholder="Enter passcode..."
+                  value={passcodeInput}
+                  onChange={(e) => setPasscodeInput(e.target.value)}
+                  autoFocus
+                  required
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-center font-bold text-base outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
+                />
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasscodeModal(false)}
+                    className="flex-1 py-3 rounded-full text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 rounded-full text-xs font-bold text-white bg-black hover:bg-gray-800 transition-colors cursor-pointer shadow-sm"
+                  >
+                    Unlock
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
