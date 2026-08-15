@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Key, Check, Share2, Lock } from 'lucide-react';
+import { Sparkles, Check, Share2 } from 'lucide-react';
 import { IoRadio, IoGift, IoTicket, IoHeadset } from 'react-icons/io5';
 import type { IconType } from 'react-icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSEO } from '@/hooks/useSEO';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api/client';
-import { unlockPreviewAccess, isWaitlistModeActive } from '@/utils/waitlistMode';
 
 type WaitlistRole = 'host' | 'monetize' | 'events' | 'listener';
 
@@ -91,10 +90,6 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
   const [hoveredRole, setHoveredRole] = useState<WaitlistRole | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Team Access Modal State
-  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
-  const [passcodeInput, setPasscodeInput] = useState('');
-
   const selectedGoal = WAITLIST_GOALS.find(goal => goal.role === userRole);
 
   const handleSelectRole = (role: WaitlistRole) => {
@@ -162,44 +157,10 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
     }
   };
 
-  const handleUnlockPasscode = (e: React.FormEvent) => {
-    e.preventDefault();
-    const success = unlockPreviewAccess(passcodeInput);
-    if (success) {
-      toast.success('Preview access granted! Unlocking web app...');
-      setShowPasscodeModal(false);
-      window.location.href = '/';
-    } else {
-      toast.error('Invalid passcode. Please try again.');
-    }
-  };
-
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB] flex flex-col justify-between font-sans pt-12 sm:pt-16 md:pt-24">
-      {/* Header Logo */}
-      <div className="container mx-auto px-6 pt-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <img
-            src="/amptivelogo.svg"
-            alt="Amptive Logo"
-            className="h-7 sm:h-8 w-auto"
-            style={{ filter: 'brightness(0)' }}
-          />
-        </div>
-
-        {/* Sneak Peek / Team Access Button */}
-        <button
-          type="button"
-          onClick={() => setShowPasscodeModal(true)}
-          className="text-xs font-semibold text-gray-400 hover:text-gray-900 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-gray-100/80 cursor-pointer"
-        >
-          <Lock size={12} />
-          <span>Team preview</span>
-        </button>
-      </div>
-
+    <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB] flex flex-col justify-between font-sans pt-16 sm:pt-20 md:pt-28">
       {/* Main Form Body */}
-      <main className="container relative z-10 mx-auto px-4 pt-6 sm:pt-10 pb-8 flex-1 flex items-start sm:items-center justify-center">
+      <main className="container relative z-10 mx-auto px-4 pt-4 sm:pt-8 pb-8 flex-1 flex items-start sm:items-center justify-center">
         <AnimatePresence mode="wait">
           {/* STEP 1: App Waitlist Goal Selection */}
           {step === 'type' && (
@@ -394,63 +355,6 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
       <footer className="container mx-auto px-6 py-6 text-center text-xs text-gray-400">
         <p>© {new Date().getFullYear()} Amptive Technologies. All rights reserved.</p>
       </footer>
-
-      {/* Passcode Unlock Modal */}
-      <AnimatePresence>
-        {showPasscodeModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowPasscodeModal(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl z-10 border border-gray-100"
-            >
-              <div className="text-center mb-5">
-                <div className="w-12 h-12 rounded-full bg-black/5 flex items-center justify-center mx-auto mb-3 text-black">
-                  <Key size={20} />
-                </div>
-                <h3 className="text-xl font-bold text-gray-900">Team Preview Access</h3>
-                <p className="text-xs text-gray-500 mt-1">Enter your team passcode to unlock preview mode for this device.</p>
-              </div>
-
-              <form onSubmit={handleUnlockPasscode} className="space-y-4">
-                <input
-                  type="password"
-                  placeholder="Enter passcode..."
-                  value={passcodeInput}
-                  onChange={(e) => setPasscodeInput(e.target.value)}
-                  autoFocus
-                  required
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-center font-bold text-base outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
-                />
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowPasscodeModal(false)}
-                    className="flex-1 py-3 rounded-full text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-3 rounded-full text-xs font-bold text-white bg-black hover:bg-gray-800 transition-colors cursor-pointer shadow-sm"
-                  >
-                    Unlock
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
