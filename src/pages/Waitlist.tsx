@@ -114,31 +114,22 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
         'other': 'listening_and_discovery'
       };
 
-      const response = await api.post('/waitlist/join', {
+      const payload = {
         email: email.trim(),
-        full_name: 'Waitlist Member',
         use_case: apiUseCaseMap[userRole || 'other'] || 'listening_and_discovery'
-      }, { skipAuth: true });
+      };
+
+      await api.post('/waitlist', payload, { skipAuth: true });
       
       setStep('success');
-
-      if (response && response.created_at) {
-        const createdDate = new Date(response.created_at);
-        const now = new Date();
-        const diffMs = now.getTime() - createdDate.getTime();
-        if (diffMs > 60000) {
-          toast.success("You're already on the waitlist! We'll notify you when early access opens.", { duration: 5000 });
-          return;
-        }
-      }
-
       toast.success('Successfully joined the waitlist!');
     } catch (err: any) {
-      if (err.message && err.message.toLowerCase().includes('already')) {
+      const msg = String(err?.message || '').toLowerCase();
+      if (msg.includes('already')) {
         toast.success("You're already on the waitlist! We'll notify you when early access opens.", { duration: 5000 });
         setStep('success');
       } else {
-        toast.error(err.message || 'Something went wrong. Please try again.');
+        toast.error(err.message || 'Failed to join waitlist. Please try again.');
       }
     } finally {
       setLoading(false);
