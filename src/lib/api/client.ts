@@ -118,9 +118,9 @@ async function ensureValidToken(): Promise<boolean> {
 
 async function executeRequest<T>(
   endpoint: string,
-  options: RequestInit & { skipAuth?: boolean; isFormData?: boolean; silent?: boolean } = {}
+  options: RequestInit & { skipAuth?: boolean; isFormData?: boolean } = {}
 ): Promise<T> {
-  const { isFormData, skipAuth, silent, ...fetchOptions } = options;
+  const { isFormData, skipAuth, ...fetchOptions } = options;
 
   if (!skipAuth && !endpoint.includes('/auth/')) {
     const hasValidToken = await ensureValidToken();
@@ -175,9 +175,7 @@ async function executeRequest<T>(
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    if (!silent) {
-      console.error('API Error Response:', errorBody);
-    }
+    console.error('API Error Response:', errorBody);
     let errorMessage = errorBody.message || errorBody.detail || `HTTP ${response.status}`;
     if (errorBody.errors && Array.isArray(errorBody.errors)) {
       errorMessage += ` (Validation: ${JSON.stringify(errorBody.errors)})`;
@@ -196,14 +194,14 @@ async function executeRequest<T>(
     }
     if ('data' in stdResponse) {
       if (stdResponse.data && typeof stdResponse.data === 'object' && !Array.isArray(stdResponse.data)) {
-        const result = { ...(stdResponse.data as object) } as Record<string, unknown>;
-        const rootObj = data as Record<string, unknown>;
-        ['total', 'page', 'page_size', 'total_pages', 'metadata'].forEach((key) => {
-          if (key in rootObj && !(key in result)) {
-            result[key] = rootObj[key];
-          }
-        });
-        return result as T;
+        return {
+          total: (data as any).total,
+          page: (data as any).page,
+          page_size: (data as any).page_size,
+          total_pages: (data as any).total_pages,
+          metadata: (data as any).metadata,
+          ...stdResponse.data,
+        } as T;
       }
       return stdResponse.data as T;
     }
@@ -215,14 +213,14 @@ async function executeRequest<T>(
 
 async function request<T>(
   endpoint: string,
-  options: RequestInit & { skipAuth?: boolean; silent?: boolean } = {}
+  options: RequestInit & { skipAuth?: boolean } = {}
 ): Promise<T> {
   return executeRequest<T>(endpoint, { ...options, isFormData: false });
 }
 
 async function requestFormData<T>(
   endpoint: string,
-  options: RequestInit & { skipAuth?: boolean; silent?: boolean } = {}
+  options: RequestInit & { skipAuth?: boolean } = {}
 ): Promise<T> {
   return executeRequest<T>(endpoint, { ...options, isFormData: true });
 }
@@ -231,7 +229,7 @@ export const api = {
   request,
   requestFormData,
 
-  get: <T>(endpoint: string, options?: { skipAuth?: boolean; silent?: boolean }) => request<T>(endpoint, { method: 'GET', ...options }),
+  get: <T>(endpoint: string, options?: { skipAuth?: boolean }) => request<T>(endpoint, { method: 'GET', ...options }),
 
   patch: <T>(endpoint: string, body?: unknown) =>
     request<T>(endpoint, {
@@ -239,7 +237,7 @@ export const api = {
       body: body ? JSON.stringify(body) : undefined,
     }),
 
-  post: <T>(endpoint: string, body?: unknown, options?: { skipAuth?: boolean; silent?: boolean }) =>
+  post: <T>(endpoint: string, body?: unknown, options?: { skipAuth?: boolean }) =>
     request<T>(endpoint, {
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,

@@ -14,13 +14,26 @@ export default function PaystackCallback() {
 
     useEffect(() => {
         const verifyPayment = async () => {
-            const reference = searchParams.get('reference');
+            const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('tx_ref');
 
             if (!reference) {
                 setStatus('error');
                 setMessage('No payment reference found.');
                 return;
             }
+
+            // Check if this payment was for Creator Support / Gifting
+            try {
+                const pendingSupportRaw = sessionStorage.getItem('pending_support_data');
+                if (pendingSupportRaw) {
+                    const parsed = JSON.parse(pendingSupportRaw);
+                    const targetUser = parsed.username || '';
+                    if (targetUser) {
+                        navigate(`/support/${encodeURIComponent(targetUser)}?reference=${encodeURIComponent(reference)}&status=successful`, { replace: true });
+                        return;
+                    }
+                }
+            } catch {}
 
             try {
                 const user = await getCurrentUser()

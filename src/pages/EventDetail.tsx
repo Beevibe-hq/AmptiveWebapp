@@ -449,8 +449,6 @@ const EventDetail = () => {
 
         // Fetch Tickets
         const ticketData = await getTicketsForEvent(id);
-        console.log("tickets daata", ticketData);
-
         setTickets(ticketData);
 
         // Fetch Organizer
@@ -460,7 +458,6 @@ const EventDetail = () => {
           if (profile) {
             setOrganizerProfile(profile);
           } else {
-            console.log('API Host Data:', eventData.host);
             // Fallback to the host data provided in the event response
             setOrganizerProfile({
               id: eventData.host.user_id,

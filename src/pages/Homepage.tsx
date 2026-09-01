@@ -153,6 +153,7 @@ interface HeroSlideProps {
   shadowColor?: string;
   bgColor?: string;
   backgroundImage?: string;
+  posterSrc?: string;
   textColor?: string;
   className?: string;
   isFirstSlide?: boolean;
@@ -171,6 +172,7 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
   shadowColor,
   bgColor,
   backgroundImage,
+  posterSrc,
   textColor = '',
   className = '',
   isFirstSlide = false,
@@ -283,13 +285,16 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
 
   return (
     <div
-      className={`relative rounded-2xl w-[95vw] max-w-[95vw] md:w-[92vw] md:max-w-[92vw] lg:w-[95vw] lg:max-w-[95vw] flex items-start justify-center overflow-hidden bg-gray-100 mt-20 mx-auto py-0 md:py-16 lg:py-20 xl:py-24 ${className}`}
+      className={`relative rounded-2xl w-[95vw] max-w-[95vw] md:w-[92vw] md:max-w-[92vw] lg:w-[95vw] lg:max-w-[95vw] flex items-start justify-center overflow-hidden bg-[#1b1b1b] mt-20 mx-auto py-0 md:py-16 lg:py-20 xl:py-24 ${className}`}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
       {/* Background - Image for all slides */}
-      <div className="absolute inset-0 w-full h-full">
+      <div
+        className="absolute inset-0 w-full h-full"
+        style={{ backgroundColor: isFirstSlide ? '#1d1b17' : bgColor || '#1b1b1b' }}
+      >
         {isFirstSlide ? (
           <div
             className="absolute inset-0 w-full h-full"
@@ -347,13 +352,18 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
           {/* Video Column - Responsive size */}
           <div className="w-full lg:w-auto flex justify-center">
             <div className="w-full max-w-[620px] h-[40vh] md:h-[50vh] lg:h-[70vh] min-w-0 animate-slide-up transition-all duration-500" style={{
-              width: 'min(100%, max(350px, calc(100vw - 100px)))' // Adjusted for better tablet display
+              width: 'min(100%, max(350px, calc(100vw - 100px)))',
+              backgroundColor: isFirstSlide ? '#25221d' : bgColor || '#1b1b1b',
+              backgroundImage: posterSrc ? `url(${posterSrc})` : undefined,
+              backgroundPosition: 'center',
+              backgroundSize: 'cover',
             }}>
               <video
                 ref={videoRef}
                 key={activeSrc}
                 autoPlay
                 preload="auto"
+                poster={posterSrc}
                 loop={!hasMultiple}
                 muted
                 playsInline
@@ -458,6 +468,7 @@ interface SlideData {
   videoClassName?: string;
   backgroundImage?: string;
   bgColor?: string;
+  posterSrc?: string;
 }
 
 const SLIDES: SlideData[] = [
@@ -468,6 +479,7 @@ const SLIDES: SlideData[] = [
     ctaText: "Join Waitlist",
     ctaLink: "/waitlist",
     videoSrc: new URL('../assets/949_720x60_shots_so.mp4', import.meta.url).href,
+    posterSrc: '/images/OC%2011.webp',
     shadowColor: 'rgba(0, 0, 0, 0.5)',
     isFirstSlide: true
   },
@@ -1034,7 +1046,6 @@ const Homepage: React.FC = () => {
   // Initialize filtered events with database events
   useEffect(() => {
     if (!loadingEvents && dbEvents.length > 0) {
-      console.log('Initializing filteredEvents with dbEvents:', dbEvents.length);
       setFilteredEvents(dbEvents);
     }
   }, [dbEvents, loadingEvents]);
@@ -1436,6 +1447,7 @@ const Homepage: React.FC = () => {
                 shadowColor={slide.shadowColor}
                 backgroundImage={slide.backgroundImage}
                 bgColor={slide.bgColor}
+                posterSrc={slide.posterSrc}
                 isFirstSlide={slide.isFirstSlide}
                 isSecondSlide={slide.isSecondSlide}
                 onSwipeLeft={prevSlide}

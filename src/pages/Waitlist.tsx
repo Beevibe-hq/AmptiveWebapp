@@ -1,24 +1,29 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Sparkles, Check, Share2 } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, Sparkles } from 'lucide-react';
+// Filled glyphs for the goal cards — lucide is stroke-only, and thin outlines read as
+// wispy inside the icon chip.
 import { IoRadio, IoGift, IoTicket, IoHeadset } from 'react-icons/io5';
 import type { IconType } from 'react-icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSEO } from '@/hooks/useSEO';
 import toast from 'react-hot-toast';
+import { AmptiveSpinner } from '@/components/AmptiveSpinner';
+
 import { api } from '@/lib/api/client';
 
 type WaitlistRole = 'host' | 'monetize' | 'events' | 'listener';
 
-interface WaitlistProps {
-  isLockedMode?: boolean;
-}
-
+/**
+ * The four things someone can be here for. Kept as data rather than four near-identical
+ * blocks of markup, which is how the copy and the styling drifted apart in the first place.
+ */
 const WAITLIST_GOALS: {
   role: WaitlistRole;
   icon: IconType;
   title: string;
   description: string;
+  /** Pastel wash behind the card's texture. */
   tint: [number, number, number];
 }[] = [
   {
@@ -46,14 +51,30 @@ const WAITLIST_GOALS: {
     role: 'listener',
     icon: IoHeadset,
     title: 'Listening and discovery',
-    description: 'Join communities, attend unforgettable events, support creators, & earn rewards.',
+    description: 'Join communities, attend life-changing events, support your favorite creators, & earn rewards.',
     tint: [208, 233, 214],
   },
 ];
 
+/** One tile of the scale pattern. Height is twice the width so the shapes interlock. */
 const TEXTURE_TILE_W = 88;
 const TEXTURE_TILE_H = 176;
 
+/**
+ * The soft scalloped wash behind each card: a pastel base under an interlocking arc
+ * pattern, covering the whole card.
+ *
+ * The shapes come from two radial gradients anchored to opposite edges of a tile that is
+ * twice as tall as it is wide — that is what makes them mesh seamlessly. Anchoring
+ * highlights inside the tile instead leaves a bright edge on every tile row, which reads
+ * as horizontal banding rather than scallops.
+ *
+ * They are filled and soft-edged rather than rings: a hard stop makes the pattern read as
+ * a chain of outlined circles instead of quilted padding.
+ *
+ * Built from gradients rather than an image so it stays sharp at any card size, retints
+ * from one rgb triple, and costs nothing to download.
+ */
 const cardTexture = ([r, g, b]: [number, number, number]) => {
   const puff = 'rgba(255, 255, 255, 0.62)';
   const tint = `rgba(${r}, ${g}, ${b}, 0.85)`;
@@ -71,11 +92,21 @@ const cardTexture = ([r, g, b]: [number, number, number]) => {
   };
 };
 
+/**
+ * A white veil over the lower half, so the copy normally sits on clean paper. Hovering
+ * fades it away and lets the colour flood the whole card.
+ *
+ * It has to be its own layer rather than a stop inside the texture above: gradients are
+ * not interpolable, so a transition between two background-images would snap. Opacity on
+ * a separate element animates properly.
+ */
 const CARD_VEIL: React.CSSProperties = {
-  background: 'linear-gradient(to bottom, rgba(255, 255, 255, 0) 36%, rgba(255, 255, 255, 0.94) 78%, rgb(255, 255, 255) 100%)',
+  backgroundImage:
+    'linear-gradient(to bottom, rgba(255,255,255,0) 34%, rgba(255,255,255,0.92) 68%, rgb(255,255,255) 100%)',
 };
 
-export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
+
+export default function Waitlist() {
   useSEO({
     title: 'Join the Amptive Waitlist | Early Access',
     description: 'Be among the first to experience Amptive live audio shows, direct monetization, and creator gifting.',
@@ -87,8 +118,8 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
   const [userRole, setUserRole] = useState<WaitlistRole | null>(null);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  /** Which goal card the pointer or keyboard is currently on, so its colour floods. */
   const [hoveredRole, setHoveredRole] = useState<WaitlistRole | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   const selectedGoal = WAITLIST_GOALS.find(goal => goal.role === userRole);
 
@@ -106,21 +137,19 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
 
     setLoading(true);
     try {
-      const apiUseCaseMap: Record<WaitlistRole | 'other', string> = {
+      const apiUseCaseMap: Record<WaitlistRole, string> = {
         'host': 'earn_from_live_audio',
         'monetize': 'gifts_and_tip',
         'events': 'event_ticketing',
-        'listener': 'listening_and_discovery',
-        'other': 'listening_and_discovery'
+        'listener': 'listening_and_discovery'
       };
 
       const payload = {
         email: email.trim(),
-        use_case: apiUseCaseMap[userRole || 'other'] || 'listening_and_discovery'
+        use_case: (userRole && apiUseCaseMap[userRole]) || 'listening_and_discovery'
       };
 
       await api.post('/waitlist', payload, { skipAuth: true });
-      
       setStep('success');
       toast.success('Successfully joined the waitlist!');
     } catch (err: any) {
@@ -129,29 +158,17 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
         toast.success("You're already on the waitlist! We'll notify you when early access opens.", { duration: 5000 });
         setStep('success');
       } else {
-        toast.error(err.message || 'Failed to join waitlist. Please try again.');
+        toast.error(err.message || 'Something went wrong. Please try again.');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleShare = async () => {
-    const url = typeof window !== 'undefined' ? window.location.origin : 'https://getamptive.com';
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedLink(true);
-      toast.success('Link copied! Share it with friends 🎉');
-      setTimeout(() => setCopiedLink(false), 2500);
-    } catch {
-      toast.success('Waitlist link: ' + url);
-    }
-  };
-
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB] flex flex-col justify-between font-sans pt-16 sm:pt-20 md:pt-28">
+    <div className="min-h-screen overflow-x-hidden bg-[#FBFBFB] flex flex-col justify-between font-sans pt-20 sm:pt-24 md:pt-32">
       {/* Main Form Body */}
-      <main className="container relative z-10 mx-auto px-4 pt-4 sm:pt-8 pb-8 flex-1 flex items-start sm:items-center justify-center">
+      <main className="container relative z-10 mx-auto px-4 pt-6 sm:pt-10 pb-8 flex-1 flex items-start sm:items-center justify-center">
         <AnimatePresence mode="wait">
           {/* STEP 1: App Waitlist Goal Selection */}
           {step === 'type' && (
@@ -181,11 +198,14 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
                     key={goal.role}
                     type="button"
                     onClick={() => handleSelectRole(goal.role)}
+                    // Driven from state rather than a `group-hover:` class so the veil's
+                    // opacity is one explicit value, and keyboard focus reveals the colour
+                    // the same way a pointer does.
                     onMouseEnter={() => setHoveredRole(goal.role)}
                     onMouseLeave={() => setHoveredRole(current => (current === goal.role ? null : current))}
                     onFocus={() => setHoveredRole(goal.role)}
                     onBlur={() => setHoveredRole(current => (current === goal.role ? null : current))}
-                    className="group relative flex min-h-[300px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white text-left transition-colors hover:border-black/20 focus:outline-none focus-visible:border-black cursor-pointer shadow-xs hover:shadow-md"
+                    className="group relative flex min-h-[300px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white text-left transition-colors hover:border-black/20 focus:outline-none focus-visible:border-black"
                   >
                     <span
                       aria-hidden="true"
@@ -201,6 +221,7 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/5 text-black">
                         <goal.icon className="h-5 w-5" />
                       </span>
+                      {/* Pushed to the bottom, where the texture has faded out to white. */}
                       <h3 className="mt-auto text-[17px] font-bold leading-snug text-black">
                         {goal.title}
                       </h3>
@@ -212,17 +233,15 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
                 ))}
               </div>
 
-              {!isLockedMode && (
-                <div className="mt-8 text-center px-4">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/')}
-                    className="text-xs font-medium text-gray-500 hover:text-black transition-colors underline underline-offset-4 cursor-pointer"
-                  >
-                    Return to Homepage
-                  </button>
-                </div>
-              )}
+              <div className="mt-8 text-center px-4">
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="text-xs font-medium text-gray-500 hover:text-black transition-colors underline underline-offset-4"
+                >
+                  Return to Homepage
+                </button>
+              </div>
             </motion.div>
           )}
 
@@ -245,6 +264,8 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
                 </p>
               </div>
 
+              {/* Field and button metrics mirror SignupForm, so the two flows feel like
+                  one product rather than two. */}
               <form onSubmit={handleSubmitDetails}>
                 <label htmlFor="waitlist-email" className="block text-sm font-medium text-gray-700 mb-1">
                   Email
@@ -264,25 +285,15 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="h-10 w-full rounded-full bg-black text-sm font-medium text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer shadow-sm"
+                  className="h-10 w-full rounded-full bg-black text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {loading ? 'Joining...' : 'Continue'}
                 </button>
               </form>
-
-              <div className="mt-4 text-center">
-                <button
-                  type="button"
-                  onClick={() => setStep('type')}
-                  className="text-xs font-medium text-gray-500 hover:text-black transition-colors cursor-pointer"
-                >
-                  ← Back to options
-                </button>
-              </div>
             </motion.div>
           )}
 
-          {/* STEP 3: Success Confirmation */}
+          {/* STEP 3: Success Confirmation matching reference screenshot 1:1 */}
           {step === 'success' && (
             <motion.div
               key="step-success"
@@ -291,61 +302,42 @@ export default function Waitlist({ isLockedMode = false }: WaitlistProps) {
               transition={{ duration: 0.4 }}
               className="max-w-sm w-full mx-auto py-4 px-2 text-center relative"
             >
-              <div className="mb-6 flex items-center justify-center">
-                <img
-                  src="/amptivelogo.svg"
-                  alt="Amptive Logo"
-                  className="h-12 md:h-14 w-auto"
-                  style={{ filter: 'brightness(0)' }}
-                />
-              </div>
+                {/* Clean Static Amptive Logo */}
+                <div className="mb-6 flex items-center justify-center">
+                  <img
+                    src="/amptivelogo.svg"
+                    alt="Amptive Logo"
+                    className="h-12 md:h-14 w-auto"
+                    style={{
+                      filter: 'brightness(0)'
+                    }}
+                  />
+                </div>
 
-              <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight leading-tight sm:whitespace-nowrap">
-                Early Access Unlocked!
-              </h1>
+                {/* Title */}
+                <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight leading-tight sm:whitespace-nowrap">
+                  Early Access Unlocked!
+                </h1>
 
-              <p className="text-sm font-medium text-gray-500 mt-2.5 max-w-sm mx-auto leading-relaxed">
-                We'll email <span className="font-bold text-gray-900">{email}</span> the moment early access opens!
-              </p>
+                {/* Subtitle */}
+                <p className="text-sm font-medium text-gray-500 mt-2.5 max-w-sm mx-auto leading-relaxed">
+                  We'll email <span className="font-bold text-gray-900">{email}</span> the moment early access opens!
+                </p>
 
-              <div className="relative z-10 mt-8 space-y-3">
+              {/* Action Button */}
+              <div className="relative z-10 mt-8">
                 <button
                   type="button"
-                  onClick={handleShare}
-                  className="w-full h-12 rounded-full bg-black text-white text-sm font-bold hover:bg-gray-800 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                  onClick={() => navigate('/')}
+                  className="w-full h-12 rounded-full bg-black text-white text-sm font-semibold hover:bg-gray-900 transition-colors shadow-md flex items-center justify-center cursor-pointer"
                 >
-                  {copiedLink ? (
-                    <>
-                      <Check size={16} className="text-emerald-400" />
-                      <span>Link Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Share2 size={16} />
-                      <span>Share with Friends</span>
-                    </>
-                  )}
+                  Go to Home
                 </button>
-
-                {!isLockedMode && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/')}
-                    className="text-xs font-semibold text-gray-500 hover:text-gray-900 transition-colors"
-                  >
-                    Return to Homepage
-                  </button>
-                )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
-
-      {/* Footer */}
-      <footer className="container mx-auto px-6 py-6 text-center text-xs text-gray-400">
-        <p>© {new Date().getFullYear()} Amptive Technologies. All rights reserved.</p>
-      </footer>
     </div>
   );
 }

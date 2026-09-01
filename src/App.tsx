@@ -41,29 +41,16 @@ import Waitlist from './pages/Waitlist';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
-import { isWaitlistModeActive } from './utils/waitlistMode';
 
 function App() {
-  const isWaitlistLocked = isWaitlistModeActive();
-
   return (
     <ThemeProvider>
       <Router>
         <ScrollToTop />
-        {isWaitlistLocked ? (
-          <Routes>
-            <Route path="/privacy" element={<PrivacyPolicy />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="/terms" element={<TermsOfService />} />
-            <Route path="/terms-of-service" element={<TermsOfService />} />
-            <Route path="*" element={<Waitlist isLockedMode={true} />} />
-          </Routes>
-        ) : (
-          <Routes>
-            <Route path="/dashboard/*" element={<DashboardWithSplash />} />
-            <Route path="*" element={<MainLayout />} />
-          </Routes>
-        )}
+        <Routes>
+          <Route path="/dashboard/*" element={<DashboardWithSplash />} />
+          <Route path="*" element={<MainLayout />} />
+        </Routes>
         <Toaster position="top-center" richColors closeButton expand={false} />
       </Router>
     </ThemeProvider>
@@ -135,7 +122,7 @@ function MainLayout() {
   const knownRootPrefixes = [
     '/waitlist', '/explore', '/events', '/invest', '/store', 
     '/community', '/help', '/ai-tool', '/ai-chat', '/chat-mode', 
-    '/download', '/login', '/signup', '/verify-otp', '/complete-profile', 
+    '/download', '/login', '/signup', '/verify', '/verify-otp', '/complete-profile', 
     '/auth', '/paystack', '/purchase', '/profile', '/my-tickets', 
     '/blog', '/privacy', '/privacy-policy', '/terms', '/terms-of-service', 
     '/faqs', '/community-guidelines', '/dashboard'
@@ -172,6 +159,7 @@ function MainLayout() {
           <Route path="/verify-otp" element={<VerifyOtpPage />} />
           <Route path="/complete-profile" element={<CompleteProfilePage />} />
           <Route path="/auth/callback" element={<OAuthCallback />} />
+          <Route path="/verify" element={<PaystackCallback />} />
           <Route path="/paystack/callback" element={<PaystackCallback />} />
           <Route path="/purchase/confirmed" element={<PurchaseConfirmed />} />
           <Route path="/profile" element={<ProfilePage />} />

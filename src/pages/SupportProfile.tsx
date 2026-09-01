@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QrCode, Share2, MoreHorizontal, Youtube, Twitch, Heart, Check, ArrowLeft, Star, Briefcase, Eye, Settings, CreditCard, Users, Coffee, Crown, Zap, Gift, Loader2, Copy, Link } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,6 +15,7 @@ import { playSwoosh, playSuccessChime } from '@/utils/audio';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { useSEO } from '@/hooks/useSEO';
 import { formatSupportUrl, getSupportDomainPrefix } from '@/utils/supportUrl';
+import { toast } from 'sonner';
 
 /** Cap on the note a supporter leaves, so it stays readable in the activity list. */
 const SUPPORT_MESSAGE_LIMIT = 200;
@@ -58,6 +59,17 @@ function getSupportActionWord(profileType?: string | null): string {
   return 'Gift';
 }
 
+function SupportShareIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path
+        d="M17.1 7.92939L11.4851 13.1596L11.485 9.6728C11.485 9.6728 11.2298 9.67282 10.8045 9.59358C10.3791 9.51433 9.86865 9.43508 9.18805 9.43508C8.50746 9.35583 7.82686 9.35584 7.06119 9.51433C6.63582 9.51433 6.2955 9.67281 5.87013 9.75205C5.44476 9.91054 5.10446 9.98979 4.67909 10.1483C4.25379 10.3067 3.91354 10.5444 3.57329 10.7821C3.23282 11.02 2.89253 11.2577 2.63731 11.5747C2.29689 11.8918 2.04173 12.1295 1.78657 12.4464C1.53134 12.7634 1.27613 13.0011 1.10598 13.3181C0.93585 13.635 0.765712 13.8727 0.595578 14.1105C0.510457 14.3483 0.340313 14.586 0.255239 14.7445C0.08509 15.1407 0 15.2992 0 15.2992C0 15.2992 5.19007e-06 15.0615 0.0850796 14.6652C0.0850796 14.5068 0.170164 14.1898 0.255239 13.952C0.340268 13.7144 0.425287 13.3977 0.510316 13.0809C0.595526 12.7634 0.765675 12.3671 0.935824 12.0501C1.10597 11.6539 1.27613 11.2577 1.53135 10.8615C1.7015 10.4653 2.0418 10.069 2.3821 9.6728C2.72243 9.27654 3.0627 8.88034 3.48806 8.56338L4.76417 7.61245C5.18954 7.37472 5.7 7.13696 6.21045 6.89923C7.14627 6.503 8.08206 6.26527 8.84773 6.10678C9.6134 5.94829 10.294 5.86905 10.7194 5.78981C11.1448 5.71056 11.4851 5.70859 11.4851 5.70859V2.69922L17.1 7.92939Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 export default function SupportProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -75,14 +87,77 @@ export default function SupportProfile() {
   const [activityTotalPages, setActivityTotalPages] = useState(1);
   const [activityLoading, setActivityLoading] = useState(false);
 
-  const [selectedTier, setSelectedTier] = useState<number | 'custom' | null>(null);
+  const [selectedTier, setSelectedTier] = useState<number | 'custom' | null>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? sessionStorage.getItem('pending_support_data') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.amount) return parsed.amount;
+      }
+    } catch {}
+    return null;
+  });
   const [customAmount, setCustomAmount] = useState<string>('');
-  const [supportMessage, setSupportMessage] = useState<string>('');
-  const [supporterName, setSupporterName] = useState<string>('');
-  const [supporterEmail, setSupporterEmail] = useState<string>('');
+  const [supportMessage, setSupportMessage] = useState<string>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? sessionStorage.getItem('pending_support_data') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.message) return parsed.message;
+      }
+    } catch {}
+    return '';
+  });
+  const [supporterName, setSupporterName] = useState<string>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? sessionStorage.getItem('pending_support_data') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.supporterName) return parsed.supporterName;
+      }
+    } catch {}
+    return '';
+  });
+  const [supporterEmail, setSupporterEmail] = useState<string>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? sessionStorage.getItem('pending_support_data') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.supporterEmail) return parsed.supporterEmail;
+      }
+    } catch {}
+    return '';
+  });
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentChannel, setPaymentChannel] = useState<string>('paystack');
-  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success'>('idle');
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success'>(() => {
+    if (typeof window === 'undefined') return 'idle';
+    const searchParams = new URLSearchParams(window.location.search);
+    const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('tx_ref');
+    const statusParam = searchParams.get('status')?.toLowerCase();
+    const isSuccessful =
+      statusParam === 'successful' ||
+      statusParam === 'success' ||
+      statusParam === 'completed' ||
+      (Boolean(reference) && statusParam !== 'cancelled' && statusParam !== 'failed');
+
+    if (isSuccessful) return 'processing';
+
+    try {
+      const raw = sessionStorage.getItem('pending_support_data');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (!parsed.initiatedAt || Date.now() - parsed.initiatedAt < 15 * 60 * 1000)) {
+          return 'processing';
+        }
+      }
+    } catch {}
+
+    return 'idle';
+  });
+  const [isRedirectingToGateway, setIsRedirectingToGateway] = useState(false);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isProcessingSuccessRef = useRef(false);
   const [shadowColor, setShadowColor] = useState<string | null>(null);
   const [isDownloadingCard, setIsDownloadingCard] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
@@ -96,6 +171,21 @@ export default function SupportProfile() {
   const viewAs = queryParams.get('viewAs');
   const isOwner = Boolean(currentUserId && profile?.user_id && currentUserId === profile.user_id && viewAs !== 'public');
   const actionWord = getSupportActionWord(profile?.profile_type);
+  const seoDisplayName = profile?.full_name || profile?.name || profile?.username || 'Amptive Creator';
+  const seoAction = getSupportActionWord(profile?.profile_type).toLowerCase();
+  const seoDescription = profile
+    ? (profile.support_message || profile.support_tagline || `Show your appreciation for ${seoDisplayName} with a ${seoAction} on Amptive.`)
+        .replace(/<[^>]*>/g, '')
+        .slice(0, 155)
+    : 'Support creators, businesses, and event organizers on Amptive.';
+
+  useSEO({
+    title: profile ? `${actionWord} ${seoDisplayName}` : 'Support on Amptive',
+    description: seoDescription,
+    image: profile?.support_banner_url || profile?.support_avatar_url || profile?.avatar_url,
+    url: formatSupportUrl(profile, profile?.username || profile?.user_id || id),
+    type: 'profile',
+  });
 
   const handleCopySupportLink = async () => {
     const linkSlug = profile?.username || profile?.user_id || id;
@@ -136,13 +226,7 @@ export default function SupportProfile() {
       return;
     }
 
-    // The backend requires supporter_name to contain at least a first and last name
-    // when provided. Validate before sending to avoid a 422.
     const trimmedName = supporterName.trim();
-    if (trimmedName && trimmedName.split(/\s+/).filter(Boolean).length < 2) {
-      setPaymentError('Please enter your full name (first and last name).');
-      return;
-    }
 
     const primaryUsername = profile?.username || (profile as any)?.user?.username || id;
     const targets = Array.from(new Set([primaryUsername].filter(Boolean) as string[]));
@@ -152,8 +236,26 @@ export default function SupportProfile() {
       return;
     }
 
-    setPaymentStatus('processing');
-    playSwoosh();
+    setIsRedirectingToGateway(true);
+
+    // Save pending support details so after payment gateway redirects back,
+    // the amount, message, and creator are accurately displayed in the success confirmation.
+    try {
+      const pendingData = {
+        amount: amountNum,
+        message: supportMessage.trim(),
+        username: primaryUsername || id,
+        supporterName: trimmedName,
+        supporterEmail: trimmedEmail,
+        actionWord: actionWord,
+        initiatedAt: Date.now(),
+      };
+      sessionStorage.setItem('pending_support_data', JSON.stringify(pendingData));
+    } catch {}
+
+    // Paystack returns here first so the callback can preserve ticket flows while
+    // routing support payments back to this profile's animation sequence.
+    const callbackUrl = `${window.location.origin}/verify`;
 
     // Try flutterwave first (paystack may not be configured for all creators)
     const channelsToTry = Array.from(new Set([paymentChannel, 'flutterwave', 'paystack']));
@@ -169,15 +271,24 @@ export default function SupportProfile() {
             payment_channel: channel,
             email: trimmedEmail,
             supporter_name: trimmedName || undefined,
+            callback_url: callbackUrl,
+            redirect_url: callbackUrl,
           });
 
           if (result.ok && result.data) {
             if (result.data.payment_url) {
+              // Direct straight to payment gateway
               window.location.href = result.data.payment_url;
               return;
             }
-            setPaymentStatus('success');
-            playSuccessChime();
+            // Simulated/immediate completion fallback: show paper plane illustration, then success
+            setIsRedirectingToGateway(false);
+            setPaymentStatus('processing');
+            playSwoosh();
+            setTimeout(() => {
+              setPaymentStatus('success');
+              playSuccessChime();
+            }, 2500);
             return;
           }
 
@@ -186,22 +297,18 @@ export default function SupportProfile() {
           if (lastError.toLowerCase().includes('not found')) {
             break;
           }
-          // For 500 / channel-specific errors, keep trying the next channel — the
-          // current one may simply be misconfigured for this creator.
-          // For 422 validation errors, surface them immediately since all channels
-          // will reject the same invalid payload.
           if (lastError.toLowerCase().includes('validation') || lastError.toLowerCase().includes('must contain')) {
-            setPaymentStatus('idle');
+            setIsRedirectingToGateway(false);
             setPaymentError(lastError);
             return;
           }
         }
       }
 
-      setPaymentStatus('idle');
+      setIsRedirectingToGateway(false);
       setPaymentError(lastError);
     } catch (err: any) {
-      setPaymentStatus('idle');
+      setIsRedirectingToGateway(false);
       setPaymentError(err?.message || 'An unexpected error occurred during checkout.');
     }
   };
@@ -306,55 +413,63 @@ export default function SupportProfile() {
     }
   };
 
+  /*
+   * For the owner: the private /history endpoint reports payments they received.
+   * For guests: the public /activity endpoint shows the creator's successful
+   * supports for the current month — no auth required.
+   */
+  const fetchActivity = useCallback(async () => {
+    if (!profile?.user_id) {
+      setPayments([]);
+      setSupporterCount(0);
+      return;
+    }
+
+    const username = (profile.username || id || '').toLowerCase();
+    // Clean up any stale artificial localStorage entries
+    try {
+      localStorage.removeItem(`amptive_local_supports_${username}`);
+    } catch {}
+
+    if (isOwner) {
+      const historyRes = await getSupportHistory({
+        date_filter: timeRange === '7' ? 'last_7_days' : timeRange === '30' ? 'last_30_days' : timeRange === '90' ? 'last_90_days' : 'all_time',
+        page: 1,
+        page_size: 50,
+      });
+
+      if (historyRes.ok) {
+        setPayments(historyRes.items || []);
+        setSupporterCount(historyRes.total || historyRes.items.length || 0);
+      }
+    } else {
+      // Public activity for guests
+      if (!username) return;
+      setActivityLoading(true);
+      const activityRes = await getSupportActivity(username, {
+        page: activityPage,
+        page_size: 10,
+      });
+
+      if (activityRes.ok) {
+        setPublicActivity(activityRes.items || []);
+        setSupporterCount(activityRes.total || activityRes.items.length || 0);
+        setActivityTotalPages(activityRes.total_pages || 1);
+      }
+      setActivityLoading(false);
+    }
+  }, [profile?.user_id, profile?.username, isOwner, timeRange, activityPage, id]);
+
   useEffect(() => {
-    /*
-     * For the owner: the private /history endpoint reports payments they received.
-     * For guests: the public /activity endpoint shows the creator's successful
-     * supports for the current month — no auth required.
-     */
-    const fetchActivity = async () => {
-      if (!profile?.user_id) {
-        setPayments([]);
-        setSupporterCount(0);
-        return;
-      }
-
-      if (isOwner) {
-        const historyRes = await getSupportHistory({
-          date_filter: timeRange === '7' ? 'last_7_days' : timeRange === '30' ? 'last_30_days' : timeRange === '90' ? 'last_90_days' : 'all_time',
-          page: 1,
-          page_size: 50,
-        });
-
-        if (historyRes.ok) {
-          setPayments(historyRes.items);
-          setSupporterCount(historyRes.total || historyRes.items.length);
-        }
-      } else {
-        // Public activity for guests
-        const username = profile.username || id;
-        if (!username) return;
-        setActivityLoading(true);
-        const activityRes = await getSupportActivity(username, {
-          page: activityPage,
-          page_size: 10,
-        });
-        if (activityRes.ok) {
-          setPublicActivity(activityRes.items);
-          setSupporterCount(activityRes.total || activityRes.items.length);
-          setActivityTotalPages(activityRes.total_pages);
-        }
-        setActivityLoading(false);
-      }
-    };
-
     fetchActivity();
-  }, [profile?.user_id, isOwner, timeRange, activityPage, id]);
+  }, [fetchActivity]);
 
   useEffect(() => {
     const loadData = async () => {
       if (!id) return;
-      setLoading(true);
+      if (!profile) {
+        setLoading(true);
+      }
       try {
         const user = await getCurrentUser();
         setCurrentUserId(user?.user_id || user?.id || null);
@@ -408,6 +523,142 @@ export default function SupportProfile() {
     }
   }, [paymentStatus]);
 
+  const triggerSuccessFlow = useCallback((refFromUrl?: string) => {
+    if (isProcessingSuccessRef.current) return;
+    isProcessingSuccessRef.current = true;
+
+    const raw = sessionStorage.getItem('pending_support_data');
+    sessionStorage.removeItem('pending_support_data');
+
+    let parsedRef = refFromUrl || '';
+
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        parsedRef = parsed.reference || parsedRef || `ref-${Date.now()}`;
+
+        if (parsed.amount) {
+          setSelectedTier(parsed.amount);
+        }
+        if (parsed.message) {
+          setSupportMessage(parsed.message);
+        }
+      } catch {}
+    }
+
+    // Check if this specific payment was already processed in this session
+    const processedKey = 'amptive_processed_support_refs';
+    let processedRefs: string[] = [];
+    try {
+      const savedRefs = JSON.parse(sessionStorage.getItem(processedKey) || '[]');
+      processedRefs = Array.isArray(savedRefs) ? savedRefs : [];
+    } catch {}
+
+    if (parsedRef && processedRefs.includes(parsedRef)) {
+      // A previous event already completed this payment. Do not repeat its activity
+      // work, but never leave this return route stranded in an invisible loader.
+      setPaymentStatus('success');
+      isProcessingSuccessRef.current = false;
+      return;
+    }
+    if (parsedRef) {
+      processedRefs.push(parsedRef);
+      sessionStorage.setItem(processedKey, JSON.stringify(processedRefs));
+    }
+
+    setIsRedirectingToGateway(false);
+    setPaymentStatus('processing');
+    playSwoosh();
+
+    // Refresh live activity data from backend
+    fetchActivity();
+
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+    }
+
+    successTimerRef.current = setTimeout(() => {
+      setPaymentStatus('success');
+      playSuccessChime();
+      fetchActivity();
+      isProcessingSuccessRef.current = false;
+    }, 3800);
+  }, [fetchActivity]);
+
+  // Handle return from payment gateway (Paystack / Flutterwave) & modal events
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('tx_ref');
+    const statusParam = searchParams.get('status')?.toLowerCase();
+
+    const isSuccessful =
+      statusParam === 'successful' ||
+      statusParam === 'success' ||
+      statusParam === 'completed' ||
+      (Boolean(reference) && statusParam !== 'cancelled' && statusParam !== 'failed');
+
+    const isFailed = statusParam === 'cancelled' || statusParam === 'failed';
+
+    if (isSuccessful) {
+      triggerSuccessFlow(reference || undefined);
+      const cleanUrl = window.location.pathname + (searchParams.get('viewAs') ? `?viewAs=${searchParams.get('viewAs')}` : '');
+      window.history.replaceState({}, '', cleanUrl);
+    } else if (isFailed) {
+      sessionStorage.removeItem('pending_support_data');
+      setIsRedirectingToGateway(false);
+      setPaymentStatus('idle');
+      setPaymentError('Payment was not completed. Please try again.');
+      toast.error('Payment was not completed. Please try again.');
+      const cleanUrl = window.location.pathname + (searchParams.get('viewAs') ? `?viewAs=${searchParams.get('viewAs')}` : '');
+      window.history.replaceState({}, '', cleanUrl);
+    }
+
+    // Also handle postMessage events (when Paystack/Flutterwave communicates success via iframe/modal)
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data) return;
+
+      const isPaystackSuccess =
+        data === 'paystack:success' ||
+        data?.event === 'successful' ||
+        data?.event === 'charge.success' ||
+        data?.status === 'success';
+
+      if (isPaystackSuccess) {
+        triggerSuccessFlow();
+      }
+    };
+
+    // When the supporter finishes on Paystack and returns/focuses back on this tab
+    const handleWindowFocusOrVisibility = () => {
+      try {
+        const raw = sessionStorage.getItem('pending_support_data');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          // If initiated within the last 15 minutes, trigger the success animation flow
+          if (parsed && (!parsed.initiatedAt || Date.now() - parsed.initiatedAt < 15 * 60 * 1000)) {
+            triggerSuccessFlow(parsed.reference);
+          }
+        }
+      } catch {}
+    };
+
+    window.addEventListener('message', handleMessage);
+    window.addEventListener('focus', handleWindowFocusOrVisibility);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleWindowFocusOrVisibility();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('focus', handleWindowFocusOrVisibility);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [id, triggerSuccessFlow]);
+
   const hexToRgba = (hex: string, alpha: number) => {
     const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
     hex = hex.replace(shorthandRegex, (_m, r, g, b) => r + r + g + g + b + b);
@@ -458,13 +709,13 @@ export default function SupportProfile() {
     });
   }, [payments, timeRange]);
 
-  if (loading) {
+  if (loading && paymentStatus === 'idle') {
     return (
       <AmptiveSplash />
     );
   }
 
-  if (!profile) {
+  if (!profile && paymentStatus === 'idle' && !loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4">
         <div className="text-6xl mb-4">🏜️</div>
@@ -480,8 +731,8 @@ export default function SupportProfile() {
     );
   }
 
-  const displayName = profile.full_name || profile.name || profile.username || 'Amptive Creator';
-  const profileAvatarUrl = profile.support_avatar_url || profile.avatar_url;
+  const displayName = profile?.full_name || profile?.name || profile?.username || 'Amptive Creator';
+  const profileAvatarUrl = profile?.support_avatar_url || profile?.avatar_url;
   const avatarInitials = displayName
     .split(/\s+/)
     .filter(Boolean)
@@ -579,30 +830,51 @@ export default function SupportProfile() {
               </button>
               <button 
                 onClick={handleCopySupportLink} 
-                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-emerald-600 shadow-sm group relative"
+                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-black transition-colors duration-200 ease-out shadow-sm group relative"
                 title="Copy link"
               >
-                {copiedLink ? <Check size={20} className="text-emerald-600" /> : <Copy size={20} />}
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={copiedLink ? 'copied' : 'copy'}
+                    initial={{ opacity: 0, scale: 0.72, rotate: -12 }}
+                    animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                    exit={{ opacity: 0, scale: 0.72, rotate: 12 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 24, mass: 0.55 }}
+                    className="block text-black"
+                  >
+                    {copiedLink ? <Check size={20} /> : <Copy size={20} />}
+                  </motion.span>
+                </AnimatePresence>
                 <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                   {copiedLink ? 'Copied!' : 'Copy'}
                 </span>
               </button>
-              <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-green-600 shadow-sm"><Share2 size={20} /></button>
+              <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-black hover:bg-gray-50 transition-colors duration-200 shadow-sm" title="Share profile"><SupportShareIcon /></button>
             </>
           ) : (
             <>
               <button 
                 onClick={handleCopySupportLink} 
-                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-emerald-600 shadow-sm group relative"
+                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-black transition-colors duration-200 ease-out shadow-sm group relative"
                 title="Copy link"
               >
-                {copiedLink ? <Check size={20} className="text-emerald-600" /> : <Copy size={20} />}
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={copiedLink ? 'copied' : 'copy'}
+                    initial={{ opacity: 0, scale: 0.72, rotate: -12 }}
+                    animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                    exit={{ opacity: 0, scale: 0.72, rotate: 12 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 24, mass: 0.55 }}
+                    className="block text-black"
+                  >
+                    {copiedLink ? <Check size={20} /> : <Copy size={20} />}
+                  </motion.span>
+                </AnimatePresence>
                 <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                   {copiedLink ? 'Copied!' : 'Copy'}
                 </span>
               </button>
-              <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all shadow-sm"><Share2 size={20} /></button>
-              <button className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all shadow-sm"><MoreHorizontal size={20} /></button>
+              <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-black hover:bg-gray-50 transition-colors duration-200 shadow-sm" title="Share profile"><SupportShareIcon /></button>
             </>
           )}
         </div>
@@ -681,15 +953,18 @@ export default function SupportProfile() {
                     <span className="text-gray-400 font-normal">{getSupportDomainPrefix(profile)}/</span>
                     <span className="font-bold text-gray-900">{profile.username || 'creator'}</span>
                     <span className="w-px h-3 bg-gray-200 mx-0.5" />
-                    {copiedLink ? (
-                      <span className="flex items-center gap-1 text-emerald-600 font-bold">
-                        <Check size={13} className="text-emerald-600" /> Copied!
-                      </span>
-                    ) : (
-                      <span className="flex items-center text-gray-400 group-hover:text-black transition-colors">
-                        <Copy size={13} />
-                      </span>
-                    )}
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.span
+                        key={copiedLink ? 'copied' : 'copy'}
+                        initial={{ opacity: 0, x: -4, scale: 0.9 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 4, scale: 0.9 }}
+                        transition={{ type: 'spring', stiffness: 420, damping: 25, mass: 0.5 }}
+                        className={`flex items-center gap-1 font-bold ${copiedLink ? 'text-black' : 'text-gray-400 group-hover:text-black transition-colors'}`}
+                      >
+                        {copiedLink ? <><Check size={13} /> Copied!</> : <Copy size={13} />}
+                      </motion.span>
+                    </AnimatePresence>
                   </button>
                 </div>
               </div>
@@ -753,37 +1028,44 @@ export default function SupportProfile() {
       {/* Dynamic Content Based on Role & Tab */}
         <div className="mt-12">
           {paymentStatus === 'processing' ? (
-            <div className="max-w-4xl mx-auto px-4 md:px-0 flex flex-col items-center justify-center text-center space-y-6 py-24 min-h-[50vh]">
+            <div className="fixed inset-0 z-[80] flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-4 text-center">
               <motion.img 
                 src="/images/paper_plane.png"
                 alt="Sending support illustration"
-                className="w-40 h-40 md:w-56 md:h-56 drop-shadow-2xl object-contain"
-                initial={{ x: -1000, y: 1000, opacity: 0, rotate: -15 }}
+                className="w-48 h-48 md:w-64 md:h-64 drop-shadow-2xl object-contain"
+                initial={{ x: -220, y: 90, opacity: 0, scale: 0.7, rotate: -20 }}
                 animate={{ 
-                  x: [ -1000, 0, 0, 0, 1000 ], 
-                  y: [ 1000, 0, -20, 20, -1000 ], 
+                  x: [ -220, 0, 0, 0, 220 ], 
+                  y: [ 90, 0, -15, 15, -120 ], 
                   opacity: [ 0, 1, 1, 1, 0 ], 
-                  rotate: [ -15, 0, -5, 5, 25 ],
-                  scale: [ 0.8, 1, 1.05, 0.95, 0.5 ]
+                  rotate: [ -20, 0, -6, 6, 25 ],
+                  scale: [ 0.6, 1, 1.08, 0.96, 0.5 ]
                 }}
                 transition={{ 
-                  duration: 2.5, 
-                  times: [0, 0.2, 0.5, 0.8, 1],
+                  duration: 3.8, 
+                  times: [0, 0.22, 0.55, 0.82, 1],
                   ease: "easeInOut" 
                 }}
               />
               <motion.h3
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: [0, 1, 1, 0], y: [10, 0, 0, -10] }}
-                transition={{ duration: 2.5, times: [0, 0.2, 0.8, 1] }}
-                className="text-2xl font-bold text-gray-900 drop-shadow-sm"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: [0, 1, 1, 1, 0], y: [12, 0, 0, 0, -12] }}
+                transition={{ duration: 3.8, times: [0, 0.2, 0.55, 0.85, 1] }}
+                className="text-2xl md:text-3xl font-bold text-gray-900 drop-shadow-sm"
               >
                 Sending your {actionWord.toLowerCase()}...
               </motion.h3>
             </div>
           ) : paymentStatus === 'success' ? (
-            <div className="max-w-4xl mx-auto px-4 md:px-0 flex flex-col items-center justify-center text-center space-y-6 py-12">
-              <Confetti width={windowSize.width} height={windowSize.height} recycle={false} numberOfPieces={500} />
+            <div className="relative z-[81] max-w-4xl mx-auto px-4 md:px-0 flex flex-col items-center justify-center text-center space-y-6 py-12">
+              <Confetti
+                width={windowSize.width}
+                height={windowSize.height}
+                recycle={false}
+                numberOfPieces={500}
+                tweenDuration={180}
+                style={{ position: 'fixed', inset: 0, zIndex: 90, pointerEvents: 'none' }}
+              />
               <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center">
                 <motion.div 
                   className="relative w-24 h-24 mb-6 perspective-[1000px]"
@@ -1062,7 +1344,7 @@ export default function SupportProfile() {
                         <h3 className="text-2xl font-bold text-gray-900">Recent</h3>
                         <div className="flex items-center gap-2 mt-2 text-indigo-600 font-bold text-sm">
                           <span>
-                            {publicActivity.length} recent {actionWord === 'Gift' ? 'gifts' : actionWord === 'Tip' ? 'tips' : 'donations'}
+                            {(supporterCount !== null ? supporterCount : publicActivity.length)} recent {actionWord === 'Gift' ? 'gifts' : actionWord === 'Tip' ? 'tips' : 'donations'}
                           </span>
                         </div>
                       </div>
@@ -1358,14 +1640,14 @@ export default function SupportProfile() {
                             {!currentUserId && (
                               <div>
                                 <label htmlFor="supporter-name" className="mb-1.5 block text-[13px] font-bold text-gray-600">
-                                  Full name <span className="text-gray-400 font-medium">· optional</span>
+                                  Name <span className="text-gray-400 font-medium">· optional</span>
                                 </label>
                                 <input
                                   id="supporter-name"
                                   type="text"
                                   value={supporterName}
                                   onChange={(e) => setSupporterName(e.target.value)}
-                                  placeholder="First and last name"
+                                  placeholder="Your name"
                                   autoComplete="name"
                                   className="w-full rounded-2xl border border-gray-200/80 bg-white/80 px-4 py-3.5 text-[15px] font-medium text-gray-900 transition-all placeholder:text-gray-400 focus:bg-white focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 shadow-sm"
                                 />
@@ -1432,13 +1714,13 @@ export default function SupportProfile() {
                     <div className="mt-8 flex flex-col items-center">
                       <button 
                         onClick={handleSupportNow}
-                        className="w-full max-w-md py-4 rounded-full bg-black font-bold text-white text-[15px] sm:text-base hover:bg-gray-800 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2" 
-                        disabled={!selectedTier || (selectedTier === 'custom' && !customAmount) || !supporterEmail || paymentStatus === 'processing'}
+                        className="w-full max-w-md py-4 rounded-full bg-black font-bold text-white text-[15px] sm:text-base hover:bg-gray-800 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2 cursor-pointer shadow-md" 
+                        disabled={!selectedTier || (selectedTier === 'custom' && !customAmount) || !supporterEmail || isRedirectingToGateway || paymentStatus === 'processing'}
                       >
-                        {paymentStatus === 'processing' ? (
+                        {isRedirectingToGateway ? (
                           <>
                             <Loader2 className="animate-spin w-5 h-5" />
-                            <span>Initiating Payment...</span>
+                            <span>Connecting to payment gateway...</span>
                           </>
                         ) : (
                           <span>{actionWord} with ₦{Number(selectedTier === 'custom' ? customAmount || 0 : selectedTier || 0).toLocaleString()}</span>

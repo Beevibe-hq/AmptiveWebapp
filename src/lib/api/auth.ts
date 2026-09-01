@@ -194,15 +194,8 @@ export async function getSession(): Promise<{ user: UserProfile | null; token: s
     const response = await $users.getCurrent();
     return { user: normalizeUserProfile(response), token };
   } catch (error: any) {
-    const errorStr = String(error?.message || error || '').toLowerCase();
-    if (
-      errorStr.includes('401') ||
-      errorStr.includes('unauthorized') ||
-      errorStr.includes('invalid login') ||
-      errorStr.includes('token expired') ||
-      errorStr.includes('session expired') ||
-      errorStr.includes('expired')
-    ) {
+    const errorStr = String(error);
+    if (errorStr.includes('401') || errorStr.includes('unauthorized') || errorStr.includes('Invalid login') || errorStr.includes('Token expired')) {
       api.clearSessionTokens();
       return { user: null, token: null };
     }

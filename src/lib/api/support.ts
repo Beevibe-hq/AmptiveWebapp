@@ -169,7 +169,7 @@ function normalizeSupportRecord(record: SupportProfile | null): SupportProfile |
   const rawProfileType = (record as any).support_profile_type ?? record.profile_type;
   const supportEnabled = (record as any).is_support_enabled ?? record.support_enabled ?? record.accept_tips;
 
-  const accountUsername = record.username || user.username || (record as any).user_username || '';
+  const accountUsername = record.username || user.username || (record as any).user_username || (record as any).support_slug || '';
 
   return {
     ...record,
@@ -333,6 +333,18 @@ export async function updateSupportProfile(data: Partial<SupportProfile>): Promi
   }
 }
 
+export async function getSupportProfileBySlug(slug: string): Promise<SupportProfile | null> {
+  try {
+    const response = await api.get<unknown>(
+      `${SUPPORT_PREFIX}/${encodeURIComponent(slug)}`,
+      { skipAuth: true }
+    );
+    const profile = normalizeSupportRecord(unwrapSupportProfile(response));
+    return profile;
+  } catch {
+    return null;
+  }
+}
 
 export async function getSupportPayments(
   receiverId?: string
@@ -353,6 +365,8 @@ export interface PaySupportPayload {
   message?: string;
   payment_channel?: string;
   email: string;
+  callback_url?: string;
+  redirect_url?: string;
   /**
    * Optional display name for the supporter. The history endpoint returns a
    * `supporter_name` on every record but it is currently always null, because nothing in
@@ -542,7 +556,7 @@ export async function getSupportActivity(
     const queryString = query.toString();
     const endpoint = `${SUPPORT_PREFIX}/${encodeURIComponent(username)}/activity${queryString ? `?${queryString}` : ''}`;
 
-    const response = await api.get<SupportHistoryResponse>(endpoint, { skipAuth: true });
+    const response = await api.get<SupportHistoryResponse>(endpoint, { skipAuth: true, silent: true });
 
     let items: SupportHistoryItem[] = [];
 
@@ -574,7 +588,7 @@ export async function getSupportActivity(
     }
 
     const pageSize = response?.page_size || params?.page_size || 10;
-    const total = response?.total ?? items.length;
+    const total = response?.total ?? (response as any)?.metadata?.total_supports ?? items.length;
     const totalPages = response?.total_pages ?? (total > 0 ? Math.ceil(total / pageSize) : 1);
 
     return {
