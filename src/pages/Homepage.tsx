@@ -351,7 +351,12 @@ const HeroSlide: React.FC<HeroSlideProps> = ({
         <div className="flex flex-col lg:flex-row items-center justify-center pt-8 lg:pt-0 mx-auto w-full max-w-[calc(620px+550px+6rem)] gap-8 lg:gap-16 px-4 sm:px-6 lg:px-8 pb-8 lg:pb-0">
           {/* Video Column - Responsive size */}
           <div className="w-full lg:w-auto flex justify-center">
-            <div className="w-full max-w-[620px] h-[40vh] md:h-[50vh] lg:h-[70vh] min-w-0 animate-slide-up transition-all duration-500" style={{
+            {/* The wrapper carries the poster background and a near-black fill behind the
+                video, so it needs the video's own radius — otherwise its square corners
+                show through the video's rounded ones as black notches. Radius alone clips
+                the wrapper's own background; overflow-hidden would also clip the video's
+                drop shadow, which is drawn outside its box. */}
+            <div className="w-full max-w-[620px] h-[40vh] md:h-[50vh] lg:h-[70vh] min-w-0 animate-slide-up transition-all duration-500 rounded-2xl" style={{
               width: 'min(100%, max(350px, calc(100vw - 100px)))',
               backgroundColor: isFirstSlide ? '#25221d' : bgColor || '#1b1b1b',
               backgroundImage: posterSrc ? `url(${posterSrc})` : undefined,

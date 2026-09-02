@@ -69,7 +69,7 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     },
     {
       name: 'Create Event',
-      path: '/login?redirect=/events/create',
+      path: '/events/create',
       icon: <PlusSquare className="w-7 h-7 mr-4" />
     },
 
@@ -142,7 +142,7 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
     },
     {
       name: 'Create Event',
-      path: '/events',
+      path: '/login?redirect=/events/create',
       icon: <PlusSquare className="w-7 h-7 mr-4" />
     },
     {
