@@ -49,6 +49,49 @@ export interface UserSlim {
   profile_picture?: string | null;
 }
 
+/** The timing fields any event-shaped record needs for the helpers below. */
+export type EventTiming = {
+  status?: string | null;
+  scheduled_for?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+};
+
+const toTime = (iso?: string | null): number => {
+  if (!iso) return Number.NaN;
+  const time = new Date(iso).getTime();
+  return Number.isNaN(time) ? Number.NaN : time;
+};
+
+/** Statuses that close an event regardless of its clock. */
+const CLOSED_STATUSES = new Set(['ended', 'completed', 'cancelled', 'canceled', 'past', 'archived']);
+
+/**
+ * When the event finishes, as a timestamp. An explicit `ended_at` wins; otherwise
+ * the start plus its duration; otherwise the start itself. NaN when nothing is known.
+ */
+export function getEventEndTime(event: EventTiming): number {
+  const ended = toTime(event.ended_at);
+  if (!Number.isNaN(ended)) return ended;
+
+  const start = toTime(event.started_at ?? event.scheduled_for);
+  if (Number.isNaN(start)) return Number.NaN;
+
+  const duration = event.duration_seconds;
+  return duration && duration > 0 ? start + duration * 1000 : start;
+}
+
+/**
+ * True once the event is over. Sole gate on ticket sales, so every surface agrees.
+ * An event with no usable timing stays open rather than being wrongly closed.
+ */
+export function isEventPast(event: EventTiming, now: number = Date.now()): boolean {
+  if (event.status && CLOSED_STATUSES.has(event.status.toLowerCase())) return true;
+  const end = getEventEndTime(event);
+  return !Number.isNaN(end) && end <= now;
+}
+
 export interface CommunitySlim {
   community_id: string;
   name: string;

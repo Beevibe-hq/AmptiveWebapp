@@ -1,27 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import {  Plus, Minus, ChevronDown, CheckCircle2, Ticket , Loader2 } from "lucide-react";
+import {  Plus, Minus, ChevronDown, CheckCircle2, Check, Ticket , Loader2 } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { TICKET_THEMES } from '@/lib/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getEvent } from '@/lib/api/events';
+import { getEvent, isEventPast, type EventTiming } from '@/lib/api/events';
 import { EventTicket, getTicketEarlyBirdRemaining, getTicketLineTotal, getTicketRemaining, getTicketsForEvent, getTicketUnitPrice, isTicketSoldOut } from '@/lib/api/tickets';
 import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
 
-type EventRecord = {
+type EventRecord = EventTiming & {
     id: string;
     title: string;
     start_time?: string | null;
-    ended_at?: string | null;
     venue?: string | null;
     user_id?: string | null;
     event_id?: string;
     thumbnail_url?: string | null;
 };
+
+/**
+ * The native input is kept for semantics — keyboard, label association, form behaviour —
+ * with its default appearance stripped so the box matches the rest of the checkout.
+ * The whole row is the label, so the text is part of the hit target.
+ */
+function Checkbox({ id, checked, onChange, children }: {
+    id: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    children: ReactNode;
+}) {
+    return (
+        <label htmlFor={id} className="group flex cursor-pointer select-none items-center gap-3">
+            <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
+                <input
+                    id={id}
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => onChange(e.target.checked)}
+                    className="peer h-5 w-5 cursor-pointer appearance-none rounded-[7px] border border-black/15 bg-white transition-colors duration-150 group-hover:border-black/40 checked:border-black checked:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
+                />
+                <Check
+                    className="pointer-events-none absolute h-3 w-3 scale-75 text-white opacity-0 transition-all duration-150 peer-checked:scale-100 peer-checked:opacity-100"
+                    strokeWidth={3.5}
+                />
+            </span>
+            {children}
+        </label>
+    );
+}
 
 export default function CheckoutPage() {
     const { id } = useParams<{ id: string }>();
@@ -48,6 +78,22 @@ export default function CheckoutPage() {
     const [showBulkForm, setShowBulkForm] = useState(false);
     const [isGuest, setIsGuest] = useState(false);
     const [authModalOpen, setAuthModalOpen] = useState(false);
+
+    /*
+     * A guest buying a single ticket fills in one form, not two. The checkout request
+     * still needs buyer_email (and optionally name and phone), so those are mirrored
+     * from the sole attendee instead of being asked for a second time.
+     *
+     * Only for one ticket: with several, the buyer is genuinely a separate person from
+     * the attendees and the Contact Information card still earns its place.
+     */
+    const soleAttendee = attendees.length === 1 ? attendees[0] : null;
+    useEffect(() => {
+        if (!isGuest || !soleAttendee) return;
+        setBuyerEmail(soleAttendee.email || '');
+        setBuyerName(soleAttendee.name || '');
+        setBuyerPhone(soleAttendee.phone || '');
+    }, [isGuest, soleAttendee?.email, soleAttendee?.name, soleAttendee?.phone]);
 
     const PLATFORM_FEE = 0;
 
@@ -225,6 +271,13 @@ export default function CheckoutPage() {
 
     const handlePayment = async () => {
         if (!event) return;
+
+        // Checked here as well as in the UI: the page may have been sitting open
+        // since before the event ended.
+        if (isEventPast(event)) {
+            toastError('This event has ended, so ticket sales are closed.');
+            return;
+        }
 
         if (checkoutStep === 'selection') {
             console.log(selection);
@@ -445,41 +498,41 @@ export default function CheckoutPage() {
         const totalTickets = attendees.length;
 
         const guestInfoSection = isGuest ? (
-            <div className="space-y-6 bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
+            <div id="guest-contact" className="space-y-6 bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Contact Information</h3>
                     <p className="text-sm text-gray-500 mt-1">We'll send your tickets to this email</p>
                 </div>
                 <div className="space-y-4">
                     <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-medium text-gray-700">Email Address <span className="text-red-500">*</span></label>
                         <input
                             type="email"
                             value={buyerEmail}
                             onChange={(e) => setBuyerEmail(e.target.value)}
                             placeholder="your@email.com"
                             required
-                            className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                            className="w-full h-10 rounded-[10px] border border-black/10 bg-transparent px-2.5 text-[15px] leading-[26px] text-gray-900 transition-colors placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-0"
                         />
                     </div>
                     <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name (Optional)</label>
+                        <label className="block text-sm font-medium text-gray-700">Full Name (Optional)</label>
                         <input
                             type="text"
                             value={buyerName}
                             onChange={(e) => setBuyerName(e.target.value)}
                             placeholder="Your full name"
-                            className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                            className="w-full h-10 rounded-[10px] border border-black/10 bg-transparent px-2.5 text-[15px] leading-[26px] text-gray-900 transition-colors placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-0"
                         />
                     </div>
                     <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Phone Number (Optional)</label>
+                        <label className="block text-sm font-medium text-gray-700">Phone Number (Optional)</label>
                         <input
                             type="tel"
                             value={buyerPhone}
                             onChange={(e) => setBuyerPhone(e.target.value)}
                             placeholder="+2348012345678"
-                            className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                            className="w-full h-10 rounded-[10px] border border-black/10 bg-transparent px-2.5 text-[15px] leading-[26px] text-gray-900 transition-colors placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-0"
                         />
                     </div>
                 </div>
@@ -494,17 +547,22 @@ export default function CheckoutPage() {
                         <h2 className="text-[24px] font-bold text-gray-900" style={{ letterSpacing: '-0.04em' }}>
                             Attendee Details
                         </h2>
-                        <p className="text-sm text-gray-500 mt-1">For your <span className="font-bold text-black">{ticketType?.label}</span> ticket</p>
+                        <p className="text-sm text-gray-500 mt-1">
+                            For your <span className="font-bold text-black">{ticketType?.label}</span> ticket
+                            {isGuest && <> · we'll send it to the email below</>}
+                        </p>
                     </div>
                     <div className="space-y-6 bg-white border border-gray-100 p-6 rounded-3xl shadow-sm">
                         <div className="space-y-4">
-                            <div className="flex items-center gap-3 p-4 rounded-2xl bg-gray-50/50 border border-gray-100">
-                                <input
-                                    type="checkbox"
+                            {/* Signed-in only. A guest buying one ticket has no account to
+                                copy details from, and these fields already are their
+                                contact details, so the checkbox has nothing to do. */}
+                            {!isGuest && (
+                            <div className="p-4 rounded-2xl bg-gray-50/50 border border-gray-100">
+                                <Checkbox
                                     id="isMe"
-                                    checked={attendees[0]?.isMe}
-                                    onChange={(e) => {
-                                        const checked = e.target.checked;
+                                    checked={!!attendees[0]?.isMe}
+                                    onChange={(checked) => {
                                         setAttendees(prev => [
                                             {
                                                 ...prev[0],
@@ -514,48 +572,50 @@ export default function CheckoutPage() {
                                             }
                                         ]);
                                     }}
-                                    className="h-5 w-5 rounded border-gray-300 text-black focus:ring-black"
-                                />
-                                <label htmlFor="isMe" className="text-sm font-bold text-gray-700 cursor-pointer">
-                                    This ticket is for me
-                                </label>
+                                >
+                                    <span className="text-sm font-medium text-gray-700">This ticket is for me</span>
+                                </Checkbox>
                             </div>
+                            )}
 
                             <div className="grid grid-cols-1 gap-4 pt-2">
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name</label>
+                                    <label className="block text-sm font-medium text-gray-700">Full Name</label>
                                     <input
                                         type="text"
                                         value={attendees[0]?.name || ''}
                                         onChange={(e) => setAttendees(prev => [{ ...prev[0], name: e.target.value, isMe: false }])}
                                         placeholder="Enter attendee name"
-                                        className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                                        className="w-full h-10 rounded-[10px] border border-black/10 bg-transparent px-2.5 text-[15px] leading-[26px] text-gray-900 transition-colors placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-0"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address</label>
+                                    <label className="block text-sm font-medium text-gray-700">Email Address</label>
                                     <input
                                         type="email"
                                         value={attendees[0]?.email || ''}
                                         onChange={(e) => setAttendees(prev => [{ ...prev[0], email: e.target.value, isMe: false }])}
                                         placeholder="Enter attendee email"
-                                        className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                                        className="w-full h-10 rounded-[10px] border border-black/10 bg-transparent px-2.5 text-[15px] leading-[26px] text-gray-900 transition-colors placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-0"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Phone Number (Optional)</label>
+                                    <label className="block text-sm font-medium text-gray-700">Phone Number (Optional)</label>
                                     <input
                                         type="tel"
                                         value={attendees[0]?.phone || ''}
                                         onChange={(e) => setAttendees(prev => [{ ...prev[0], phone: e.target.value }])}
                                         placeholder="Enter phone number"
-                                        className="w-full px-5 py-4 rounded-2xl border border-gray-100 focus:border-black focus:ring-1 focus:ring-black transition-all outline-none bg-gray-50/30 font-medium"
+                                        className="w-full h-10 rounded-[10px] border border-black/10 bg-transparent px-2.5 text-[15px] leading-[26px] text-gray-900 transition-colors placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-0"
                                     />
                                 </div>
                             </div>
                         </div>
                     </div>
-                    {guestInfoSection}
+                    {/* No separate Contact Information card here: with one ticket the
+                        attendee is the buyer, and asking for the same name, email and
+                        phone twice on one screen is just friction. The buyer fields the
+                        payment needs are mirrored from these in an effect above. */}
                 </div>
             );
         }
@@ -578,33 +638,29 @@ export default function CheckoutPage() {
                                             </span>
                                             <span className="mt-2 text-xs font-bold text-gray-500 uppercase tracking-tight">{ticketType?.label}</span>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                id={`isMe-${idx}`}
-                                                checked={attendee.isMe}
-                                                onChange={(e) => {
-                                                    const checked = e.target.checked;
-                                                    setAttendees(prev => {
-                                                        const next = [...prev];
-                                                        next[idx] = {
-                                                            ...next[idx],
-                                                            isMe: checked,
-                                                            name: checked ? (currentUser?.name || currentUser?.username || buyerName || '') : '',
-                                                            email: checked ? (currentUser?.email || buyerEmail || '') : ''
-                                                        };
-                                                        return next;
-                                                    });
-                                                }}
-                                                className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
-                                            />
-                                            <label htmlFor={`isMe-${idx}`} className="text-xs font-bold text-gray-600">This ticket is for me</label>
-                                        </div>
+                                        <Checkbox
+                                            id={`isMe-${idx}`}
+                                            checked={!!attendee.isMe}
+                                            onChange={(checked) => {
+                                                setAttendees(prev => {
+                                                    const next = [...prev];
+                                                    next[idx] = {
+                                                        ...next[idx],
+                                                        isMe: checked,
+                                                        name: checked ? (currentUser?.name || currentUser?.username || buyerName || '') : '',
+                                                        email: checked ? (currentUser?.email || buyerEmail || '') : ''
+                                                    };
+                                                    return next;
+                                                });
+                                            }}
+                                        >
+                                            <span className="text-sm font-medium text-gray-700">This ticket is for me</span>
+                                        </Checkbox>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name</label>
+                                            <label className="block text-sm font-medium text-gray-700">Full Name</label>
                                             <input
                                                 type="text"
                                                 value={attendee.name}
@@ -619,7 +675,7 @@ export default function CheckoutPage() {
                                             />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address</label>
+                                            <label className="block text-sm font-medium text-gray-700">Email Address</label>
                                             <input
                                                 type="email"
                                                 value={attendee.email}
@@ -673,33 +729,29 @@ export default function CheckoutPage() {
                                             </span>
                                             <span className="mt-2 text-xs font-bold text-gray-500 uppercase tracking-tight">{ticketType?.label}</span>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                id={`isMe-${idx}`}
-                                                checked={attendee.isMe}
-                                                onChange={(e) => {
-                                                    const checked = e.target.checked;
-                                                    setAttendees(prev => {
-                                                        const next = [...prev];
-                                                        next[idx] = {
-                                                            ...next[idx],
-                                                            isMe: checked,
-                                                            name: checked ? (currentUser?.name || currentUser?.username || buyerName || '') : '',
-                                                            email: checked ? (currentUser?.email || buyerEmail || '') : ''
-                                                        };
-                                                        return next;
-                                                    });
-                                                }}
-                                                className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
-                                            />
-                                            <label htmlFor={`isMe-${idx}`} className="text-xs font-bold text-gray-600">This ticket is for me</label>
-                                        </div>
+                                        <Checkbox
+                                            id={`isMe-${idx}`}
+                                            checked={!!attendee.isMe}
+                                            onChange={(checked) => {
+                                                setAttendees(prev => {
+                                                    const next = [...prev];
+                                                    next[idx] = {
+                                                        ...next[idx],
+                                                        isMe: checked,
+                                                        name: checked ? (currentUser?.name || currentUser?.username || buyerName || '') : '',
+                                                        email: checked ? (currentUser?.email || buyerEmail || '') : ''
+                                                    };
+                                                    return next;
+                                                });
+                                            }}
+                                        >
+                                            <span className="text-sm font-medium text-gray-700">This ticket is for me</span>
+                                        </Checkbox>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Full Name</label>
+                                            <label className="block text-sm font-medium text-gray-700">Full Name</label>
                                             <input
                                                 type="text"
                                                 value={attendee.name}
@@ -713,7 +765,7 @@ export default function CheckoutPage() {
                                             />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Email Address</label>
+                                            <label className="block text-sm font-medium text-gray-700">Email Address</label>
                                             <input
                                                 type="email"
                                                 value={attendee.email}
@@ -748,10 +800,25 @@ export default function CheckoutPage() {
                 <div className="grid grid-cols-1 gap-4">
                     <button
                         onClick={() => {
+                            /*
+                             * A guest has no account to copy from, so without their
+                             * contact details this jumped to the summary with every
+                             * attendee blank — and let them pay with no email to send
+                             * the tickets to.
+                             */
+                            const name = currentUser?.name || currentUser?.username || buyerName.trim();
+                            const email = currentUser?.email || buyerEmail.trim();
+
+                            if (!email.trim()) {
+                                toastError('Add your email below first — that is where your tickets go.');
+                                document.getElementById('guest-contact')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                return;
+                            }
+
                             setAttendees(prev => prev.map(a => ({
                                 ...a,
-                                name: currentUser?.name || '',
-                                email: currentUser?.email || '',
+                                name,
+                                email,
                                 isMe: true
                             })));
                             setCheckoutStep('summary');
@@ -813,20 +880,7 @@ export default function CheckoutPage() {
         );
     };
 
-    const isPastEvent = (() => {
-        if (!event) return false;
-        const now = new Date();
-        if (event.ended_at) {
-            return new Date(event.ended_at) < now;
-        }
-        if (event.start_time) {
-            // Assume event is over if it's 12 hours past the scheduled time
-            const eventEnd = new Date(event.start_time);
-            eventEnd.setHours(eventEnd.getHours() + 12);
-            return eventEnd < now;
-        }
-        return false;
-    })();
+    const isPastEvent = event ? isEventPast(event) : false;
 
     const availableTickets = tickets.filter(t => !isTicketSoldOut(t));
     const soldOutTickets = tickets.filter(isTicketSoldOut);

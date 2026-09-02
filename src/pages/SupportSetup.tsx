@@ -342,6 +342,13 @@ export default function SupportSetup() {
     };
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [existingProfile, setExistingProfile] = useState<SupportProfile | null>(null);
+    /**
+     * Whether a support page already existed when this screen loaded. Drives the
+     * "create" vs "edit" wording. `getMySupportProfile` falls back to the plain user
+     * record when there is no support profile, so a non-null profile is not proof a
+     * page exists — the saved support settings are.
+     */
+    const [hasSupportPage, setHasSupportPage] = useState(false);
 
     const getSupportPageSlug = (profile?: SupportProfile | null) => (
         profile?.username || profile?.user_id || user?.username || user?.user_id || user?.id
@@ -364,6 +371,14 @@ export default function SupportSetup() {
                 const profile = await getMySupportProfile();
                 if (profile) {
                     const isAcceptingTips = profile.support_enabled ?? profile.accept_tips ?? false;
+                    // A page that was set up and later switched offline is still an
+                    // existing page — the user is editing it, not creating a new one.
+                    const pageExists =
+                        isAcceptingTips ||
+                        (profile.support_enabled ?? profile.accept_tips) !== undefined ||
+                        Boolean(profile.support_tagline || profile.support_message || profile.support_button_text) ||
+                        (Array.isArray(profile.support_amounts) && profile.support_amounts.length > 0);
+                    setHasSupportPage(pageExists);
                     setSupportEnabled(isAcceptingTips);
                     setSupportMessage(profile.support_message || profile.support_tagline || '');
                     setSupportButtonText(profile.support_button_text || 'Support Me');
@@ -375,8 +390,10 @@ export default function SupportSetup() {
                     setExistingProfile(profile);
                     setSocials(profile.support_socials || {});
 
-                    // If already enabled, skip onboarding
-                    if (isAcceptingTips) {
+                    // Skip onboarding whenever a page already exists — including one that
+                    // is currently offline, so the owner lands on the toggle that turns it
+                    // back on rather than being walked through setup again.
+                    if (pageExists) {
                         setStep('settings');
                     }
                 }
@@ -402,6 +419,7 @@ export default function SupportSetup() {
     const handleSubmit = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (!user) return;
+        const isCreating = !hasSupportPage;
         setSaving(true);
 
         try {
@@ -424,7 +442,16 @@ export default function SupportSetup() {
 
             const { ok, error } = await updateSupportProfile(updates);
             if (!ok) throw new Error(error || 'Failed to update support settings');
+            // From here on the page exists, so this screen is editing it.
+            setHasSupportPage(true);
             const refreshedProfile = await getMySupportProfile();
+            // The API accepts `support_enabled` but has been observed not to persist a
+            // `false`, which would leave the page live while the UI claimed otherwise.
+            // Trust the server's value and say so plainly rather than reporting success.
+            const savedEnabled = refreshedProfile
+                ? (refreshedProfile.support_enabled ?? refreshedProfile.accept_tips)
+                : undefined;
+            const enabledDidNotStick = savedEnabled !== undefined && savedEnabled !== supportEnabled;
             if (refreshedProfile) {
                 setExistingProfile({
                     ...refreshedProfile,
@@ -441,7 +468,22 @@ export default function SupportSetup() {
             }
             await refreshUser();
 
-            toastSuccess('Support settings updated successfully!');
+            if (enabledDidNotStick) {
+                toastError(
+                    supportEnabled
+                        ? 'Your other changes saved, but the server kept your page offline.'
+                        : 'Your other changes saved, but the server kept your page live. Please try again.'
+                );
+                return;
+            }
+
+            toastSuccess(
+                isCreating
+                    ? 'Your support page is live!'
+                    : supportEnabled
+                        ? 'Support settings updated successfully!'
+                        : 'Your support page is now offline. Your settings are saved.'
+            );
 
             // Instead of navigating immediately, show the sophisticated preview
             if (supportEnabled) {
@@ -850,7 +892,10 @@ export default function SupportSetup() {
                                     </div>
                                 </div>
 
-                                {/* Support Link Section */}
+                                {/* Support Link Section — only once the page exists and is
+                                    live. There is nothing to share while it is being created,
+                                    and the link is dead while support is switched off. */}
+                                {hasSupportPage && supportEnabled && (
                                 <div className="space-y-6">
                                     <div className="border-b border-black/5 pb-4">
                                         <h3 className="text-lg font-bold text-gray-900">Your Support Link</h3>
@@ -899,6 +944,7 @@ export default function SupportSetup() {
                                         </button>
                                     </div>
                                 </div>
+                                )}
 
                                 {/* Card Style Selection Section */}
                                 <div className="space-y-6">
@@ -950,15 +996,19 @@ export default function SupportSetup() {
                                         onClick={() => navigate(-1)}
                                         className="w-full sm:w-auto px-8 py-3 text-sm font-bold text-black/40 hover:text-black transition-colors"
                                     >
-                                        Discard Changes
+                                        {hasSupportPage ? 'Discard Changes' : 'Cancel'}
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={saving}
                                         className="w-full sm:w-auto h-12 px-10 rounded-full bg-black text-white text-[15px] font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
-                                        {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                        Save Preferences
+                                        {saving
+                                            ? <Loader2 className="w-5 h-5 animate-spin" />
+                                            : hasSupportPage ? <Save className="w-5 h-5" /> : null}
+                                        {saving
+                                            ? (hasSupportPage ? 'Saving changes…' : 'Creating your page…')
+                                            : (hasSupportPage ? 'Save changes' : 'Create my support page')}
                                     </button>
                                 </div>
                             </form>

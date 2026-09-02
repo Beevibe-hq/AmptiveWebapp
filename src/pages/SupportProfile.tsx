@@ -715,6 +715,35 @@ export default function SupportProfile() {
     );
   }
 
+  const displayName = profile?.full_name || profile?.name || profile?.username || 'Amptive Creator';
+
+  // The owner can switch their page offline without losing any of its settings.
+  // While it is off the page is unreachable for everyone — the record still exists,
+  // so this is deliberately distinct from "not found". Absent flag = on, so pages
+  // predating the toggle are unaffected.
+  const supportIsOffline =
+    Boolean(profile) && (profile?.support_enabled ?? profile?.accept_tips ?? true) === false;
+
+  if (supportIsOffline && paymentStatus === 'idle' && !loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4 text-center">
+        <div className="text-6xl mb-4">🌙</div>
+        <h1 className="text-2xl font-bold text-gray-900">This page is not accepting support</h1>
+        <p className="text-gray-500 mb-6 max-w-sm">
+          {isOwner
+            ? 'Your support page is switched off, so no one else can open it. Your settings, card design and images are all saved.'
+            : `${displayName} has turned off their support page for now. Check back later.`}
+        </p>
+        <button
+          onClick={() => navigate(isOwner ? '/profile/support-setup' : '/')}
+          className="px-6 py-2 bg-black text-white rounded-full font-bold shadow-lg"
+        >
+          {isOwner ? 'Turn it back on' : 'Go Home'}
+        </button>
+      </div>
+    );
+  }
+
   if (!profile && paymentStatus === 'idle' && !loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4">
@@ -731,7 +760,6 @@ export default function SupportProfile() {
     );
   }
 
-  const displayName = profile?.full_name || profile?.name || profile?.username || 'Amptive Creator';
   const profileAvatarUrl = profile?.support_avatar_url || profile?.avatar_url;
   const avatarInitials = displayName
     .split(/\s+/)

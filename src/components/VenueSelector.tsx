@@ -66,12 +66,18 @@ function MiniVenueMap({
       }).addTo(map);
     }
 
-    // Circular avatar pin marker matching EventDetail
-    const imgSrc = hostAvatarUrl || '/images/IMG_6053 2.JPG';
+    // Circular avatar pin marker matching EventDetail: the organiser's own picture, and
+    // a plain white circle when there isn't one. It used to fall back to a hardcoded
+    // portrait of one particular person, which showed on every create-event map.
+    // Escaped: this string is injected as HTML, so a quote in the URL would break out.
+    const safeAvatar = hostAvatarUrl ? String(hostAvatarUrl).replace(/"/g, '&quot;') : '';
+    const avatarImg = safeAvatar
+      ? `<img src="${safeAvatar}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.remove();" />`
+      : '';
     const iconHtml = `
       <div style="position:relative;display:inline-flex;flex-direction:column;align-items:center;">
-        <div style="width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
-          <img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='/images/IMG_6053 2.JPG';" />
+        <div style="position:relative;width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
+          ${avatarImg}
         </div>
         <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #ffffff;margin-top:-2px;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.12));"></div>
       </div>

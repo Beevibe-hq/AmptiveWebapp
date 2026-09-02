@@ -18,8 +18,10 @@ import {
     Share2,
     ScanLine,
     Download,
+    Loader2,
     FileText} from 'lucide-react';
 import { getSession } from '@/lib/api/auth';
+import { toastSuccess, toastError, toastInfo } from '@/lib/ui/toast';
 import { getEvent, getEventOrders, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import DashboardEvents from './DashboardEvents';
@@ -489,6 +491,93 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const upcomingCount = realEvents.filter(event =>
         new Date(event.scheduled_for ?? event.created_at!) >= new Date()
     ).length;
+
+    // ---- Quick Links -----------------------------------------------------
+    // Three of these act on a single event, but this panel has no event in
+    // context, so they open a picker first and run once one is chosen.
+    const navigate = useNavigate();
+    const [pickerAction, setPickerAction] = useState<'duplicate' | 'ticket' | 'attendees' | null>(null);
+    const [busyEventId, setBusyEventId] = useState<string | null>(null);
+
+    const pickerCopy = {
+        duplicate: { title: 'Duplicate an event', hint: 'We will open a new event prefilled with its details.' },
+        ticket: { title: 'Add a ticket type', hint: 'Opens the event so you can add a ticket type to it.' },
+        attendees: { title: 'Download attendees', hint: 'Exports everyone who has bought a ticket, as a CSV.' },
+    } as const;
+
+    /** Quotes any field containing a comma, quote or newline so the CSV survives them. */
+    const toCsv = (rows: Record<string, unknown>[]): string => {
+        const headers = Array.from(new Set(rows.flatMap(row => Object.keys(row))));
+        const escape = (value: unknown) => {
+            const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+            return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+        };
+        return [headers.join(','), ...rows.map(row => headers.map(h => escape(row[h])).join(','))].join('\n');
+    };
+
+    const downloadAttendees = async (eventId: string, title: string) => {
+        setBusyEventId(eventId);
+        try {
+            const orders = await getEventOrders(eventId);
+            if (!orders.length) {
+                toastInfo('No attendees yet for that event.');
+                return;
+            }
+            const csv = toCsv(orders as Record<string, unknown>[]);
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${title.replace(/[^\w-]+/g, '-').toLowerCase()}-attendees.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            toastSuccess(`Downloaded ${orders.length} attendee${orders.length === 1 ? '' : 's'}`);
+        } catch {
+            toastError('Could not load attendees for that event.');
+        } finally {
+            setBusyEventId(null);
+        }
+    };
+
+    const runPickedAction = async (event: StandaloneEvent) => {
+        const action = pickerAction;
+        if (action === 'attendees') {
+            await downloadAttendees(event.event_id, event.title);
+            setPickerAction(null);
+            return;
+        }
+        setPickerAction(null);
+        if (action === 'duplicate') {
+            navigate(`/events/create?duplicate=${event.event_id}`);
+        } else if (action === 'ticket') {
+            navigate(`/dashboard/events/${event.event_id}/edit#tickets`);
+        }
+    };
+
+    /** Shares the soonest upcoming event, matching the Share button on the event cards. */
+    const handleShareLink = async () => {
+        const next = upcomingEvents[0];
+        if (!next) {
+            toastInfo('You have no upcoming events to share yet.');
+            return;
+        }
+        const url = `${window.location.origin}/events/${next.event_id}`;
+        if (typeof navigator.share === 'function') {
+            try {
+                await navigator.share({ title: next.title, url });
+                return;
+            } catch {
+                // Dismissed — fall through to copying.
+            }
+        }
+        try {
+            await navigator.clipboard.writeText(url);
+            toastSuccess(`Link to "${next.title}" copied`);
+        } catch {
+            toastError('Could not copy the link');
+        }
+    };
 
     const stats = [
         {
@@ -1274,9 +1363,15 @@ function DashboardHome({ displayName }: { displayName: string }) {
                         <div className="bg-white border border-black/5 py-5 px-6 rounded-2xl shadow-sm">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-bold text-black">Upcoming Events</h3>
-                                <button className="text-[13px] font-semibold text-black/40 hover:text-black transition-colors tracking-wide">
+                                {/* A Link rather than a button, so it behaves like a
+                                    navigation control: cmd-click, middle-click and
+                                    "copy link address" all work. */}
+                                <Link
+                                    to="/dashboard/events"
+                                    className="text-[13px] font-semibold text-black/40 hover:text-black transition-colors tracking-wide"
+                                >
                                     View More
-                                </button>
+                                </Link>
                             </div>
 
                             <div className="space-y-4">
@@ -1382,23 +1477,42 @@ function DashboardHome({ displayName }: { displayName: string }) {
                             <h3 className="text-[15px] font-bold text-black text-center sm:text-left">Quick Links</h3>
 
                             <div className="flex flex-wrap justify-center sm:justify-start gap-4">
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
+                                <Link
+                                    to="/events/create"
+                                    className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group"
+                                >
                                     <Plus className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Create event</span>
-                                </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
+                                </Link>
+                                <button
+                                    type="button"
+                                    onClick={() => setPickerAction('duplicate')}
+                                    className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group"
+                                >
                                     <Copy className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Duplicate event</span>
                                 </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
+                                <button
+                                    type="button"
+                                    onClick={() => setPickerAction('ticket')}
+                                    className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group"
+                                >
                                     <Ticket className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">New ticket type</span>
                                 </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
+                                <button
+                                    type="button"
+                                    onClick={handleShareLink}
+                                    className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group"
+                                >
                                     <Share2 className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Share link</span>
                                 </button>
-                                <button className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group">
+                                <button
+                                    type="button"
+                                    onClick={() => setPickerAction('attendees')}
+                                    className="flex items-center gap-2 bg-black/5 hover:bg-black text-black/80 hover:text-white px-2 py-2 rounded-full transition-colors group"
+                                >
                                     <Download className="w-4 h-4" />
                                     <span className="text-[13px] font-semibold">Download attendees</span>
                                 </button>
@@ -1408,6 +1522,67 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
                 </div>
             </div>
+
+            {/* Event picker for the Quick Links that act on a single event. */}
+            {pickerAction && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                    onClick={() => setPickerAction(null)}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={pickerCopy[pickerAction].title}
+                        className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <h4 className="text-base font-bold text-black">{pickerCopy[pickerAction].title}</h4>
+                                <p className="mt-0.5 text-[13px] text-black/50">{pickerCopy[pickerAction].hint}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPickerAction(null)}
+                                aria-label="Close"
+                                className="shrink-0 rounded-full p-1.5 text-black/40 transition-colors hover:bg-black/5 hover:text-black"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="mt-4 max-h-80 space-y-1.5 overflow-y-auto">
+                            {realEvents.length === 0 ? (
+                                <p className="py-8 text-center text-[13px] text-black/40">
+                                    You have no events yet.
+                                </p>
+                            ) : (
+                                realEvents.map((event) => (
+                                    <button
+                                        key={event.event_id}
+                                        type="button"
+                                        disabled={busyEventId !== null}
+                                        onClick={() => runPickedAction(event)}
+                                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-black/5 px-3 py-2.5 text-left transition-colors hover:border-black/20 hover:bg-black/[0.02] disabled:opacity-50"
+                                    >
+                                        <span className="min-w-0">
+                                            <span className="block truncate text-[13px] font-semibold text-black">{event.title}</span>
+                                            <span className="block text-[11px] text-black/40">
+                                                {new Date(event.scheduled_for ?? event.created_at!).toLocaleDateString('en-GB', {
+                                                    day: '2-digit', month: 'short', year: 'numeric',
+                                                })}
+                                            </span>
+                                        </span>
+                                        {busyEventId === event.event_id && (
+                                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-black/40" />
+                                        )}
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
