@@ -33,6 +33,30 @@
   status = 200
   force = true
 
+# The support link people actually share is a bare slug on a tip domain
+# (giftmywork.getamptive.com/joseph), which never matched /support/:id above and so
+# fell through to index.html with the generic site card.
+#
+# These rules deliberately omit `force`, so Netlify serves any real file first —
+# index.html, /assets/*, og-image.png. That matters: the renderer fetches
+# https://<host>/index.html for its template, and with force it would rewrite that
+# request back into itself and recurse. Non-crawlers get the untouched SPA shell,
+# so app routes on these hosts keep working.
+[[redirects]]
+  from = "https://giftmywork.getamptive.com/:slug"
+  to = "/.netlify/functions/seo-renderer"
+  status = 200
+
+[[redirects]]
+  from = "https://tipmybusiness.getamptive.com/:slug"
+  to = "/.netlify/functions/seo-renderer"
+  status = 200
+
+[[redirects]]
+  from = "https://supportmyevent.getamptive.com/:slug"
+  to = "/.netlify/functions/seo-renderer"
+  status = 200
+
 # Redirect all client-side routes to index.html (MUST BE LAST)
 [[redirects]]
   from = "/*"
@@ -47,7 +71,7 @@
     X-Content-Type-Options = "nosniff"
     X-XSS-Protection = "1; mode=block"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://connect.facebook.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://accounts.google.com https://*.google.com https://*.googleapis.com https://amptive-staging.getamptive.com https://*.onrender.com https://*.supabase.co https://api.tomtom.com https://maps.googleapis.com https://places.googleapis.com https://api.mapbox.com http://localhost:*; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob: https://accounts.google.com; frame-src 'self' blob: https://accounts.google.com https://*.google.com https://maps.google.com https://*.facebook.com https://*.supabase.co; form-action 'self' https://accounts.google.com https://*.supabase.co;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://connect.facebook.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://accounts.google.com https://*.google.com https://*.googleapis.com https://fonts.gstatic.com https://amptive-staging.getamptive.com https://*.onrender.com https://*.supabase.co https://api.tomtom.com https://maps.googleapis.com https://places.googleapis.com https://api.mapbox.com http://localhost:*; media-src 'self' data: blob:; worker-src 'self' blob:; child-src 'self' blob: https://accounts.google.com; frame-src 'self' blob: https://accounts.google.com https://*.google.com https://maps.google.com https://*.facebook.com https://*.supabase.co; form-action 'self' https://accounts.google.com https://*.supabase.co;"
 
 # Cache static assets
 [[headers]]

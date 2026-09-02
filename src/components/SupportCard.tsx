@@ -4,6 +4,7 @@ import { QrCode, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatSupportUrl } from '@/utils/supportUrl';
+import { api } from '@/lib/api/client';
 
 interface SupportCardProps {
   name?: string;
@@ -28,7 +29,10 @@ const getRgba = (hex: string, alpha: number) => {
 
 const SupportAvatar = ({ url, name, username, className }: { url?: string; name: string; username: string; className: string }) => {
   if (url) {
-    return <img src={url} alt={name} className={className} />;
+    // Served through the app's own proxy so the card stays same-origin. A raw S3 URL
+    // can't be read back when html-to-image rasterises the card for download — the
+    // canvas is tainted and the capture fails on this image.
+    return <img src={api.getProxiedImageUrl(url)} alt={name} className={className} crossOrigin="anonymous" />;
   }
   return (
     <div className={`bg-gray-100 flex items-center justify-center text-center ${className}`} style={{ fontSize: className.includes('w-14') ? '1.75rem' : '3rem' }}>

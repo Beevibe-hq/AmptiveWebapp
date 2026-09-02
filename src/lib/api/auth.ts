@@ -353,36 +353,71 @@ export async function signInWithGooglePopup(): Promise<AuthResponse> {
       const btn = container.querySelector('div[role="button"]') as HTMLElement | null;
       if (btn) {
         btn.click();
-      } else {
-        // Fallback to token client if button isn't clickable
-        try {
-          const tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_CLIENT_ID,
-            scope: 'email profile openid',
-            callback: (tokenResponse: any) => {
-              if (tokenResponse.access_token) {
-                resolve(tokenResponse.access_token);
-              } else {
-                reject(new Error('No token returned from Google.'));
-              }
-            },
-          });
-          tokenClient.requestAccessToken({ prompt: 'select_account' });
-        } catch (e: any) {
-          reject(new Error('Could not open Google Sign-In.'));
-        }
+        return;
+      }
+
+      /*
+       * Fall back to One Tap, which returns an ID token through the same callback above.
+       *
+       * The OAuth token client is deliberately not used here. It yields an *access*
+       * token — an opaque bearer credential for calling Google's APIs — where the
+       * backend expects a signed identity assertion it can verify. Sending one is
+       * indistinguishable from a valid request on the wire and comes back as a flat
+       * 400 "Social authentication failed."
+       */
+      try {
+        google.accounts.id.prompt();
+      } catch {
+        reject(new Error('Could not open Google Sign-In.'));
       }
     };
 
     setTimeout(triggerClick, 50);
 
-    // Timeout cleanup
+    // Cleanup, and reject rather than leaving the promise pending forever. One Tap can
+    // be suppressed without ever invoking the callback, which used to hang sign-in with
+    // no error and no way back.
     timeoutId = setTimeout(() => {
       if (document.body.contains(container)) {
         document.body.removeChild(container);
       }
+      reject(new Error('Google Sign-In timed out. Please try again.'));
     }, 10000);
   });
+
+  /*
+   * An ID token is a JWT: three dot-separated base64 segments. Checking the shape here
+   * turns "wrong kind of Google credential" into a message that says so, instead of the
+   * backend's opaque 400 — the two failures are otherwise identical from the console.
+   */
+  if (credential.split('.').length !== 3) {
+    return unsupportedAuthResponse(
+      'Google returned an unexpected credential type. Please try signing in again.'
+    );
+  }
+
+  // TEMPORARY DIAGNOSTIC — remove once social login is working.
+  // Prints only the token's public claims (never the signature or any personal fields),
+  // so we can see which Google client the credential was issued for. The backend rejects
+  // a token whose `aud` doesn't match its own configured client ID, and that failure is
+  // indistinguishable from a wrong token type in the console.
+  try {
+    const claims = JSON.parse(atob(credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    console.log('[google-signin] token diagnostic', {
+      segments: credential.split('.').length,
+      aud: claims.aud,
+      azp: claims.azp,
+      iss: claims.iss,
+      expired: typeof claims.exp === 'number' ? claims.exp * 1000 < Date.now() : 'unknown',
+      frontendClientId: GOOGLE_CLIENT_ID,
+      audMatchesFrontend: claims.aud === GOOGLE_CLIENT_ID,
+    });
+  } catch {
+    console.log('[google-signin] token diagnostic: credential is not a decodable JWT', {
+      segments: credential.split('.').length,
+      startsWith: credential.slice(0, 6),
+    });
+  }
 
   // Send the Google credential to the backend social login endpoint
   try {
@@ -551,8 +586,6 @@ export async function handleOAuthCallback(code?: string, provider: string = 'goo
       }
       extras.redirect_uri = `${window.location.origin}/auth/callback`;
     }
-
-    console.log('[DEBUG] Sending to backend:', { provider, token: token.substring(0, 20) + '...', tokenLength: token.length, ...extras });
 
     const response = await api.post<any>('/auth/social/login', { provider, token, ...extras }, { skipAuth: true });
 

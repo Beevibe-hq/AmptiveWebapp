@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, ChevronDown, Users, Search, Wallet } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, ChevronDown, Users, Search, Wallet, Eye } from "lucide-react";
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
@@ -335,9 +335,28 @@ const AVAILABILITY_BADGE_CLASSES: Record<AvailabilityStatus, string> = {
   'Sold Out': 'border-rose-200 bg-rose-50 text-rose-700',
 };
 
+/**
+ * Picks a user's picture using the same field order the event detail page uses when it
+ * resolves a host's avatar for the venue pin, so both maps land on the same image.
+ */
+const pickAvatar = (user: unknown): string | undefined => {
+  const record = user as Record<string, unknown> | null | undefined;
+  if (!record) return undefined;
+  const candidate = record.profile_picture ?? record.profile_image_url ?? record.avatar_url;
+  return typeof candidate === 'string' && candidate ? candidate : undefined;
+};
+
 const CreateEvent = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  /*
+   * Duplicating reuses the edit hydration: same event, loaded the same way, but written
+   * into a blank create form instead of an edit one. The source id arrives as a query
+   * param because there is no route id when creating.
+   */
+  const [searchParams] = useSearchParams();
+  const duplicateId = searchParams.get('duplicate');
+  const sourceEventId = id || duplicateId;
 
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitting, setSubmitting] = useState(false);
@@ -346,6 +365,9 @@ const CreateEvent = () => {
   const [ready, setReady] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  // The organiser of an event being created is whoever is signed in, so the venue pin
+  // can show their own picture — same as the detail page does for a published event.
+  const [hostAvatarUrl, setHostAvatarUrl] = useState<string | undefined>(undefined);
   const [eventStatus, setEventStatus] = useState<string>('');
   const [coverPreviewError, setCoverPreviewError] = useState(false);
   const [coverPreview, setCoverPreview] = useState('');
@@ -569,6 +591,7 @@ const CreateEvent = () => {
         const user = await getCurrentUser();
         if (user) {
           setUserId(user.user_id);
+          setHostAvatarUrl(pickAvatar(user));
           if (!id && !user.is_wallet_setup) {
             setShowWalletPrompt(true);
           }
@@ -582,6 +605,7 @@ const CreateEvent = () => {
           } else {
             const u = await getCurrentUser()
             setUserId(u?.user_id || '');
+            setHostAvatarUrl(pickAvatar(u));
             if (u && !id && !u.is_wallet_setup) {
               setShowWalletPrompt(true);
             }
@@ -641,7 +665,7 @@ const CreateEvent = () => {
   }, [communityMenuOpen]);
 
   useEffect(() => {
-    if (!ready || !id || !userId) return;
+    if (!ready || !sourceEventId || !userId) return;
 
     const fetchEventData = async () => {
       // Helper for formatting DB dates to datetime-local input
@@ -661,29 +685,48 @@ const CreateEvent = () => {
 
       setLoadingEvent(true);
       try {
-        const event = await getEvent(id);
+        const event = await getEvent(sourceEventId);
         if (!event) throw new Error('Event not found');
 
         if (event.host?.user_id !== userId) {
-          toastError("You don't have permission to edit this event.");
+          toastError(
+            duplicateId
+              ? "You can only duplicate your own events."
+              : "You don't have permission to edit this event."
+          );
           navigate('/dashboard/events');
           return;
         }
 
-        const tickets = await getTicketsForEvent(id);        
+        const tickets = await getTicketsForEvent(sourceEventId);
         
         setForm(prev => ({
           ...prev,
-          title: event.title || '',
+          // A copy needs its own name and its own dates — carrying the original's
+          // schedule over would silently create a second event in the past.
+          title: duplicateId ? `${event.title || 'Untitled event'} (copy)` : (event.title || ''),
           description: event.description || '',
-          startDateTime: safeFormat(event.scheduled_for),
-          endDateTime: safeFormat(event.ended_at),
+          startDateTime: duplicateId ? '' : safeFormat(event.scheduled_for),
+          endDateTime: duplicateId ? '' : safeFormat(event.ended_at),
           coverImage: event.thumbnail_url || '',
           price: deriveEventPrice(tickets || []),
-          tickets: (tickets || []).map(t => normalizeTicketEarlyBird({
-            ...t,
-            quantity: t.quantity_total !== null && t.quantity_total !== undefined ? t.quantity_total : undefined
-          })),
+          tickets: (tickets || []).map(t => {
+            const base = normalizeTicketEarlyBird({
+              ...t,
+              quantity: t.quantity_total !== null && t.quantity_total !== undefined ? t.quantity_total : undefined
+            });
+            if (!duplicateId) return base;
+            // Clear the originals' identity and sales history so these are created fresh
+            // against the new event instead of pointing at the old one's rows. Blanked
+            // rather than deleted, so the shape stays a valid EventTicket.
+            return {
+              ...base,
+              id: '',
+              event_id: '',
+              quantity_sold: 0,
+              quantity_remaining: base.quantity_total ?? 0,
+            };
+          }),
           handRaising: event.hand_raising!,
           communityId: event.community?.community_id || null,
           showType: event.show_type!,
@@ -706,7 +749,7 @@ const CreateEvent = () => {
     };
 
     fetchEventData();
-  }, [id, ready, userId, navigate]);
+  }, [sourceEventId, duplicateId, ready, userId, navigate]);
 
   useEffect(() => {
     setCoverPreview(form.coverImage);
@@ -1120,9 +1163,27 @@ const CreateEvent = () => {
           {/* Main Form Area */}
           <main className="flex-1 max-w-2xl w-full">
             <div className="mb-6 lg:px-2">
-              <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-                {id ? 'Edit Event' : 'Create New Event'}
-              </h1>
+              <div className="flex items-start justify-between gap-4">
+                <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+                  {id ? 'Edit Event' : 'Create New Event'}
+                </h1>
+
+                {/* Only when editing — there is nothing to look at until the event exists.
+                    Opens the public page, which is what guests see: EventDetail has no
+                    owner-specific rendering, so no "view as" mode is needed. */}
+                {id && (
+                  <a
+                    href={`/events/${id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Opens the public event page in a new tab"
+                    className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[13px] font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900"
+                  >
+                    <Eye className="h-4 w-4" />
+                    Preview
+                  </a>
+                )}
+              </div>
               <p className="mt-1 text-[15px] text-gray-600">
               </p>
             </div>
@@ -1277,6 +1338,7 @@ const CreateEvent = () => {
                   <div className="lg:px-2">
                     <VenueSelector
                       selectedVenueId={form.venueId}
+                      hostAvatarUrl={hostAvatarUrl}
                       deferVenueCreation
                       onDraftVenue={(draft) => {
                         setForm(prev => ({ ...prev, draftVenue: draft }));

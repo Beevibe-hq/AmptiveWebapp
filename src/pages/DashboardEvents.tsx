@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Plus, Search, CalendarDays, Ticket } from 'lucide-react';
+import { useEffect, useState, type MouseEvent } from 'react';
+import { Plus, Search, CalendarDays, Ticket, Share2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getSession } from '@/lib/api/auth';
 import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
@@ -41,6 +42,36 @@ export default function DashboardEvents() {
             month: '2-digit',
             year: 'numeric'
         });
+    };
+
+    /**
+     * Shares the event's public link. Hands off to the OS share sheet where there is one
+     * and falls back to the clipboard otherwise.
+     *
+     * The whole card is a <Link>, so the click has to be stopped here or sharing would
+     * navigate the organiser into the edit screen instead.
+     */
+    const handleShare = async (e: MouseEvent<HTMLButtonElement>, eventId: string, title: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const url = `${window.location.origin}/events/${eventId}`;
+
+        if (typeof navigator.share === 'function') {
+            try {
+                await navigator.share({ title, url });
+                return;
+            } catch {
+                // Dismissing the sheet rejects; fall through to copying instead.
+            }
+        }
+
+        try {
+            await navigator.clipboard.writeText(url);
+            toastSuccess('Event link copied');
+        } catch {
+            toastError('Could not copy the link');
+        }
     };
 
     const filteredEvents = events
@@ -229,10 +260,22 @@ export default function DashboardEvents() {
                                             : (event.venue?.name || event.location?.venue || event.venue?.city || event.location?.city)}
                                     </span>
                                 </div>
-                                <div className="mt-1.5 w-full">
-                                    <div className="rounded-lg py-1.5 px-3 text-center w-full bg-[#F1F7FE] group-hover:bg-blue-100 transition-colors">
+                                {/* Actions sit together in one row: sharing is a thing you
+                                    do to the event, so it belongs beside Edit rather than
+                                    floating over the artwork. */}
+                                <div className="mt-1.5 w-full flex items-center gap-1.5">
+                                    <div className="rounded-lg py-1.5 px-3 text-center flex-1 bg-[#F1F7FE] group-hover:bg-blue-100 transition-colors">
                                         <span className="font-medium text-[13px] text-[#0C61D9]">{isPast ? 'View Event' : 'Edit Event'}</span>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => handleShare(e, event.event_id, event.title)}
+                                        aria-label={`Share ${event.title}`}
+                                        title="Share event"
+                                        className="shrink-0 rounded-lg border border-gray-200 py-1.5 px-2.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                                    >
+                                        <Share2 className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
                         </Link>

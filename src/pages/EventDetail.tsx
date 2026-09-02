@@ -8,7 +8,7 @@ import { extractDominantColors } from '@/utils/colorExtractor';
 import { QRCodeSVG } from 'qrcode.react';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getEvent, getRelatedEvents, publishEvent, StandaloneEvent } from '@/lib/api/events';
+import { getEvent, getRelatedEvents, isEventPast, publishEvent, StandaloneEvent } from '@/lib/api/events';
 import { getProfileByUserId } from '@/lib/api/profiles';
 import { getTicketEarlyBirdRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '@/lib/api/tickets';
 import { getVenue } from '@/lib/api/venues';
@@ -106,12 +106,23 @@ function VenueMap({
       }).addTo(map);
     }
 
-    // Host avatar pin marker
-    const imgSrc = hostAvatarUrl || '/images/IMG_6053 2.JPG';
+    /*
+     * Host avatar pin marker.
+     *
+     * The glyph sits underneath and the photo covers it, so a missing or broken avatar
+     * simply reveals a neutral location mark. Both the empty case and the onerror case
+     * used to point at a hardcoded photo of one particular person, which meant that
+     * face appeared on every event whose host had no picture of their own.
+     */
+    // Escaped: this string is injected as HTML, so a quote in the URL would break out.
+    const safeAvatar = hostAvatarUrl ? String(hostAvatarUrl).replace(/"/g, '&quot;') : '';
+    const avatarImg = safeAvatar
+      ? `<img src="${safeAvatar}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.remove();" />`
+      : '';
     const iconHtml = `
       <div style="position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;">
-        <div style="width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
-          <img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='/images/IMG_6053 2.JPG';" />
+        <div style="position:relative;width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
+          ${avatarImg}
         </div>
         <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid #ffffff;margin-top:-2px;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.12));"></div>
       </div>
@@ -281,8 +292,39 @@ const toCoordinate = (value: unknown) => {
   return Number.isFinite(coordinate) ? coordinate : null;
 };
 
+/**
+ * Composes a venue's address without repeating anything.
+ *
+ * `address_line1` is usually a full formatted address from the place lookup, so it
+ * already opens with the venue's name and ends with the city and country. Blindly
+ * appending city/state/country produced tails like "… Lagos, Nigeria, Lagos, Lagos,
+ * Nigeria". Both callers supply the name themselves, so it is dropped here too.
+ */
 const getVenueAddress = (venue: NonNullable<StandaloneEvent['venue']>) => {
-  return [venue.address_line1, venue.city, venue.state, venue.country].filter(Boolean).join(', ');
+  let base = String(venue.address_line1 ?? '').trim();
+
+  const name = String(venue.name ?? '').trim();
+  if (name && base.toLowerCase().startsWith(`${name.toLowerCase()},`)) {
+    base = base.slice(name.length + 1).trim();
+  }
+
+  const present = new Set(
+    base.split(',').map(segment => segment.trim().toLowerCase()).filter(Boolean)
+  );
+
+  const extras: string[] = [];
+  for (const value of [venue.city, venue.state, venue.country]) {
+    const part = String(value ?? '').trim();
+    if (!part) continue;
+    const key = part.toLowerCase();
+    // Skips both what the address already names and repeats among these three, which
+    // matters where the city and state share a name.
+    if (present.has(key)) continue;
+    present.add(key);
+    extras.push(part);
+  }
+
+  return [base, ...extras].filter(Boolean).join(', ');
 };
 
 const getLegacyLocationLabel = (event: StandaloneEvent) => {
@@ -536,15 +578,7 @@ const EventDetail = () => {
   const renderActionContent = (mobile = false) => {
     const isDraft = event.status?.toLowerCase() === 'draft';
     const isOrganizer = currentUser?.id === event.host?.user_id;
-    const isEventEnded = (() => {
-      if (event.ended_at && new Date(event.ended_at) < new Date()) return true;
-      if (event.scheduled_for) {
-        const eventEnd = new Date(event.scheduled_for);
-        eventEnd.setHours(eventEnd.getHours() + 12);
-        return eventEnd < new Date();
-      }
-      return false;
-    })();
+    const isEventEnded = isEventPast(event);
     const hasTickets = tickets.length > 0;
 
     // Base classes
@@ -772,11 +806,16 @@ const EventDetail = () => {
                           <h3 className="text-base font-semibold text-gray-900 leading-tight">
                             {event.venue?.name || event.location?.venue || 'Amptive App'}
                           </h3>
-                          <div className="text-sm text-gray-500 mt-1 space-y-0.5">
-                            {event.venue?.address_line1 && <p>{event.venue.address_line1}</p>}
-                            {(getVenueAddress(event.venue!) || getLegacyLocationLabel(event)) && (
-                              <p>{getVenueAddress(event.venue!) || getLegacyLocationLabel(event)}</p>
-                            )}
+                          {/* One line only: the previous second line was
+                              getVenueAddress(), which opens with address_line1 — so it
+                              always restated the line above it. */}
+                          <div className="text-sm text-gray-500 mt-1">
+                            {(() => {
+                              const address = event.venue
+                                ? getVenueAddress(event.venue)
+                                : getLegacyLocationLabel(event);
+                              return address ? <p>{address}</p> : null;
+                            })()}
                           </div>
                         </>
                       )}

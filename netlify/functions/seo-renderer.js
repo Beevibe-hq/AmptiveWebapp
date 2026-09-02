@@ -10,6 +10,34 @@ function escapeHtmlAttr(str) {
     .replace(/"/g, '&quot;');
 }
 
+// The support link people actually share is a bare slug on one of the tip domains
+// (giftmywork.getamptive.com/joseph), not /support/joseph. Those hosts are the signal
+// that a single-segment path is a support slug rather than an app route.
+const TIP_HOSTS = new Set([
+  'giftmywork.getamptive.com',
+  'tipmybusiness.getamptive.com',
+  'supportmyevent.getamptive.com',
+]);
+
+// App routes that exist on every host and must never be read as a username.
+const RESERVED_SLUGS = new Set([
+  'login', 'signup', 'verify', 'verify-otp', 'complete-profile', 'auth', 'waitlist',
+  'dashboard', 'profile', 'events', 'blog', 'support', 'explore', 'download',
+  'my-tickets', 'purchase', 'paystack', 'about', 'contact', 'faqs', 'terms',
+  'privacy', 'index.html', 'favicon.ico', 'robots.txt', 'sitemap.xml',
+]);
+
+// Resolve the support slug for either URL shape, or null when this isn't a support page.
+function resolveSupportSlug(host, path) {
+  const segments = path.split('/').filter(Boolean);
+  if (segments[0] === 'support') return segments[1] || null;
+  if (!TIP_HOSTS.has(String(host).toLowerCase())) return null;
+  if (segments.length !== 1) return null;
+  const slug = segments[0];
+  if (RESERVED_SLUGS.has(slug.toLowerCase()) || slug.includes('.')) return null;
+  return slug;
+}
+
 export async function handler(event, context) {
   const path = event.path;
   const userAgent = (event.headers['user-agent'] || '').toLowerCase();
@@ -66,6 +94,7 @@ export async function handler(event, context) {
   let seoType = 'website';
 
   const apiBase = 'https://amptive-staging.getamptive.com/api/v1';
+  const supportSlug = resolveSupportSlug(host, path);
 
   try {
     if (path.startsWith('/events/')) {
@@ -106,22 +135,42 @@ export async function handler(event, context) {
           }
         }
       }
-    } else if (path.startsWith('/support/')) {
-      const slug = path.split('/')[2];
-      if (slug) {
-        const res = await fetch(`${apiBase}/support/${encodeURIComponent(slug)}`);
-        if (res.ok) {
-          const json = await res.json();
-          const profileData = json.data || json;
-          if (profileData) {
-            const displayName = profileData.full_name || profileData.username || 'Creator';
-            seoTitle = `${displayName} | Amptive`;
-            seoDesc = (profileData.support_message || profileData.support_tagline || 'Support my creative work on Amptive.');
-            
-            const avatar = profileData.support_avatar_url || profileData.avatar_url;
-            seoImage = `https://${host}/.netlify/functions/og-image?title=${encodeURIComponent(displayName)}${avatar ? `&image=${encodeURIComponent(avatar)}` : ''}`;
-            seoType = 'profile';
-          }
+    } else if (supportSlug) {
+      const res = await fetch(`${apiBase}/support/${encodeURIComponent(supportSlug)}`);
+      if (res.ok) {
+        const json = await res.json();
+        const profileData = json.data || json;
+        // A page switched offline is unreachable, so don't advertise it with a card.
+        const isEnabled = profileData?.is_support_enabled ?? profileData?.support_enabled ?? true;
+        if (profileData && isEnabled !== false) {
+          // The API returns the support display name as `name` with the account
+          // identity nested under `user` — there is no top-level `full_name`, which
+          // is why this used to fall through to the literal "Creator".
+          const user = profileData.user || {};
+          const displayName =
+            profileData.name || user.name || user.username || profileData.support_slug || 'Creator';
+
+          const tagline = (profileData.support_tagline || profileData.support_message || '')
+            .replace(/<[^>]*>/g, '')
+            .trim();
+
+          seoTitle = `${displayName} | Amptive`;
+          seoDesc = (tagline || `Show your appreciation for ${displayName} on Amptive.`).slice(0, 150);
+
+          const avatar =
+            profileData.support_avatar_url || profileData.avatar_url || user.profile_picture;
+          const profileType = profileData.profile_type || profileData.support_profile_type || 'creator';
+          const amounts = Array.isArray(profileData.support_amounts)
+            ? profileData.support_amounts.filter((n) => Number.isFinite(Number(n))).join(',')
+            : '';
+
+          const params = new URLSearchParams({ mode: 'support', title: displayName, type: profileType });
+          if (tagline) params.set('subtitle', tagline.slice(0, 90));
+          if (avatar) params.set('image', avatar);
+          if (amounts) params.set('amounts', amounts);
+
+          seoImage = `https://${host}/.netlify/functions/og-image?${params.toString()}`;
+          seoType = 'profile';
         }
       }
     }

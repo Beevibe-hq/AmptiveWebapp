@@ -813,13 +813,18 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
                 bounds.extend([coords.lat, coords.lng]);
 
                 const hostAvatar = event.host?.profile_picture || (event.host as any)?.avatar_url || (event.host as any)?.profile_image_url || (event as any).host_avatar_url || (event as any).user_avatar;
-                const avatarSrc = hostAvatar || '/images/IMG_6053 2.JPG';
                 const hostName = event.host?.name || event.host?.username || 'Host';
+
+                // Escaped: injected as HTML, so a quote in the URL would break out.
+                const safeAvatar = hostAvatar ? String(hostAvatar).replace(/"/g, '&quot;') : '';
+                const avatarImg = safeAvatar
+                  ? `<img src="${safeAvatar}" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;" onerror="this.remove();" />`
+                  : '';
 
                 const iconHtml = `
                     <div class="custom-pin-wrapper" style="position: relative; display: inline-flex; flex-direction: column; align-items: center; cursor: pointer;">
-                        <div class="custom-pin-circle" style="width: 48px; height: 48px; border-radius: 50%; background: #ffffff; border: 4px solid #ffffff; box-sizing: border-box; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                            <img src="${avatarSrc}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='/images/IMG_6053 2.JPG';" />
+                        <div class="custom-pin-circle" style="position: relative; width: 48px; height: 48px; border-radius: 50%; background: #ffffff; border: 4px solid #ffffff; box-sizing: border-box; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                            ${avatarImg}
                         </div>
                         <div class="custom-pin-tail" style="width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 10px solid #ffffff; margin-top: -2px;"></div>
                     </div>
@@ -893,7 +898,7 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
                         <div style="background-color: #ffffff; border-radius: 18px; padding: 12px; display: flex; gap: 12px; border: 1px solid rgba(0,0,0,0.04); box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
                             <!-- Image Thumbnail -->
                             <div style="position: relative; width: 84px; height: 84px; border-radius: 14px; overflow: hidden; background-color: #e5e7eb; flex-shrink: 0;">
-                                <img src="${event.thumbnail_url || avatarSrc}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='/images/IMG_6053 2.JPG';" />
+                                ${event.thumbnail_url ? `<img src="${String(event.thumbnail_url).replace(/"/g, '&quot;')}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.remove();" />` : ''}
                             </div>
 
                             <!-- Details -->

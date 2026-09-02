@@ -63,6 +63,46 @@ function textToPath(font, text, x, y, fontSize, { anchor = 'start', letterSpacin
   return `<path d="${d.trim()}" fill="${fill}"/>`;
 }
 
+// Width of a string in the same units textToPath lays out, so pills can be sized to
+// their label instead of a hardcoded width.
+function measureText(font, text, fontSize, letterSpacing = 0) {
+  if (!font) return String(text).length * fontSize * 0.6;
+  const upm = font.unitsPerEm;
+  let width = 0;
+  for (const ch of String(text)) {
+    width += (font.charToGlyph(ch).advanceWidth / upm) * fontSize + letterSpacing;
+  }
+  return letterSpacing ? width - letterSpacing : width;
+}
+
+// The support link's three tip domains each have their own call to action; the card
+// echoes whichever one the visitor arrived through.
+const SUPPORT_CTA = {
+  business: 'TIP MY BUSINESS',
+  organizer: 'SUPPORT MY EVENT',
+  creator: 'GIFT MY WORK',
+};
+
+function supportCtaLabel(profileType) {
+  const t = String(profileType || '').toLowerCase();
+  if (t.includes('business') || t === 'company' || t === 'store' || t === 'shop') return SUPPORT_CTA.business;
+  if (t.includes('organizer') || t.includes('event')) return SUPPORT_CTA.organizer;
+  return SUPPORT_CTA.creator;
+}
+
+// Amounts are only worth showing when they read cleanly. A stray 37,500 makes the row
+// look like a data dump, so the whole row is dropped rather than shown untidy.
+function tidyAmounts(raw) {
+  if (!raw) return [];
+  const values = String(raw)
+    .split(',')
+    .map((v) => parseInt(String(v).replace(/\D/g, ''), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (values.length < 2) return [];
+  const tidy = values.every((n) => n % 500 === 0 && n <= 100000);
+  return tidy ? values.slice(0, 3) : [];
+}
+
 export async function handler(event) {
   const { default: sharp } = await import('sharp');
 
@@ -82,6 +122,13 @@ export async function handler(event) {
   const query = event.queryStringParameters || {};
   const title = query.title || 'Live, Connect, Earn';
   const thumbnailUrl = query.image;
+
+  // Support profiles reuse this card's skeleton with a person's framing: a round
+  // avatar, a tagline under the name, and the tip domain's own call to action.
+  const isSupport = query.mode === 'support';
+  const subtitle = query.subtitle || '';
+  const amounts = isSupport ? tidyAmounts(query.amounts) : [];
+  const ctaLabel = isSupport ? supportCtaLabel(query.type) : 'GET TICKETS';
 
   const width = 1200;
   const height = 630;
@@ -135,8 +182,11 @@ export async function handler(event) {
           .png()
           .toBuffer();
 
+        // A face in a hard-cornered square reads as a product shot; a circle reads
+        // as a person, which is the whole point of a support card.
+        const maskRadius = isSupport ? 240 : 28;
         const maskSvg = `<svg width="480" height="480" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="0" width="480" height="480" rx="28" ry="28" fill="white"/>
+          <rect x="0" y="0" width="480" height="480" rx="${maskRadius}" ry="${maskRadius}" fill="white"/>
         </svg>`;
 
         const rounded = await sharp(resized)
@@ -151,13 +201,25 @@ export async function handler(event) {
     }
   }
 
-  // Vertically center title
-  const titleLines = wrapText(title, 15);
-  const fontSize = 52;
-  const titleLineHeight = 64;
-  const totalTitleHeight = (titleLines.length - 1) * titleLineHeight + fontSize;
-  const titleStartY = Math.round((height - totalTitleHeight) / 2) + fontSize;
   const btnY = 500;
+  const titleLineHeight = 64;
+
+  // A person's name is short and would leave the three-line title block looking
+  // empty, so the support card pairs it with the tagline and centres both together.
+  const titleLines = wrapText(title, isSupport ? 14 : 15);
+  const subtitleLines = isSupport && subtitle ? wrapText(subtitle, 38).slice(0, 2) : [];
+  const subLineHeight = 34;
+
+  const titleBlock = (titleLines.length - 1) * titleLineHeight + 52;
+  const subBlock = subtitleLines.length ? subtitleLines.length * subLineHeight + 20 : 0;
+  const chipsBlock = amounts.length ? 74 : 0;
+
+  // Keep the text optically centred in the space above the button rather than in the
+  // whole canvas, so the stack doesn't drift into the CTA as lines are added.
+  const region = { top: 75, bottom: btnY - 30 };
+  const stack = titleBlock + subBlock + chipsBlock;
+  const titleStartY =
+    Math.round((region.top + region.bottom - stack) / 2) + 52;
 
   const titleSvgLines = titleLines
     .map((line, i) =>
@@ -165,9 +227,34 @@ export async function handler(event) {
     )
     .join('\n');
 
-  const buttonLabel = T('GET TICKETS', 180, btnY + 32, 14, { anchor: 'middle', letterSpacing: 1.5, fill: btnText });
+  const subtitleY = titleStartY + (titleLines.length - 1) * titleLineHeight + 20 + subLineHeight;
+  const subtitleSvg = subtitleLines
+    .map((line, i) => T(line, 80, subtitleY + i * subLineHeight, 24, { fill: '#5A5A66' }))
+    .join('\n');
+
+  // Suggested amounts, sized to their own labels.
+  let chipsSvg = '';
+  if (amounts.length) {
+    const chipY = subtitleY + (subtitleLines.length ? (subtitleLines.length - 1) * subLineHeight + 26 : 26);
+    let cx = 80;
+    chipsSvg = amounts
+      .map((amount) => {
+        const label = `₦${amount.toLocaleString('en-US')}`;
+        const w = Math.round(measureText(font, label, 20) + 40);
+        const svg = `<rect x="${cx}" y="${chipY}" width="${w}" height="44" rx="22" fill="rgba(255,255,255,0.75)" stroke="rgba(17,17,17,0.12)"/>
+${T(label, cx + w / 2, chipY + 29, 20, { anchor: 'middle', fill: '#26262E' })}`;
+        cx += w + 12;
+        return svg;
+      })
+      .join('\n');
+  }
+
+  // The pill is sized to its label so the longer support wording still fits.
+  const ctaTextWidth = measureText(font, ctaLabel, 14, 1.5);
+  const btnWidth = Math.max(200, Math.round(ctaTextWidth + 56));
+  const buttonLabel = T(ctaLabel, 80 + btnWidth / 2, btnY + 32, 14, { anchor: 'middle', letterSpacing: 1.5, fill: btnText });
   const coverPlaceholder = !thumbnailUrl
-    ? T('Event Cover', 890, 330, 18, { anchor: 'middle', fill: '#BBBBBB' })
+    ? T(isSupport ? 'Avatar' : 'Event Cover', 890, 330, 18, { anchor: 'middle', fill: '#BBBBBB' })
     : '';
 
   const baseSvg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -190,15 +277,17 @@ export async function handler(event) {
     <path d="M12.83 68.46C8.97 67.76 8.26 63.18 8.05 58.31C7.47 44.65 11.57 31.16 19.88 19.3C22.64 15.33 26.01 11.39 29.84 12.07C34.77 12.94 34.75 20.25 34.72 28C34.72 32.16 34.71 37.01 35.72 39.88C36.1 40.93 37.96 41.08 38.62 40.11C40.42 37.47 41.82 32.83 43.01 28.84C45.27 21.28 47.43 14.14 52.48 14.14C57.53 14.14 59.68 21.28 61.94 28.86C63.14 32.87 64.55 37.55 66.36 40.18C67.02 41.15 68.88 41 69.25 39.95C70.28 37.09 70.28 32.2 70.28 28C70.25 20.26 70.24 12.94 75.15 12.08C79.01 11.39 82.36 15.33 85.12 19.3C93.43 31.17 97.51 44.65 96.95 58.31C96.74 63.18 96.03 67.77 92.16 68.46C91.85 68.5 91.57 68.53 91.28 68.53C86.71 68.53 82.78 62.32 78.61 55.77C75.86 51.45 72.6 46.31 69.72 44.54C69.06 44.13 68.11 44.18 67.55 44.66C65.17 46.72 63.42 52.49 61.98 57.32C59.72 64.86 57.57 72 52.52 72C47.47 72 45.32 64.86 43.05 57.31C41.62 52.47 39.88 46.68 37.5 44.64C36.94 44.16 36.01 44.11 35.34 44.5C32.45 46.22 29.16 51.41 26.38 55.78C22.22 62.32 18.28 68.54 13.72 68.54C13.42 68.54 13.16 68.51 12.83 68.46Z" fill="${textColor}"/>
   </g>
 
-  <!-- Event Title -->
+  <!-- Title, and the tagline / amounts that only the support card carries -->
   ${titleSvgLines}
+  ${subtitleSvg}
+  ${chipsSvg}
 
-  <!-- GET TICKETS button -->
-  <rect x="80" y="${btnY}" width="200" height="52" rx="26" fill="${btnColor}"/>
+  <!-- Call to action -->
+  <rect x="80" y="${btnY}" width="${btnWidth}" height="52" rx="26" fill="${btnColor}"/>
   ${buttonLabel}
 
   <!-- Right image placeholder background -->
-  <rect x="650" y="75" width="480" height="480" rx="28" fill="#E2E2E8"/>
+  <rect x="650" y="75" width="480" height="480" rx="${isSupport ? 240 : 28}" fill="#E2E2E8"/>
   ${coverPlaceholder}
 </svg>`;
 
