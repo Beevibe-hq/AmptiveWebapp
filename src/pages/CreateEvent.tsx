@@ -904,6 +904,14 @@ const CreateEvent = () => {
         toastError('Start time is invalid.');
         return;
       }
+      // The API rejects a past `scheduled_for` on create as well as on publish, and
+      // returned that as a bare 400. Catch it here so the message names the field —
+      // and note it's easy to hit honestly by picking a time and then spending a few
+      // minutes filling in the rest of the form.
+      if (startTime.getTime() <= Date.now()) {
+        toastError('Start date and time must be in the future. Please pick a later time.');
+        return;
+      }
     } else if (!relaxedDraftSave && isPublished) {
       toastError('Published events must have a start date. You cannot unset it.');
       return;
@@ -1071,11 +1079,13 @@ const CreateEvent = () => {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
 
-  const nowIsoLocal = useMemo(() => {
+  // Recomputed per render rather than memoised on mount: a form left open for a while
+  // would otherwise keep offering times that have since passed.
+  const nowIsoLocal = (() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     return now.toISOString().slice(0, 16);
-  }, []);
+  })();
 
   // Derived state for preview
   const previewDateLabel = useMemo(() => {
