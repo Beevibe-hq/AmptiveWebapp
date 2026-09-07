@@ -140,6 +140,71 @@ const PinInput = ({ value, onChange, length = 4, autoFocus = false }: { value: s
     );
 };
 
+/**
+ * Turn a withdrawal failure into something the user can act on.
+ *
+ * The API documents only 422 as a failure and returns prose like "Withdrawal failed.
+ * Please try again later.", which was being shown verbatim — it names no cause and no
+ * next step. Known causes get specific guidance; anything unrecognised says plainly that
+ * it came from the payment provider and keeps the server's own wording, so the user has
+ * something concrete to quote to support rather than a dead end.
+ */
+function describeWithdrawalError(raw?: string): { message: string; hint?: string } {
+    const text = String(raw || '').toLowerCase();
+
+    if (!text) {
+        return {
+            message: 'We could not complete this withdrawal.',
+            hint: 'Please try again in a few minutes.',
+        };
+    }
+    if (text.includes('insufficient') || text.includes('balance')) {
+        return {
+            message: 'Your wallet balance is too low for this withdrawal.',
+            hint: 'Your balance may have changed since this page loaded. Refresh and check the available amount.',
+        };
+    }
+    if (text.includes('bank') && (text.includes('not found') || text.includes('invalid') || text.includes('no '))) {
+        return {
+            message: 'We could not use that payout account.',
+            hint: 'Check the account under Payout details, or add it again.',
+        };
+    }
+    if (text.includes('minimum') || text.includes('at least')) {
+        return { message: raw as string, hint: 'Increase the amount and try again.' };
+    }
+    if (text.includes('wallet') && text.includes('not')) {
+        return {
+            message: 'Your wallet is not set up yet.',
+            hint: 'Set your wallet PIN under Payout details first.',
+        };
+    }
+    if (text.includes('pending') || text.includes('already') || text.includes('duplicate')) {
+        return {
+            message: 'You already have a withdrawal in progress.',
+            hint: 'Wait for it to settle before requesting another.',
+        };
+    }
+    if (text.includes('session') || text.includes('unauthor') || text.includes('401')) {
+        return {
+            message: 'Your session expired before we could send this.',
+            hint: 'Sign in again, then retry the withdrawal.',
+        };
+    }
+    if (text.includes('failed to fetch') || text.includes('network')) {
+        return {
+            message: 'We could not reach the server.',
+            hint: 'Check your connection and try again — no money has left your wallet.',
+        };
+    }
+
+    // Unrecognised: name the source, keep the server's wording, and say what to do.
+    return {
+        message: 'The payment provider rejected this withdrawal.',
+        hint: `${raw} — your wallet has not been charged. If this keeps happening, contact support with this message.`,
+    };
+}
+
 export default function DashboardFinance() {
     const WithdrawalIcon = () => (
         <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -253,6 +318,9 @@ export default function DashboardFinance() {
     const [withdrawalPin, setWithdrawalPin] = useState('');
     const [withdrawalSecurityAnswer, setWithdrawalSecurityAnswer] = useState('');
     const [withdrawalError, setWithdrawalError] = useState('');
+    // Secondary line: what to do about it. Only server failures set this; the
+    // client-side checks above are already specific enough on their own.
+    const [withdrawalHint, setWithdrawalHint] = useState('');
     const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
     const [isWithdrawing, setIsWithdrawing] = useState(false);
     const [withdrawStep, setWithdrawStep] = useState<'amount' | 'confirm'>('amount');
@@ -768,6 +836,7 @@ export default function DashboardFinance() {
             return;
         }
         setWithdrawalError('');
+        setWithdrawalHint('');
         setWithdrawalSuccess(false);
         setWithdrawalAmount('');
         setWithdrawalPin('');
@@ -791,6 +860,7 @@ export default function DashboardFinance() {
             return;
         }
         setWithdrawalError('');
+        setWithdrawalHint('');
         setWithdrawStep('confirm');
     };
 
@@ -890,6 +960,7 @@ export default function DashboardFinance() {
         }
 
         setWithdrawalError('');
+        setWithdrawalHint('');
     };
 
     const submitWithdrawal = async () => {
@@ -923,6 +994,7 @@ export default function DashboardFinance() {
 
         setIsWithdrawing(true);
         setWithdrawalError('');
+        setWithdrawalHint('');
         try {
             const result = await requestWithdrawal({
                 amount,
@@ -930,7 +1002,9 @@ export default function DashboardFinance() {
             });
 
             if (!result.ok) {
-                setWithdrawalError(result.error || 'Withdrawal request failed. Please try again.');
+                const described = describeWithdrawalError(result.error);
+                setWithdrawalError(described.message);
+                setWithdrawalHint(described.hint || '');
                 return;
             }
 
@@ -1852,9 +1926,12 @@ export default function DashboardFinance() {
                                         </div>
 
                                         {withdrawalError && (
-                                            <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
-                                                {withdrawalError}
-                                            </p>
+                                            <div role="alert" className="rounded-2xl bg-red-50 px-4 py-3">
+                                                <p className="text-[13px] font-semibold text-red-700">{withdrawalError}</p>
+                                                {withdrawalHint && (
+                                                    <p className="mt-1 text-[12px] leading-relaxed text-red-600/80">{withdrawalHint}</p>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 ) : (
@@ -1881,6 +1958,7 @@ export default function DashboardFinance() {
                                                 value={withdrawalPin}
                                                 onChange={(v) => {
                                                     setWithdrawalError('');
+                                                    setWithdrawalHint('');
                                                     setWithdrawalPin(v.slice(0, 4));
                                                 }}
                                             />
@@ -1895,6 +1973,7 @@ export default function DashboardFinance() {
                                                 value={withdrawalSecurityAnswer}
                                                 onChange={(e) => {
                                                     setWithdrawalError('');
+                                                    setWithdrawalHint('');
                                                     setWithdrawalSecurityAnswer(e.target.value);
                                                 }}
                                                 className="block w-full rounded-2xl px-3.5 py-3 text-base font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
@@ -1903,9 +1982,12 @@ export default function DashboardFinance() {
                                         </div>
 
                                         {withdrawalError && (
-                                            <p className="rounded-2xl bg-red-50 px-4 py-3 text-[13px] font-medium text-red-600">
-                                                {withdrawalError}
-                                            </p>
+                                            <div role="alert" className="rounded-2xl bg-red-50 px-4 py-3">
+                                                <p className="text-[13px] font-semibold text-red-700">{withdrawalError}</p>
+                                                {withdrawalHint && (
+                                                    <p className="mt-1 text-[12px] leading-relaxed text-red-600/80">{withdrawalHint}</p>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 )}
@@ -1934,6 +2016,7 @@ export default function DashboardFinance() {
                                             <button
                                                 onClick={() => {
                                                     setWithdrawalError('');
+                                                    setWithdrawalHint('');
                                                     setWithdrawStep('amount');
                                                 }}
                                                 disabled={isWithdrawing}

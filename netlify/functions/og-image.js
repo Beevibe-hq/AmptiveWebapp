@@ -201,7 +201,12 @@ export async function handler(event) {
     }
   }
 
-  const btnY = 500;
+  // Support cards get a larger pill — the card is usually seen shrunk in a chat
+  // preview, where the original 52px height read as an afterthought. Kept at the same
+  // bottom margin as the event card so the two still line up.
+  const btnHeight = isSupport ? 64 : 52;
+  const btnY = 630 - 78 - btnHeight;
+  const btnFontSize = isSupport ? 17 : 14;
   const titleLineHeight = 64;
 
   // A person's name is short and would leave the three-line title block looking
@@ -250,9 +255,13 @@ ${T(label, cx + w / 2, chipY + 29, 20, { anchor: 'middle', fill: '#26262E' })}`;
   }
 
   // The pill is sized to its label so the longer support wording still fits.
-  const ctaTextWidth = measureText(font, ctaLabel, 14, 1.5);
-  const btnWidth = Math.max(200, Math.round(ctaTextWidth + 56));
-  const buttonLabel = T(ctaLabel, 80 + btnWidth / 2, btnY + 32, 14, { anchor: 'middle', letterSpacing: 1.5, fill: btnText });
+  const ctaLetterSpacing = isSupport ? 1.8 : 1.5;
+  const ctaTextWidth = measureText(font, ctaLabel, btnFontSize, ctaLetterSpacing);
+  const btnWidth = Math.max(isSupport ? 240 : 200, Math.round(ctaTextWidth + (isSupport ? 72 : 56)));
+  // Baseline sits on the pill's optical centre: half the height plus roughly a third
+  // of the cap height.
+  const ctaBaseline = btnY + Math.round(btnHeight / 2 + btnFontSize * 0.35);
+  const buttonLabel = T(ctaLabel, 80 + btnWidth / 2, ctaBaseline, btnFontSize, { anchor: 'middle', letterSpacing: ctaLetterSpacing, fill: btnText });
   const coverPlaceholder = !thumbnailUrl
     ? T(isSupport ? 'Avatar' : 'Event Cover', 890, 330, 18, { anchor: 'middle', fill: '#BBBBBB' })
     : '';
@@ -283,7 +292,7 @@ ${T(label, cx + w / 2, chipY + 29, 20, { anchor: 'middle', fill: '#26262E' })}`;
   ${chipsSvg}
 
   <!-- Call to action -->
-  <rect x="80" y="${btnY}" width="${btnWidth}" height="52" rx="26" fill="${btnColor}"/>
+  <rect x="80" y="${btnY}" width="${btnWidth}" height="${btnHeight}" rx="${btnHeight / 2}" fill="${btnColor}"/>
   ${buttonLabel}
 
   <!-- Right image placeholder background -->

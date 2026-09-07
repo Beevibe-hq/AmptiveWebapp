@@ -27,6 +27,22 @@ const RESERVED_SLUGS = new Set([
   'privacy', 'index.html', 'favicon.ico', 'robots.txt', 'sitemap.xml',
 ]);
 
+// The three tip domains each have their own action. Kept in step with SUPPORT_CTA in
+// og-image.js — duplicated rather than imported so this bundle doesn't pull in that
+// function's embedded font.
+const SUPPORT_ACTION = {
+  business: 'Tip My Business',
+  organizer: 'Support My Event',
+  creator: 'Gift My Work',
+};
+
+function supportAction(profileType) {
+  const t = String(profileType || '').toLowerCase();
+  if (t.includes('business') || t === 'company' || t === 'store' || t === 'shop') return SUPPORT_ACTION.business;
+  if (t.includes('organizer') || t.includes('event')) return SUPPORT_ACTION.organizer;
+  return SUPPORT_ACTION.creator;
+}
+
 // Resolve the support slug for either URL shape, or null when this isn't a support page.
 function resolveSupportSlug(host, path) {
   const segments = path.split('/').filter(Boolean);
@@ -154,12 +170,17 @@ export async function handler(event, context) {
             .replace(/<[^>]*>/g, '')
             .trim();
 
-          seoTitle = `${displayName} | Amptive`;
-          seoDesc = (tagline || `Show your appreciation for ${displayName} on Amptive.`).slice(0, 150);
-
           const avatar =
             profileData.support_avatar_url || profileData.avatar_url || user.profile_picture;
           const profileType = profileData.profile_type || profileData.support_profile_type || 'creator';
+
+          // Title and description name the action, not the brand — a preview that reads
+          // "Achidon | Gift My Work" says what the link is for. The bio still appears on
+          // the card image, but it makes a poor description: it describes the person
+          // rather than what tapping the link does.
+          const action = supportAction(profileType);
+          seoTitle = `${displayName} | ${action}`;
+          seoDesc = `This is a link to ${action}`;
           const amounts = Array.isArray(profileData.support_amounts)
             ? profileData.support_amounts.filter((n) => Number.isFinite(Number(n))).join(',')
             : '';
