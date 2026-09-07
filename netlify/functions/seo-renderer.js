@@ -174,19 +174,24 @@ export async function handler(event, context) {
             profileData.support_avatar_url || profileData.avatar_url || user.profile_picture;
           const profileType = profileData.profile_type || profileData.support_profile_type || 'creator';
 
-          // Title and description name the action, not the brand — a preview that reads
-          // "Achidon | Gift My Work" says what the link is for. The bio still appears on
-          // the card image, but it makes a poor description: it describes the person
-          // rather than what tapping the link does.
+          // The title names the action rather than the brand, so a preview reads
+          // "Achidon | Gift My Work" and says what the link is for. The description
+          // stays the creator's own bio.
           const action = supportAction(profileType);
           seoTitle = `${displayName} | ${action}`;
-          seoDesc = `This is a link to ${action}`;
+          seoDesc = (tagline || `Show your appreciation for ${displayName} on Amptive.`).slice(0, 150);
           const amounts = Array.isArray(profileData.support_amounts)
             ? profileData.support_amounts.filter((n) => Number.isFinite(Number(n))).join(',')
             : '';
 
-          const params = new URLSearchParams({ mode: 'support', title: displayName, type: profileType });
-          if (tagline) params.set('subtitle', tagline.slice(0, 90));
+          // The line under the name on the card says what the link does, rather than
+          // repeating the bio that already sits in the description.
+          const params = new URLSearchParams({
+            mode: 'support',
+            title: displayName,
+            type: profileType,
+            subtitle: `This is a link to ${action}`,
+          });
           if (avatar) params.set('image', avatar);
           if (amounts) params.set('amounts', amounts);
 
