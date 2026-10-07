@@ -167,7 +167,25 @@ export default function EventSpotlightCarousel({ events, loading = false }: Even
   const justDraggedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
 
-  const cards = useMemo(() => events.slice(0, MAX_CARDS), [events]);
+  /**
+   * This is a three-slide product showcase, not a listing: each card's video, kicker and
+   * headline are hardcoded by index, and nothing on the first MAX_CARDS cards is read
+   * from the event itself. Events only ever supplied the card *count*, so a backend with
+   * none left the section rendering its headline and CTA over empty space — and only one
+   * of the three headlines was ever reachable when fewer than three existed.
+   *
+   * Padding to MAX_CARDS keeps the showcase whole regardless. The filler is invisible
+   * because the event fields it lacks are not rendered at these indices.
+   */
+  const cards = useMemo(() => {
+    const real = events.slice(0, MAX_CARDS);
+    if (real.length >= MAX_CARDS) return real;
+    const filler = Array.from({ length: MAX_CARDS - real.length }, (_, i) => ({
+      id: `showcase-${real.length + i}`,
+      title: '',
+    }));
+    return [...real, ...filler];
+  }, [events]);
   const count = cards.length;
 
   /**
