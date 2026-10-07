@@ -109,7 +109,12 @@ export async function handler(event, context) {
   let seoUrl = `https://${host}${path}`;
   let seoType = 'website';
 
-  const apiBase = 'https://amptive-staging.getamptive.com/api/v1';
+  // Set per Netlify site (same variable the redirect generator uses), so staging and
+  // production read their own backends. Falls back to staging rather than production:
+  // a misconfigured deploy showing stale previews is better than one quietly scraping
+  // live user data.
+  const apiOrigin = (process.env.API_ORIGIN || 'https://amptive-staging.getamptive.com').replace(/\/+$/, '');
+  const apiBase = `${apiOrigin}/api/v1`;
   const supportSlug = resolveSupportSlug(host, path);
 
   try {
