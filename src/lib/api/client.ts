@@ -1,5 +1,9 @@
-// In dev, go through the Vite proxy (same-origin) so real HTTP errors aren't masked as CORS failures.
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api/v1' : 'https://amptive-staging.getamptive.com/api/v1');
+// Same-origin in every environment: the Vite proxy in dev, the Netlify /api/* proxy once
+// deployed. Which backend that resolves to is a per-site deploy setting (API_ORIGIN), not
+// something baked into the bundle — a hardcoded host here is how production ended up
+// serving staging data. Staying same-origin also sidesteps CORS entirely, which matters
+// because the production API only allows the getamptive.com origin, not the tip domains.
+const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 const ACCESS_TOKEN_KEY = 'amptive.auth_token';
 const REFRESH_TOKEN_KEY = 'amptive.refresh_token';
 const ACCESS_TOKEN_EXPIRY_KEY = 'amptive.auth_token_expiry';

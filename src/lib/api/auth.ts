@@ -287,7 +287,7 @@ function loadGoogleScript(): Promise<void> {
  * Redirects the browser to the backend's OAuth initiation endpoint.
  */
 export function signInWithGoogle(): void {
-  const backendUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api/v1' : 'https://amptive-staging.getamptive.com/api/v1');
+  const backendUrl = import.meta.env.VITE_API_URL || '/api/v1';
   window.location.href = `${backendUrl}/auth/google`;
 }
 
