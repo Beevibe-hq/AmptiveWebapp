@@ -18,7 +18,9 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'https://amptive-staging.getamptive.com',
+        // Mirrors API_ORIGIN on the deployed sites, so dev can be pointed at either
+        // backend: `API_ORIGIN=https://api.getamptive.com npm run dev`.
+        target: process.env.API_ORIGIN || 'https://amptive-staging.getamptive.com',
         changeOrigin: true,
       },
       '/twitter-token': {

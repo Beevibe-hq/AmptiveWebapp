@@ -143,6 +143,24 @@ const communityHealthImage = '/images/Community card 7.png';
 const communityEducationImage = '/images/Community card 10.png';
 const communityTravelImage = '/images/Community card 11.png';
 
+/**
+ * Shown whenever the backend returns no communities — while the request is in flight,
+ * and also when it comes back empty. These carry no community_id, so the card's click
+ * handler sends them to the general /community page rather than a specific one.
+ */
+const FALLBACK_COMMUNITIES = [
+  { name: 'Music', image: communityMusicImage },
+  { name: 'Food & Drink', image: communityFoodImage },
+  { name: 'Art & Culture', image: communityArtImage },
+  { name: 'Technology', image: communityTechImage },
+  { name: 'Sports', image: communitySportsImage },
+  { name: 'Fashion', image: communityFashionImage },
+  { name: 'Gaming', image: communityGamingImage },
+  { name: 'Health & Wellness', image: communityHealthImage },
+  { name: 'Education', image: communityEducationImage },
+  { name: 'Travel', image: communityTravelImage },
+];
+
 interface HeroSlideProps {
   title: string;
   description: string;
@@ -2070,18 +2088,11 @@ const Homepage: React.FC = () => {
             className="hide-scrollbar flex gap-4 overflow-x-auto pb-2"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
-            {(loadingCommunities ? [
-              { name: "Music", image: communityMusicImage },
-              { name: "Food & Drink", image: communityFoodImage },
-              { name: "Art & Culture", image: communityArtImage },
-              { name: "Technology", image: communityTechImage },
-              { name: "Sports", image: communitySportsImage },
-              { name: "Fashion", image: communityFashionImage },
-              { name: "Gaming", image: communityGamingImage },
-              { name: "Health & Wellness", image: communityHealthImage },
-              { name: "Education", image: communityEducationImage },
-              { name: "Travel", image: communityTravelImage }
-            ] : communities).slice(0, 10).map((community: any, index: number) => (
+            {/* Fall back whenever there is nothing to show, not only while loading —
+                otherwise a backend with no communities rendered the heading and arrows
+                above an empty row. */}
+            {(loadingCommunities || communities.length === 0 ? FALLBACK_COMMUNITIES : communities)
+              .slice(0, 10).map((community: any, index: number) => (
               <button
                 key={community.community_id || index}
                 type="button"
