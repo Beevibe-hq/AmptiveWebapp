@@ -143,6 +143,24 @@ const communityHealthImage = '/images/Community card 7.png';
 const communityEducationImage = '/images/Community card 10.png';
 const communityTravelImage = '/images/Community card 11.png';
 
+/**
+ * Shown whenever the backend returns no communities — while the request is in flight,
+ * and also when it comes back empty. These carry no community_id, so the card's click
+ * handler sends them to the general /community page rather than a specific one.
+ */
+const FALLBACK_COMMUNITIES = [
+  { name: 'Music', image: communityMusicImage },
+  { name: 'Food & Drink', image: communityFoodImage },
+  { name: 'Art & Culture', image: communityArtImage },
+  { name: 'Technology', image: communityTechImage },
+  { name: 'Sports', image: communitySportsImage },
+  { name: 'Fashion', image: communityFashionImage },
+  { name: 'Gaming', image: communityGamingImage },
+  { name: 'Health & Wellness', image: communityHealthImage },
+  { name: 'Education', image: communityEducationImage },
+  { name: 'Travel', image: communityTravelImage },
+];
+
 interface HeroSlideProps {
   title: string;
   description: string;
@@ -2041,7 +2059,11 @@ const Homepage: React.FC = () => {
       {/* 3D Event Spotlight Carousel */}
       <EventSpotlightCarousel events={filteredEvents} loading={loadingEvents} />
 
-      {/* Explore Topics Section */}
+      {/* Explore Communities. Hidden once we know there are none: every card opens a
+          specific community, and there is no meaningful stand-in for one that doesn't
+          exist — a card that can't be opened is worse than no card. Placeholders still
+          cover the in-flight state so the row doesn't pop in. */}
+      {(loadingCommunities || communities.length > 0) && (
       <div className="w-[95vw] mx-auto mt-2 mb-10 bg-white px-4 py-6 sm:mt-4 sm:mb-12 sm:px-6 sm:py-8">
         <div className="mb-5 flex items-center justify-between gap-4 sm:mb-7">
           <h2 className="text-xl font-bold leading-tight text-black md:text-2xl">Explore Communities</h2>
@@ -2070,18 +2092,8 @@ const Homepage: React.FC = () => {
             className="hide-scrollbar flex gap-4 overflow-x-auto pb-2"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
-            {(loadingCommunities ? [
-              { name: "Music", image: communityMusicImage },
-              { name: "Food & Drink", image: communityFoodImage },
-              { name: "Art & Culture", image: communityArtImage },
-              { name: "Technology", image: communityTechImage },
-              { name: "Sports", image: communitySportsImage },
-              { name: "Fashion", image: communityFashionImage },
-              { name: "Gaming", image: communityGamingImage },
-              { name: "Health & Wellness", image: communityHealthImage },
-              { name: "Education", image: communityEducationImage },
-              { name: "Travel", image: communityTravelImage }
-            ] : communities).slice(0, 10).map((community: any, index: number) => (
+            {(loadingCommunities ? FALLBACK_COMMUNITIES : communities)
+              .slice(0, 10).map((community: any, index: number) => (
               <button
                 key={community.community_id || index}
                 type="button"
@@ -2105,6 +2117,7 @@ const Homepage: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Trending on Amptive Section */}
       <div className="w-[95vw] mx-auto my-12 bg-white border border-gray-200 rounded-2xl p-6">

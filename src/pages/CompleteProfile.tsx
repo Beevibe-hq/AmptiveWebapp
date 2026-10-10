@@ -397,9 +397,11 @@ export default function CompleteProfilePage() {
       let profilePictureUrl: string | undefined;
 
       if (avatarPreview && !avatarPreview.startsWith('data:image/svg')) {
-        const res = await fetch(avatarPreview);
-        const blob = await res.blob();
-        const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
+        // Decode the data URL directly; fetch(data:) is blocked by the prod CSP connect-src
+        const [header, base64] = avatarPreview.split(',');
+        const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        const file = new File([bytes], 'avatar.jpg', { type: mime });
         profilePictureUrl = (await uploadImage(file, 'profile-picture')) || undefined;
       }
 
