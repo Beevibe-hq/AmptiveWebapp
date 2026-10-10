@@ -144,6 +144,10 @@ export default function EditProfile() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user) return;
+        if (username.trim().length < 3) {
+            toastError('Username must be at least 3 characters.');
+            return;
+        }
         setSaving(true);
 
         try {
