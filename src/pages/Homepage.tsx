@@ -795,7 +795,8 @@ const Homepage: React.FC = () => {
       }
 
       try {
-        const data = await listCommunities({ page_size: 20 });        
+        // The row scrolls sideways, so show every community rather than the first page.
+        const data = await listCommunities({ page_size: 100 });
         homepageCommunitiesCache = { data, timestamp: Date.now() };
         setCommunities(data);
       } catch (error) {
@@ -2092,8 +2093,7 @@ const Homepage: React.FC = () => {
             className="hide-scrollbar flex gap-4 overflow-x-auto pb-2"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
-            {(loadingCommunities ? FALLBACK_COMMUNITIES : communities)
-              .slice(0, 10).map((community: any, index: number) => (
+            {(loadingCommunities ? FALLBACK_COMMUNITIES : communities).map((community: any, index: number) => (
               <button
                 key={community.community_id || index}
                 type="button"
