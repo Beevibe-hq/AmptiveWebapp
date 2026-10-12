@@ -318,7 +318,6 @@ export default function DashboardFinance() {
     const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
     const [withdrawalAmount, setWithdrawalAmount] = useState('');
     const [withdrawalPin, setWithdrawalPin] = useState('');
-    const [withdrawalSecurityAnswer, setWithdrawalSecurityAnswer] = useState('');
     const [withdrawalError, setWithdrawalError] = useState('');
     // Secondary line: what to do about it. Only server failures set this; the
     // client-side checks above are already specific enough on their own.
@@ -842,7 +841,6 @@ export default function DashboardFinance() {
         setWithdrawalSuccess(false);
         setWithdrawalAmount('');
         setWithdrawalPin('');
-        setWithdrawalSecurityAnswer('');
         setWithdrawStep('amount');
         setIsWithdrawOpen(true);
     };
@@ -1011,11 +1009,6 @@ export default function DashboardFinance() {
 
         if (withdrawalPin.length !== 4) {
             setWithdrawalError('Enter your 4-digit wallet PIN.');
-            return;
-        }
-
-        if (!withdrawalSecurityAnswer) {
-            setWithdrawalError('Enter your security answer exactly as you created it.');
             return;
         }
 
@@ -1980,7 +1973,7 @@ export default function DashboardFinance() {
                                         </div>
 
                                         <p className="text-[13px] leading-relaxed text-black/45">
-                                            Confirm it's you to complete this withdrawal.
+                                            Enter your wallet PIN to complete this withdrawal.
                                         </p>
 
                                         <div className="space-y-1.5">
@@ -1992,23 +1985,6 @@ export default function DashboardFinance() {
                                                     setWithdrawalHint('');
                                                     setWithdrawalPin(v.slice(0, 4));
                                                 }}
-                                            />
-                                        </div>
-
-                                        <div className="space-y-1.5">
-                                            <label className="block text-[13px] font-medium text-gray-700 ml-1">Security Answer</label>
-                                            <p className="ml-1 text-[12px] leading-relaxed text-black/40">{selectedWalletSecurityQuestion}</p>
-                                            <input
-                                                type="password"
-                                                autoComplete="off"
-                                                value={withdrawalSecurityAnswer}
-                                                onChange={(e) => {
-                                                    setWithdrawalError('');
-                                                    setWithdrawalHint('');
-                                                    setWithdrawalSecurityAnswer(e.target.value);
-                                                }}
-                                                className="block w-full rounded-2xl px-3.5 py-3 text-base font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
-                                                placeholder="Case-sensitive answer"
                                             />
                                         </div>
 
@@ -2057,7 +2033,7 @@ export default function DashboardFinance() {
                                             </button>
                                             <button
                                                 onClick={submitWithdrawal}
-                                                disabled={isWithdrawing || !hasBankAccount || availableBalance <= 0 || withdrawalPin.length !== 4 || !withdrawalSecurityAnswer}
+                                                disabled={isWithdrawing || !hasBankAccount || availableBalance <= 0 || withdrawalPin.length !== 4}
                                                 className="px-8 py-2.5 bg-black rounded-xl text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-black/80 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
                                             >
                                                 {isWithdrawing ? 'Processing…' : 'Request Withdrawal'}
