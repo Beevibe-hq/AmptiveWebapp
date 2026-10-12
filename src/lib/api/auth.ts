@@ -256,29 +256,212 @@ export async function setWalletPin(data: SetPinRequest): Promise<{ ok: boolean; 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 const GIS_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
 
-/** Dynamically load the Google Identity Services script (idempotent). */
+let gisLoadPromise: Promise<void> | null = null;
+
+/** Dynamically load the Google Identity Services script (idempotent, retries after a failure). */
 function loadGoogleScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof (window as any).google?.accounts?.id !== 'undefined') {
-      resolve();
-      return;
-    }
+  if (typeof (window as any).google?.accounts?.id !== 'undefined') return Promise.resolve();
+  if (gisLoadPromise) return gisLoadPromise;
 
-    const existing = document.querySelector(`script[src="${GIS_SCRIPT_URL}"]`);
-    if (existing) {
-      // Script tag exists but hasn't loaded yet — wait for it.
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Failed to load Google Identity Services.')));
-      return;
-    }
-
+  gisLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = GIS_SCRIPT_URL;
     script.async = true;
-    script.defer = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Identity Services.'));
+    script.onerror = () => {
+      // Drop the failed tag and the cached promise. Otherwise the next attempt waits on
+      // load/error events that already fired, and the button hangs with no way back.
+      script.remove();
+      gisLoadPromise = null;
+      reject(new Error('Failed to load Google Identity Services.'));
+    };
     document.head.appendChild(script);
+  });
+  return gisLoadPromise;
+}
+
+/** Rejection reason for an attempt that was replaced by a newer click or abandoned. Not shown to users. */
+export class GoogleSignInCancelled extends Error {
+  constructor() {
+    super('Google sign-in was cancelled.');
+    this.name = 'GoogleSignInCancelled';
+  }
+}
+
+/**
+ * Where the popup flow is, so the button can say so:
+ * - opening:   clicked, waiting for Google's window to appear
+ * - waiting:   Google's window is open (this window lost focus)
+ * - idle:      the user came back without signing in (closed the window, or it never opened)
+ * - verifying: Google returned a credential and we're exchanging it with the backend
+ */
+export type GoogleSignInStatus = 'opening' | 'waiting' | 'idle' | 'verifying';
+
+type PendingCredential = { resolve: (credential: string) => void; reject: (err: Error) => void };
+
+let pendingCredential: PendingCredential | null = null;
+let hiddenButtonContainer: HTMLDivElement | null = null;
+
+/**
+ * Initialize GIS and render Google's button off-screen, once. Returns the clickable element,
+ * or null if the script isn't loaded yet. Synchronous, so it can run inside a click handler.
+ */
+function getHiddenGoogleButton(): HTMLElement | null {
+  const google = (window as any).google;
+  if (!google?.accounts?.id || !GOOGLE_CLIENT_ID) return null;
+
+  if (!hiddenButtonContainer || !document.body.contains(hiddenButtonContainer)) {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      // Registered once for the page; routes each credential to whichever attempt is waiting.
+      callback: (response: { credential?: string; error?: string }) => {
+        const pending = pendingCredential;
+        pendingCredential = null;
+        if (!pending) return;
+        if (response.credential) {
+          pending.resolve(response.credential);
+        } else {
+          pending.reject(new Error(response.error || 'Google authentication was cancelled.'));
+        }
+      },
+    });
+
+    const container = document.createElement('div');
+    container.setAttribute('aria-hidden', 'true');
+    container.style.position = 'fixed';
+    container.style.top = '-9999px';
+    container.style.left = '-9999px';
+    container.style.width = '1px';
+    container.style.height = '1px';
+    container.style.overflow = 'hidden';
+    document.body.appendChild(container);
+
+    google.accounts.id.renderButton(container, { type: 'standard', size: 'large' });
+    hiddenButtonContainer = container;
+  }
+
+  return hiddenButtonContainer.querySelector('div[role="button"]') as HTMLElement | null;
+}
+
+/**
+ * Fetch and set up Google Sign-In ahead of the click. Call it when a sign-in form mounts:
+ * the popup then opens the instant the user clicks, and the click happens while the browser
+ * still counts it as user-initiated, so the popup isn't blocked.
+ */
+export function preloadGoogleSignIn(): void {
+  if (!GOOGLE_CLIENT_ID) return;
+  loadGoogleScript()
+    .then(() => getHiddenGoogleButton())
+    .catch(() => {
+      // Retried on click.
+    });
+}
+
+/** Click Google's button and wait for its credential, reporting progress through onStatus. */
+function requestGoogleCredential(onStatus?: (status: GoogleSignInStatus) => void): Promise<string> {
+  // A new click replaces any attempt still waiting (e.g. one whose window was closed).
+  pendingCredential?.reject(new GoogleSignInCancelled());
+  pendingCredential = null;
+
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    let openTimer: ReturnType<typeof setTimeout> | undefined;
+    let returnTimer: ReturnType<typeof setTimeout> | undefined;
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = () => {
+      settled = true;
+      if (pendingCredential === attempt) pendingCredential = null;
+      clearTimeout(openTimer);
+      clearTimeout(returnTimer);
+      clearTimeout(expiryTimer);
+      window.removeEventListener('blur', onLeave);
+      window.removeEventListener('focus', onReturn);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+
+    const attempt: PendingCredential = {
+      resolve: (credential) => {
+        finish();
+        resolve(credential);
+      },
+      reject: (err) => {
+        finish();
+        reject(err);
+      },
+    };
+    pendingCredential = attempt;
+
+    /*
+     * GIS reports nothing when its window is closed, so focus is the only signal. Coming
+     * back without a credential only resets the button; the attempt stays alive, so a
+     * credential that arrives afterwards (the user clicked back here mid-sign-in, then
+     * finished) still completes the login.
+     */
+    const onLeave = () => {
+      if (settled) return;
+      clearTimeout(openTimer);
+      clearTimeout(returnTimer);
+      onStatus?.('waiting');
+    };
+    const onReturn = () => {
+      if (settled) return;
+      clearTimeout(returnTimer);
+      // The credential is posted just before Google's window closes; give it a moment.
+      returnTimer = setTimeout(() => {
+        if (!settled) onStatus?.('idle');
+      }, 1500);
+    };
+    const onVisibility = () => (document.hidden ? onLeave() : onReturn());
+
+    window.addEventListener('blur', onLeave);
+    window.addEventListener('focus', onReturn);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Stop holding the attempt after a generous window; nobody is mid-sign-in after this.
+    expiryTimer = setTimeout(() => attempt.reject(new GoogleSignInCancelled()), 5 * 60 * 1000);
+
+    const open = (button: HTMLElement | null) => {
+      if (settled) return;
+      if (button) {
+        button.click();
+      } else {
+        /*
+         * Fall back to One Tap, which returns an ID token through the same callback.
+         *
+         * The OAuth token client is deliberately not used here. It yields an *access*
+         * token — an opaque bearer credential for calling Google's APIs — where the
+         * backend expects a signed identity assertion it can verify. Sending one is
+         * indistinguishable from a valid request on the wire and comes back as a flat
+         * 400 "Social authentication failed."
+         */
+        try {
+          (window as any).google.accounts.id.prompt();
+        } catch {
+          attempt.reject(new Error('Could not open Google Sign-In.'));
+          return;
+        }
+      }
+      // If Google's window never takes focus (popup blocked, or opened too long after the
+      // click), stop the spinner so the user can try again.
+      openTimer = setTimeout(() => {
+        if (!settled) onStatus?.('idle');
+      }, 4000);
+    };
+
+    // Preloaded: click now, inside the user's click, so the popup opens immediately.
+    const button = getHiddenGoogleButton();
+    if (button) {
+      open(button);
+      return;
+    }
+
+    // Not preloaded (slow connection or a failed preload): load, then open.
+    loadGoogleScript()
+      .then(() => open(getHiddenGoogleButton()))
+      .catch(() => {
+        attempt.reject(new Error('Could not load Google Sign-In. Check your connection and try again.'));
+      });
   });
 }
 
@@ -293,97 +476,29 @@ export function signInWithGoogle(): void {
 
 /**
  * Client-side Google Sign-In via popup.
- * 1. Loads Google Identity Services script
- * 2. Opens Google account chooser popup
- * 3. Sends the credential (ID token) to the backend for verification
- * 4. Stores session tokens and returns the authenticated user
+ * 1. Opens Google's account chooser (loading Google Identity Services first if needed)
+ * 2. Sends the credential (ID token) to the backend for verification
+ * 3. Stores session tokens and returns the authenticated user
+ *
+ * Call it directly from the click handler, before any await: the popup has to open while the
+ * browser still treats the click as user-initiated. Throws GoogleSignInCancelled when a newer
+ * attempt replaces this one; callers should ignore that rather than show an error.
  */
-export async function signInWithGooglePopup(): Promise<AuthResponse> {
+export async function signInWithGooglePopup(
+  onStatus?: (status: GoogleSignInStatus) => void
+): Promise<AuthResponse> {
   if (!GOOGLE_CLIENT_ID) {
     return unsupportedAuthResponse('Google Sign-In is not configured. Missing VITE_GOOGLE_CLIENT_ID.');
   }
 
+  let credential: string;
   try {
-    await loadGoogleScript();
-  } catch {
-    return unsupportedAuthResponse('Could not load Google Sign-In. Please try again.');
+    credential = await requestGoogleCredential(onStatus);
+  } catch (err: any) {
+    if (err instanceof GoogleSignInCancelled) throw err;
+    return unsupportedAuthResponse(err?.message || 'Google authentication failed.');
   }
-
-  // Get Google ID Token (JWT) via Google Identity Services
-  const credential = await new Promise<string>((resolve, reject) => {
-    const google = (window as any).google;
-
-    if (!google?.accounts?.id) {
-      reject(new Error('Google Identity Services client is not available.'));
-      return;
-    }
-
-    let timeoutId: any;
-
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: (response: { credential?: string; error?: string }) => {
-        if (timeoutId) clearTimeout(timeoutId);
-        if (response.credential) {
-          resolve(response.credential);
-        } else {
-          reject(new Error(response.error || 'Google authentication was cancelled.'));
-        }
-      },
-    });
-
-    // Create a temporary hidden container to render Google's official button
-    const container = document.createElement('div');
-    container.id = 'g_id_onload_hidden_container';
-    container.style.position = 'fixed';
-    container.style.top = '-9999px';
-    container.style.left = '-9999px';
-    container.style.width = '1px';
-    container.style.height = '1px';
-    container.style.overflow = 'hidden';
-    document.body.appendChild(container);
-
-    google.accounts.id.renderButton(container, {
-      type: 'standard',
-      size: 'large',
-    });
-
-    // Programmatically click the Google button inside the container
-    const triggerClick = () => {
-      const btn = container.querySelector('div[role="button"]') as HTMLElement | null;
-      if (btn) {
-        btn.click();
-        return;
-      }
-
-      /*
-       * Fall back to One Tap, which returns an ID token through the same callback above.
-       *
-       * The OAuth token client is deliberately not used here. It yields an *access*
-       * token — an opaque bearer credential for calling Google's APIs — where the
-       * backend expects a signed identity assertion it can verify. Sending one is
-       * indistinguishable from a valid request on the wire and comes back as a flat
-       * 400 "Social authentication failed."
-       */
-      try {
-        google.accounts.id.prompt();
-      } catch {
-        reject(new Error('Could not open Google Sign-In.'));
-      }
-    };
-
-    setTimeout(triggerClick, 50);
-
-    // Cleanup, and reject rather than leaving the promise pending forever. One Tap can
-    // be suppressed without ever invoking the callback, which used to hang sign-in with
-    // no error and no way back.
-    timeoutId = setTimeout(() => {
-      if (document.body.contains(container)) {
-        document.body.removeChild(container);
-      }
-      reject(new Error('Google Sign-In timed out. Please try again.'));
-    }, 10000);
-  });
+  onStatus?.('verifying');
 
   /*
    * An ID token is a JWT: three dot-separated base64 segments. Checking the shape here
@@ -453,6 +568,10 @@ export async function signInWithGooglePopup(): Promise<AuthResponse> {
       },
     };
   } catch (err: any) {
+    // fetch's network failure: "Failed to fetch" (Chrome), "Load failed" (Safari), "NetworkError…" (Firefox).
+    if (err instanceof TypeError && /failed to fetch|load failed|networkerror/i.test(err.message)) {
+      return unsupportedAuthResponse("Couldn't reach Amptive. Check your connection and try again.");
+    }
     return unsupportedAuthResponse(err?.message || 'Google authentication failed.');
   }
 }
