@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2, Trash2, ShieldCheck, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
@@ -876,6 +877,25 @@ export default function DashboardFinance() {
         setWalletSetupError('');
         setIsWalletSetupOpen(true);
     };
+
+    /*
+     * Sent here to set up a wallet from elsewhere (e.g. Create Event): open the setup straight
+     * away, and once it succeeds send the user back to what they were doing. returnTo must be
+     * an in-app path, so this can't be turned into an open redirect.
+     */
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const requestedReturnTo = searchParams.get('returnTo');
+    const returnTo = requestedReturnTo?.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : null;
+    const autoOpenWalletSetup = searchParams.get('setupWallet') === '1';
+    const autoOpenedWalletSetupRef = useRef(false);
+
+    useEffect(() => {
+        if (autoOpenWalletSetup && walletSetupRequired && !autoOpenedWalletSetupRef.current) {
+            autoOpenedWalletSetupRef.current = true;
+            openWalletSetup();
+        }
+    }, [autoOpenWalletSetup, walletSetupRequired]);
 
     const closeWalletSetup = () => {
         if (isSettingWalletPin) return;
@@ -1784,7 +1804,9 @@ export default function DashboardFinance() {
                                             </h2>
                                             <p className="mx-auto mt-2 max-w-[300px] text-[13px] leading-relaxed text-black/45">
                                                 {walletSetupSuccess
-                                                    ? 'Your wallet is ready. You can now view balances and continue with payouts.'
+                                                    ? returnTo
+                                                        ? 'Your wallet is ready. Pick up where you left off.'
+                                                        : 'Your wallet is ready. You can now view balances and continue with payouts.'
                                                     : walletSetupError || 'We could not create your wallet. Please try again.'}
                                             </p>
                                             <button
@@ -1792,6 +1814,7 @@ export default function DashboardFinance() {
                                                 onClick={() => {
                                                     if (walletSetupSuccess) {
                                                         setIsWalletSetupOpen(false);
+                                                        if (returnTo) navigate(returnTo, { replace: true });
                                                         return;
                                                     }
                                                     setWalletSetupError('');
@@ -1799,7 +1822,7 @@ export default function DashboardFinance() {
                                                 }}
                                                 className="mt-8 inline-flex items-center justify-center rounded-full bg-black px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
                                             >
-                                                {walletSetupSuccess ? 'Open Wallet' : 'Try Again'}
+                                                {walletSetupSuccess ? (returnTo?.startsWith('/events/create') ? 'Continue creating your event' : returnTo ? 'Continue' : 'Open Wallet') : 'Try Again'}
                                             </button>
                                         </motion.div>
                                     )}

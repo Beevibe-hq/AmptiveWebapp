@@ -10,6 +10,7 @@ import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import { getMyCommunities, listCommunities, type Community } from '@/lib/api/communities';
 import RichTextEditor from '@/components/RichTextEditor';
 import VenueSelector from '@/components/VenueSelector';
+import { DateTimeField } from '@/components/DateTimeField';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api/client';
 import { uploadImage } from '@/lib/api/storage';
@@ -1138,7 +1139,11 @@ const CreateEvent = () => {
           </h2>
           
           <button
-            onClick={() => navigate('/dashboard/finance')}
+            onClick={() => {
+              // Bring the user back here once the wallet exists, instead of leaving them on Finance.
+              const returnTo = `${window.location.pathname}${window.location.search}`;
+              navigate(`/dashboard/finance?setupWallet=1&returnTo=${encodeURIComponent(returnTo)}`);
+            }}
             className="w-full flex items-center justify-center gap-2 rounded-full bg-black px-6 py-4 text-[15px] font-bold text-white hover:bg-gray-800 transition-all hover:scale-[1.02] active:scale-[0.98] mb-6"
           >
             <svg width="24" height="24" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1148,7 +1153,7 @@ const CreateEvent = () => {
           </button>
           
           <p className="text-[11px] text-gray-400 leading-relaxed px-4">
-            By clicking "Set up Wallet", you will be redirected to the finance dashboard. Or you can <button onClick={() => navigate(-1)} className="underline hover:text-gray-600 transition-colors">Go back</button>.
+            By clicking "Set up Wallet", you will set up your wallet on the finance dashboard and come straight back here. Or you can <button onClick={() => navigate(-1)} className="underline hover:text-gray-600 transition-colors">Go back</button>.
           </p>
           
         </div>
@@ -1303,16 +1308,16 @@ const CreateEvent = () => {
                   <div className="grid gap-6 sm:grid-cols-2 lg:px-2">
                     <div>
                       <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Start</label>
-                      <input
-                        type="datetime-local"
+                      <DateTimeField
+                        label="Start"
                         min={nowIsoLocal}
-                        value={form.startDateTime ? datetimeValue(form.startDateTime) : ''}
-                        onChange={(e) => {
-                          if (isPublished && !e.target.value) {
+                        value={form.startDateTime ? datetimeValue(form.startDateTime) : null}
+                        onChange={(next) => {
+                          if (isPublished && !next) {
                             toastError('Published events must have a start date.');
                             return;
                           }
-                          setForm(prev => ({ ...prev, startDateTime: e.target.value || null }));
+                          setForm(prev => ({ ...prev, startDateTime: next }));
                         }}
                         className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                         required={isPublished}
@@ -1320,13 +1325,13 @@ const CreateEvent = () => {
                     </div>
                     <div>
                       <label className="block text-[13px] font-medium text-gray-700 mb-1.5">End</label>
-                      <input
-                        type="datetime-local"
+                      <DateTimeField
+                        label="End"
                         min={form.startDateTime ? datetimeValue(form.startDateTime) : nowIsoLocal}
-                        value={form.endDateTime ? datetimeValue(form.endDateTime) : ''}
+                        value={form.endDateTime ? datetimeValue(form.endDateTime) : null}
                         required={isPublished && form.venueType !== 'virtual'}
-                        onChange={(e) => {
-                          setForm(prev => ({ ...prev, endDateTime: e.target.value || null }));
+                        onChange={(next) => {
+                          setForm(prev => ({ ...prev, endDateTime: next }));
                         }}
                         className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                       />
