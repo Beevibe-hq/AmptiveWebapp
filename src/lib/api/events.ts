@@ -165,6 +165,19 @@ const isPubliclyVisibleEvent = (event: StandaloneEvent) => {
   return !status || !HIDDEN_PUBLIC_EVENT_STATUSES.has(status);
 };
 
+/**
+ * Whether an event belongs in "upcoming" lists (Upcoming Events, Popular this Week, the
+ * spotlight): live right now, or starting later. The list endpoint returns past events too
+ * and has no end time, so a scheduled event drops off once its start time passes.
+ */
+export function isUpcomingEvent(event: { scheduled_for?: string | null; status?: string | null }): boolean {
+  const status = String(event.status || '').toLowerCase();
+  if (status === 'live') return true;
+  if (['ended', 'completed', 'past', 'cancelled', 'canceled'].includes(status)) return false;
+  const start = event.scheduled_for ? new Date(event.scheduled_for).getTime() : NaN;
+  return Number.isFinite(start) && start > Date.now();
+}
+
 export async function listEvents(params?: {
   status?: string;
   communityId?: string;

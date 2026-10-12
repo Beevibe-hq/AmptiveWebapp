@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Calendar } from 'lucide-react';
 import QRCodeGenerator from '../components/QRCodeGenerator';
-import { listEvents } from '../lib/api/events';
+import { isUpcomingEvent, listEvents } from '../lib/api/events';
 import { getTicketEarlyBirdRemaining, getTicketRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '../lib/api/tickets';
 import LocationMap from '../components/LocationMap';
 import { listCommunities, Community } from '@/lib/api/communities';
@@ -142,6 +142,12 @@ const communityGamingImage = '/images/Community card 9.png';
 const communityHealthImage = '/images/Community card 7.png';
 const communityEducationImage = '/images/Community card 10.png';
 const communityTravelImage = '/images/Community card 11.png';
+
+/** Same check for events already transformed for the cards, which keep the start as `date`. */
+const hasNotStarted = (event: EventType) => {
+  const start = event.date ? new Date(event.date).getTime() : NaN;
+  return Number.isFinite(start) && start > Date.now();
+};
 
 /**
  * Shown whenever the backend returns no communities — while the request is in flight,
@@ -685,8 +691,10 @@ const Homepage: React.FC = () => {
     const fetchEvents = async () => {
       const cached = homepageEventsCache;
       if (cached) {
-        setDbEvents(cached.data);
-        setFilteredEvents(cached.data);
+        // Events can pass while they sit in the cache.
+        const stillUpcoming = cached.data.filter(hasNotStarted);
+        setDbEvents(stillUpcoming);
+        setFilteredEvents(stillUpcoming);
         setLoadingEvents(false);
 
         if (Date.now() - cached.timestamp < HOMEPAGE_CACHE_TTL) {
@@ -700,7 +708,8 @@ const Homepage: React.FC = () => {
         const eventsData = await listEvents({ page_size: 20 });
         
         // Fetch tickets for all events to handle multiple prices correctly
-        const eventsWithTickets = await Promise.all((eventsData || []).map(async (event: any) => {
+        const upcomingEvents = (eventsData || []).filter(isUpcomingEvent);
+        const eventsWithTickets = await Promise.all(upcomingEvents.map(async (event: any) => {
           try {
             const tickets = await getTicketsForEvent(event.event_id);
             return { ...event, tickets };
