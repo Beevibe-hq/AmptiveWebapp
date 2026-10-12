@@ -275,7 +275,7 @@ export async function createPaymentBankAccount(payload: {
   }
 }
 
-export async function requestWithdrawal(payload: { amount: number; bank_account_id?: string }): Promise<{ ok: boolean; error?: string }> {
+export async function requestWithdrawal(payload: { amount: number; pin: string; bank_account_id?: string }): Promise<{ ok: boolean; error?: string }> {
   try {
     await $finance.withdraw(payload);
     return { ok: true };

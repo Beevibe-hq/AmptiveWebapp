@@ -52,6 +52,7 @@ const BANK_DETAILS_STORAGE_KEY = 'amptive_payout_bank_details';
 const getBankDetailsStorageKey = (userKey: string) => `${BANK_DETAILS_STORAGE_KEY}.${userKey}`;
 const WITHDRAWALS_STORAGE_KEY = 'amptive_withdrawal_requests';
 const WALLET_SECURITY_QUESTION_KEY = 'amptive_wallet_security_question';
+const MIN_WITHDRAWAL_AMOUNT = 2000;
 const SECURITY_QUESTIONS = [
     'In what city were you born?',
     'What was the name of your first pet?',
@@ -1002,6 +1003,12 @@ export default function DashboardFinance() {
             return;
         }
 
+        // The backend rejects anything below this with a bare validation error.
+        if (amount < MIN_WITHDRAWAL_AMOUNT) {
+            setWithdrawalError(`The minimum withdrawal is ₦${MIN_WITHDRAWAL_AMOUNT.toLocaleString('en-NG')}.`);
+            return;
+        }
+
         if (withdrawalPin.length !== 4) {
             setWithdrawalError('Enter your 4-digit wallet PIN.');
             return;
@@ -1018,6 +1025,7 @@ export default function DashboardFinance() {
         try {
             const result = await requestWithdrawal({
                 amount,
+                pin: withdrawalPin,
                 bank_account_id: bankDetails.id || undefined,
             });
 

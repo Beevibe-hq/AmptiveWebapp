@@ -40,6 +40,6 @@ export const $finance = {
   setDefaultBankAccount: (bankAccountId: string) =>
     api.patch<unknown>(`${PAYMENTS_PREFIX}/bank-accounts/${bankAccountId}/default`, {}),
 
-  withdraw: (payload: { amount: number; bank_account_id?: string }) =>
+  withdraw: (payload: { amount: number; pin: string; bank_account_id?: string }) =>
     api.post<unknown>(`${PAYMENTS_PREFIX}/withdraw`, payload),
 };
