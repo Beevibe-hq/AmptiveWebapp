@@ -48,15 +48,26 @@ interface DateTimeFieldProps {
 export function DateTimeField({ value, onChange, min, required, label, className = '' }: DateTimeFieldProps) {
   const [parts, setParts] = useState(() => splitValue(value));
 
-  // Follow values set from outside (an event loaded for editing). Not cleared on null: while
-  // only one half is filled the parent holds null, and that must not wipe the half the user set.
+  /*
+   * Follow values set from outside (an event loaded for editing), but never overwrite what the
+   * user is typing: skip values that match what's already on screen, and don't clear on null,
+   * since the parent holds null while only one half is filled.
+   */
   useEffect(() => {
-    if (value) setParts(splitValue(value));
+    if (!value) return;
+    setParts((prev) => (value === `${prev.date}T${prev.time}` ? prev : splitValue(value)));
   }, [value]);
 
   const update = (next: { date: string; time: string }) => {
     setParts(next);
-    onChange(next.date && next.time ? `${next.date}T${next.time}` : null);
+    /*
+     * Typing a date by hand passes through partial years ("0002", "0020", "0202" on the way
+     * to "2026"), each a valid date to the browser. Sending those up made the form reformat
+     * and write back a broken date, which wiped or changed what the user typed. Only report
+     * a date once its year is plausible.
+     */
+    const dateComplete = /^\d{4}-\d{2}-\d{2}$/.test(next.date) && Number(next.date.slice(0, 4)) >= 1900;
+    onChange(dateComplete && next.time ? `${next.date}T${next.time}` : null);
   };
 
   const minDate = min?.slice(0, 10);

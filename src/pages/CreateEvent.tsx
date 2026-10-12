@@ -1072,14 +1072,6 @@ const CreateEvent = () => {
     await saveEvent({ asDraft: true });
   };
 
-  const datetimeValue = (value: string | null) => {
-    if (!value) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  };
-
   // Recomputed per render rather than memoised on mount: a form left open for a while
   // would otherwise keep offering times that have since passed.
   const nowIsoLocal = (() => {
@@ -1311,12 +1303,11 @@ const CreateEvent = () => {
                       <DateTimeField
                         label="Start"
                         min={nowIsoLocal}
-                        value={form.startDateTime ? datetimeValue(form.startDateTime) : null}
+                        value={form.startDateTime}
                         onChange={(next) => {
-                          if (isPublished && !next) {
-                            toastError('Published events must have a start date.');
-                            return;
-                          }
+                          // A published event keeps its start date; the field reports null mid-edit
+                          // (half typed), so hold on to the saved value rather than clearing it.
+                          if (isPublished && !next) return;
                           setForm(prev => ({ ...prev, startDateTime: next }));
                         }}
                         className="block w-full rounded-2xl px-3.5 py-3 text-sm text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
@@ -1327,8 +1318,8 @@ const CreateEvent = () => {
                       <label className="block text-[13px] font-medium text-gray-700 mb-1.5">End</label>
                       <DateTimeField
                         label="End"
-                        min={form.startDateTime ? datetimeValue(form.startDateTime) : nowIsoLocal}
-                        value={form.endDateTime ? datetimeValue(form.endDateTime) : null}
+                        min={form.startDateTime || nowIsoLocal}
+                        value={form.endDateTime}
                         required={isPublished && form.venueType !== 'virtual'}
                         onChange={(next) => {
                           setForm(prev => ({ ...prev, endDateTime: next }));

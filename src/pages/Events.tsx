@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Calendar, LayoutGrid, List, MapPin, MoreVertical, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
-import { listEvents, StandaloneEvent } from '@/lib/api/events';
+import { isUpcomingEvent, listEvents, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import EventCard, { EventCardSkeleton } from '../components/EventCard';
 import { useSEO } from '@/hooks/useSEO';
@@ -158,7 +158,7 @@ export default function Events() {
         const eventsData = await listEvents({ page_size: 100 });
         
         // Fetch tickets for events to retrieve early bird ticket tiers
-        const eventsWithTickets = await Promise.all((eventsData || []).map(async (event: any) => {
+        const eventsWithTickets = await Promise.all((eventsData || []).filter(isUpcomingEvent).map(async (event: any) => {
           try {
             const tickets = await getTicketsForEvent(event.event_id);
             return { ...event, event_tickets: tickets, ticket_types: tickets };
