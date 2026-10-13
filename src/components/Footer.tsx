@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Apple, Play } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
+import { SHOW_AI_GENERATOR } from '@/lib/features';
 
 const Footer = () => {
   const { dominantColor } = useTheme();
@@ -30,7 +31,9 @@ const Footer = () => {
             <ul className="space-y-3">
               <li><Link to="/explore" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Browse Events</Link></li>
               <li><Link to="/community" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Community Tasks</Link></li>
-              <li><Link to="/ai-chat" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Generate with AI</Link></li>
+              {SHOW_AI_GENERATOR && (
+                <li><Link to="/ai-chat" className="text-[15px] text-gray-600/80 hover:text-gray-900 transition-colors font-medium">Generate with AI</Link></li>
+              )}
             </ul>
           </div>
 
