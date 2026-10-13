@@ -32,6 +32,10 @@ const faqSections = [
         answer: 'Organizers set ticket prices, ticket names, quantities, event dates, refund rules, and availability, subject to Amptive platform rules.',
       },
       {
+        question: 'Are there fees when I buy a ticket?',
+        answer: 'Amptive adds a ₦100 service fee to each paid ticket, shown at checkout before you pay. Free tickets have no service fee.',
+      },
+      {
         question: 'What happens if an event is cancelled?',
         answer: 'Refund handling depends on the organizer refund policy and Amptive refund process. If an event is cancelled or materially changed, Amptive may help facilitate refunds according to the applicable policy.',
       },
@@ -46,11 +50,15 @@ const faqSections = [
       },
       {
         question: 'What do I need to set up my wallet?',
-        answer: 'You may be asked to create a secure transaction PIN, choose a security question, and provide a case-sensitive answer used for withdrawal verification.',
+        answer: 'You will be asked to create a 4-digit wallet PIN and choose a security question with a case-sensitive answer. Your PIN confirms each withdrawal.',
       },
       {
         question: 'Can I fund or withdraw from my wallet?',
-        answer: 'Where available, wallet funding and withdrawal actions use Amptive payment endpoints and may require verification, wallet PIN confirmation, security question answers, and compliance checks.',
+        answer: 'You can withdraw your available balance to a linked bank account, confirmed with your wallet PIN. The minimum withdrawal is ₦2,000.',
+      },
+      {
+        question: 'Are there fees on withdrawals?',
+        answer: 'Amptive keeps 5% of every withdrawal, whether the money came from ticket sales or support. The withdraw form shows the fee and the amount you will receive before you confirm.',
       },
       {
         question: 'Why does my balance show zero?',
