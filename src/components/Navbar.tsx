@@ -10,6 +10,10 @@ import SearchOverlay from './SearchOverlay';
 import { useAuth } from '@/contexts/AuthContext';
 import { isProfileComplete } from '@/lib/api/profiles';
 
+// The AI generator isn't live yet (it returns placeholder images), so its nav button stays
+// hidden until it is. Flip to true to bring the button back.
+const SHOW_AI_GENERATOR = false;
+
 type MenuItem = {
   name: string;
   path: string;
@@ -379,7 +383,7 @@ const Navbar = ({ hideMenu = false, forceSupportMode = false }: { hideMenu?: boo
             )}
 
             {/* Generate with AI Button - Medium - shown only on lg (1024px) and up */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
+            {SHOW_AI_GENERATOR && !isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -417,7 +421,7 @@ const Navbar = ({ hideMenu = false, forceSupportMode = false }: { hideMenu?: boo
             )}
 
             {/* Generate with AI Button - Desktop - shown only on xl (1240px) and up */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isSupportPage && (
+            {SHOW_AI_GENERATOR && !isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isSupportPage && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -567,7 +571,7 @@ const Navbar = ({ hideMenu = false, forceSupportMode = false }: { hideMenu?: boo
               </div>
             )}
             {/* Generate with AI Button - Mobile/Tablet */}
-            {!isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
+            {SHOW_AI_GENERATOR && !isAIChatPage && !isAuthPage && !isCompleteProfilePage && !isOtpPage && !isSupportPage && (
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}

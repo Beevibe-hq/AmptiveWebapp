@@ -150,6 +150,66 @@ const hasNotStarted = (event: EventType) => {
 };
 
 /**
+ * Sample posters for the "Generate a Poster" strip: images from the Create Event gallery
+ * (resized copies in /images/posters, so the strip doesn't pull ~20MB of PNGs), each with a
+ * prompt describing it.
+ */
+const POSTER_SAMPLES = [
+  {
+    image: '/images/posters/build-letters.jpg',
+    alt: 'Colourful block letters spelling BUILD under construction cranes',
+    prompt: 'Editorial paper-collage poster: giant colourful block letters spelling BUILD under construction cranes and scaffolding, tiny workers, cream background, risograph grain.',
+  },
+  {
+    image: '/images/posters/team-lightbulb.jpg',
+    alt: 'Four hands reaching for a lightbulb on a yellow background',
+    prompt: 'Collage illustration of four hands reaching for a hand-drawn lightbulb on bright yellow, cut-paper sleeves in green, pink and blue, halftone print texture.',
+  },
+  {
+    image: '/images/posters/game-day.jpg',
+    alt: 'GAME DAY in white brush lettering on black',
+    prompt: 'Black sports poster with GAME DAY in rough white brush lettering, a single neon-yellow paint stroke underneath, gritty concrete texture.',
+  },
+  {
+    image: '/images/posters/strategy-notes-head.jpg',
+    alt: 'Profile of a man with sticky notes bursting from his head',
+    prompt: 'Side profile of a young Black man with sticky notes and sketches bursting from his head, cream paper background, mixed-media collage in muted print colours.',
+  },
+  {
+    image: '/images/posters/run-with-us.jpg',
+    alt: 'RUN WITH US in white and blue brush script on navy',
+    prompt: 'Running club poster on deep navy, RUN WITH US in expressive white and electric-blue brush script, paint splatter, bold and energetic.',
+  },
+  {
+    image: '/images/posters/upward-arrow-breakthrough.jpg',
+    alt: 'Orange arrow tearing through layers of coloured paper',
+    prompt: 'Bold orange arrow tearing upward through layered paper in green, purple, blue and black, dramatic cut-paper collage on cream, visible paper fibres.',
+  },
+  {
+    image: '/images/posters/goal-green.jpg',
+    alt: 'GOAL! in distressed white type on a green pitch texture',
+    prompt: 'Football poster on pitch-green grass texture, GOAL! in huge distressed white italic type, faded outlined repeats above and below.',
+  },
+  {
+    image: '/images/posters/team-pie-chart.jpg',
+    alt: 'Hands assembling a pie chart from cut paper pieces',
+    prompt: 'Many hands assembling a pie chart from cut-paper pieces in red, pink, yellow and blue, doodled graphs around it, collage style on off-white paper.',
+  },
+  {
+    image: '/images/posters/football-neon.jpg',
+    alt: 'Glowing lime-green outline of a football on black',
+    prompt: 'Minimal football poster on black: a glowing lime-green neon outline of a ball, with FOOTBALL in widely spaced white capitals across it.',
+  },
+  {
+    image: '/images/posters/strategy-mountain.jpg',
+    alt: 'A figure on a mountain of sticky notes with an orange sun behind',
+    prompt: 'Lone figure on top of a mountain of sticky notes reading FUTURE PLAN, BUILD and DREAM BIG, orange sun behind, paper-collage poster.',
+  },
+];
+
+const POSTER_CARD_COLORS = ['#3267C1', '#0B92B6', '#49B46D', '#43962B'];
+
+/**
  * Shown whenever the backend returns no communities — while the request is in flight,
  * and also when it comes back empty. These carry no community_id, so the card's click
  * handler sends them to the general /community page rather than a specific one.
@@ -823,37 +883,37 @@ const Homepage: React.FC = () => {
     shows: [
       {
         id: 1,
-        title: "We Can Do Hard Things",
-        description: "Life is freaking hard. We are hard. Let's get through it together. Join Glennon Doyle and her sister Amanda as they discuss hard things and how to survive them.",
-        image: '/images/we-can-do-hard-things.jpeg',
-        gradient: 'linear-gradient(135deg, #8B3A3A 0%, #CD5C5C 50%, #D2691E 100%)',
+        title: "Static & Signal",
+        description: "TV, pop culture and the internet, decoded live. Tune in as we break down what everyone's watching and why it matters.",
+        image: '/images/trending/glitch-tv.jpg',
+        gradient: 'linear-gradient(135deg, #162D99 0%, #1E3AB8 50%, #3F5EE0 100%)',
         avatars: ['https://i.pravatar.cc/150?img=1', 'https://i.pravatar.cc/150?img=2', 'https://i.pravatar.cc/150?img=3'],
         buttonText: 'Subscribe'
       },
       {
         id: 2,
-        title: "I Said What I Said",
-        description: "Unfiltered conversations about life, love, and everything in between. No topic is off limits.",
-        image: '/images/i-said-what-i-said.jpg',
-        gradient: 'linear-gradient(135deg, #4C1D1D 0%, #7F1D1D 50%, #B91C1C 100%)',
+        title: "Make The Street Fly Again",
+        description: "Street culture, fashion and the sounds of the block. Hosts and guests talk drip, hustle and keeping it real.",
+        image: '/images/trending/make-the-street-fly-again.jpg',
+        gradient: 'linear-gradient(135deg, #785500 0%, #8C6400 50%, #B8860B 100%)',
         avatars: ['https://i.pravatar.cc/150?img=32', 'https://i.pravatar.cc/150?img=33'],
         buttonText: 'Join Live'
       },
       {
         id: 3,
-        title: "Still Processing",
-        description: "Join the conversation about culture, technology, and everything in between with hosts Jenna Wortham and Wesley Morris.",
-        image: '/images/still processing.jpg',
-        gradient: 'linear-gradient(135deg, #4A2D5A 0%, #6A3F7A 50%, #8A5E9B 100%)',
+        title: "Wake Up To Reality",
+        description: "No sugar-coating. Honest talks about life, money and growing up when nothing goes as planned.",
+        image: '/images/trending/wake-up-to-reality.jpg',
+        gradient: 'linear-gradient(135deg, #3F3F3F 0%, #4A4A4A 50%, #6E6E6E 100%)',
         avatars: ['https://i.pravatar.cc/150?img=34', 'https://i.pravatar.cc/150?img=35'],
         buttonText: 'Add to Calendar'
       },
       {
         id: 4,
-        title: "The Honest Bunch",
-        description: "A group of friends having honest conversations about life, relationships, and personal growth.",
-        image: '/images/honnest bunch.jpeg',
-        gradient: 'linear-gradient(135deg, #556B2F 0%, #6B8E23 100%)',
+        title: "Feel The Vibe",
+        description: "Good music, good energy. Live listening sessions, DJ sets and easy conversations to set your mood.",
+        image: '/images/trending/feel-the-vibe.jpg',
+        gradient: 'linear-gradient(135deg, #702F00 0%, #8A3B00 50%, #C25A00 100%)',
         avatars: ['https://i.pravatar.cc/150?img=36', 'https://i.pravatar.cc/150?img=37', 'https://i.pravatar.cc/150?img=38'],
         buttonText: 'One-Time Access'
       }
@@ -861,37 +921,37 @@ const Homepage: React.FC = () => {
     events: [
       {
         id: 5,
-        title: "Figma Config 2025",
-        description: "The biggest tech conference of the year featuring industry leaders and innovative startups.",
-        image: '/images/config.jpeg',
-        gradient: 'linear-gradient(135deg, #825B90 0%, #7E41B9 100%)',
-        avatars: ['/images/config.jpg'],
+        title: "Think Big, Start Small",
+        description: "A meetup for first-time founders. Real stories, practical sessions and the people who'll help you take step one.",
+        image: '/images/trending/think-big.jpg',
+        gradient: 'linear-gradient(135deg, #193E94 0%, #1F4BB0 50%, #3C6FD9 100%)',
+        avatars: ['https://i.pravatar.cc/150?img=5', 'https://i.pravatar.cc/150?img=6'],
         buttonText: 'Get Tickets'
       },
       {
         id: 6,
-        title: "Liquidium Festival",
-        description: "A weekend of amazing music, food, and good vibes with your favorite artists.",
-        image: '/images/liquidium.jpg',
-        gradient: 'linear-gradient(to bottom, #1A4D00 0%, #37A400 100%)',
+        title: "Push Your Ability",
+        description: "A full-day fitness and wellness challenge. Group workouts, real coaches and a crowd that keeps you going.",
+        image: '/images/trending/push-your-ability.jpg',
+        gradient: 'linear-gradient(135deg, #7B6300 0%, #8F7300 50%, #C9A200 100%)',
         avatars: ['https://i.pravatar.cc/150?img=8', 'https://i.pravatar.cc/150?img=9'],
         buttonText: 'Add to Calendar'
       },
       {
         id: 7,
-        title: "Food & Wine Expo",
-        description: "Experience the finest culinary delights and wines from around the world.",
-        image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
-        gradient: 'linear-gradient(135deg, #B91C1C 0%, #F87171 100%)',
+        title: "Good Vibes Only",
+        description: "An open-air party of music, games and smiles all round. Bring your friends and leave your worries at the gate.",
+        image: '/images/trending/good-vibes-only.jpg',
+        gradient: 'linear-gradient(135deg, #871111 0%, #A31616 50%, #D63A2F 100%)',
         avatars: ['https://i.pravatar.cc/150?img=10', 'https://i.pravatar.cc/150?img=11', 'https://i.pravatar.cc/150?img=12'],
         buttonText: 'Join Live'
       },
       {
         id: 8,
-        title: "Startup Pitch Night",
-        description: "Witness innovative startups pitch their ideas to a panel of investors.",
-        image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80',
-        gradient: 'linear-gradient(135deg, #047857 0%, #10B981 100%)',
+        title: "Fly Me To The Moon",
+        description: "A night of jazz, soul and live covers under the stars. Dress up, sing along and let the music carry you.",
+        image: '/images/trending/fly-me-to-the-moon.jpg',
+        gradient: 'linear-gradient(135deg, #151C43 0%, #1C2452 50%, #3A4377 100%)',
         avatars: ['https://i.pravatar.cc/150?img=13', 'https://i.pravatar.cc/150?img=14'],
         buttonText: 'Get Tickets'
       }
@@ -2363,9 +2423,9 @@ const Homepage: React.FC = () => {
                 Event
               </span>
             </h2>
-            <Link
-              to="/ai-chat"
-              className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 w-max mx-auto lg:mx-0"
+            {/* The generator isn't live yet, so this is a badge rather than a link. */}
+            <span
+              className="relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium w-max mx-auto lg:mx-0 cursor-default select-none"
               style={{
                 backgroundColor: 'rgba(168, 85, 247, 0.1)',
                 color: 'rgb(139, 92, 246)',
@@ -2376,9 +2436,9 @@ const Homepage: React.FC = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
                   <path fillRule="evenodd" d="M9 4.5a.75.75 0 0 1 .721.544l.813 2.846a3.75 3.75 0 0 0 2.576 2.576l2.846.813a.75.75 0 0 1 0 1.442l-2.846.813a3.75 3.75 0 0 0-2.576 2.576l-.813 2.846a.75.75 0 0 1-1.442 0l-.813-2.846a3.75 3.75 0 0 0-2.576-2.576l-2.846-.813a.75.75 0 0 1 0-1.442l2.846-.813A3.75 3.75 0 0 0 7.466 7.89l.813-2.846A.75.75 0 0 1 9 4.5ZM18 1.5a.75.75 0 0 1 .728.568l.258 1.036c.236.94.97 1.674 1.91 1.91l1.036.258a.75.75 0 0 1 0 1.456l-1.036.258c-.94.236-1.674.97-1.91 1.91l-.258 1.036a.75.75 0 0 1-1.456 0l-.258-1.036a2.625 2.625 0 0 0-1.91-1.91l-1.036-.258a.75.75 0 0 1 0-1.456l1.036-.258a2.625 2.625 0 0 0 1.91-1.91l.258-1.036A.75.75 0 0 1 18 1.5ZM16.5 15a.75.75 0 0 1 .712.513l.394 1.183c.15.447.5.799.948.948l1.183.395a.75.75 0 0 1 0 1.422l-1.183.395c-.447.15-.799.5-.948.948l-.395 1.183a.75.75 0 0 1-1.422 0l-.395-1.183a1.5 1.5 0 0 0-.948-.948l-1.183-.395a.75.75 0 0 1 0-1.422l1.183-.395c.447-.15.799-.5.948-.948l.395-1.183A.75.75 0 0 1 16.5 15Z" clipRule="evenodd" />
                 </svg>
-                <span>Generate with AI</span>
+                <span>Coming soon</span>
               </span>
-            </Link>
+            </span>
           </div>
 
           {/* Right Column - Cards with Infinite Scroll */}
@@ -2432,112 +2492,30 @@ const Homepage: React.FC = () => {
             `}</style>
             <div className="scroll-container">
               <div className="scroll-track">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => {
-                  const colors = ['#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6'];
-                  const images = [
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
-                  ];
-                  const posterPrompts = [
-                    'A modern, minimal event ticket design with a dark theme, soft purple gradients, and bold rounded typography.',
-                    'Vibrant synthwave music festival poster with glowing neon typography, retro geometric shapes, and deep purple gradient.',
-                    'Minimalist tech summit poster with futuristic glassmorphic card overlays, clean Helvetica type, and deep cyan accents.',
-                    'Sun-drenched Afrobeats carnival poster with warm golden lighting, tropical palm silhouettes, and energetic typography.',
-                    'Sleek gourmet food and cocktail night poster featuring dark moody photography, copper foil accents, and elegant serif titles.',
-                    'Modern live audio podcast session flyer with acoustic soundwave graphics, warm studio lighting, and minimal bold lettering.',
-                    'Avant-garde contemporary art exhibition poster with abstract 3D geometric shapes, pastel grain textures, and editorial layout.',
-                    'High-fashion runway gala poster featuring sleek monochrome contrast, luxury gold accents, and sharp architectural typography.',
-                    'Electric underground Warehouse Rave poster with strobe laser beams, glitch distortion effects, and ultra-bold brutalist type.',
-                    'Clean executive startup pitch night flyer featuring modern dark mode aesthetics, vibrant blue glow badges, and crisp type.'
-                  ];
-
-                  return (
-                    <div
-                      key={`card-${i}`}
-                      className="card-item"
-                      style={{
-                        backgroundColor: colors[(i - 1) % 10],
-                      }}
-                    >
-                      <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
-                        <img
-                          src={images[(i - 1) % 10]}
-                          alt={`Event ${i}`}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      </div>
-                      <p className="text-base font-bold text-white mb-1">
-                        Prompt:
-                      </p>
-                      <p className="text-[13px] font-medium leading-5 text-white/90 line-clamp-4">
-                        {posterPrompts[(i - 1) % 10]}
-                      </p>
+                {/* Rendered twice so the marquee loops seamlessly; the copy is hidden from screen readers. */}
+                {[...POSTER_SAMPLES, ...POSTER_SAMPLES].map((poster, index) => (
+                  <div
+                    key={`${poster.image}-${index}`}
+                    className="card-item"
+                    style={{ backgroundColor: POSTER_CARD_COLORS[index % POSTER_CARD_COLORS.length] }}
+                    aria-hidden={index >= POSTER_SAMPLES.length || undefined}
+                  >
+                    <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
+                      <img
+                        src={poster.image}
+                        alt={poster.alt}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
                     </div>
-                  );
-                })}
-
-                {/* Duplicate set for seamless looping */}
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => {
-                  const colors = ['#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6', '#49B46D', '#43962B', '#3267C1', '#0B92B6'];
-                  const images = [
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753378633/x5hnk7bqmaulvixdo7wt.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753095713/ywsj702u8s0tpplm8waa.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1752526724/hnu03jeotewnzbhe7skl.webp',
-                    'https://res.cloudinary.com/tix-africa/image/upload/f_webp,fl_lossy,q_70/v1753392091/prxldvke9tzdltz3olxf.webp'
-                  ];
-                  const posterPrompts = [
-                    'A modern, minimal event ticket design with a dark theme, soft purple gradients, and bold rounded typography.',
-                    'Vibrant synthwave music festival poster with glowing neon typography, retro geometric shapes, and deep purple gradient.',
-                    'Minimalist tech summit poster with futuristic glassmorphic card overlays, clean Helvetica type, and deep cyan accents.',
-                    'Sun-drenched Afrobeats carnival poster with warm golden lighting, tropical palm silhouettes, and energetic typography.',
-                    'Sleek gourmet food and cocktail night poster featuring dark moody photography, copper foil accents, and elegant serif titles.',
-                    'Modern live audio podcast session flyer with acoustic soundwave graphics, warm studio lighting, and minimal bold lettering.',
-                    'Avant-garde contemporary art exhibition poster with abstract 3D geometric shapes, pastel grain textures, and editorial layout.',
-                    'High-fashion runway gala poster featuring sleek monochrome contrast, luxury gold accents, and sharp architectural typography.',
-                    'Electric underground Warehouse Rave poster with strobe laser beams, glitch distortion effects, and ultra-bold brutalist type.',
-                    'Clean executive startup pitch night flyer featuring modern dark mode aesthetics, vibrant blue glow badges, and crisp type.'
-                  ];
-
-                  return (
-                    <div
-                      key={`duplicate-${i}`}
-                      className="card-item"
-                      style={{
-                        backgroundColor: colors[(i - 1) % 10],
-                      }}
-                    >
-                      <div className="aspect-square bg-gray-200 rounded-lg mb-3 overflow-hidden">
-                        <img
-                          src={images[(i - 1) % 10]}
-                          alt={`Event ${i}`}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      </div>
-                      <p className="text-base font-bold text-white mb-1">
-                        Prompt:
-                      </p>
-                      <p className="text-[13px] font-medium leading-5 text-white/90 line-clamp-4">
-                        {posterPrompts[(i - 1) % 10]}
-                      </p>
-                    </div>
-                  );
-                })}
+                    <p className="text-base font-bold text-white mb-1">
+                      Prompt:
+                    </p>
+                    <p className="text-[13px] font-medium leading-5 text-white/90 line-clamp-4 sm:line-clamp-6" title={poster.prompt}>
+                      {poster.prompt}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
