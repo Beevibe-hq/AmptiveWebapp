@@ -147,9 +147,10 @@ const PinInput = ({ value, onChange, length = 4, autoFocus = false }: { value: s
  *
  * The API documents only 422 as a failure and returns prose like "Withdrawal failed.
  * Please try again later.", which was being shown verbatim — it names no cause and no
- * next step. Known causes get specific guidance; anything unrecognised says plainly that
- * it came from the payment provider and keeps the server's own wording, so the user has
- * something concrete to quote to support rather than a dead end.
+ * next step. Known causes get specific guidance; anything unrecognised keeps the server's
+ * own wording, so the user has something concrete to quote to support rather than a dead
+ * end. It claims nothing the client can't know: not which system failed, and not whether
+ * the wallet was debited.
  */
 function describeWithdrawalError(raw?: string): { message: string; hint?: string } {
     const text = String(raw || '').toLowerCase();
@@ -196,14 +197,14 @@ function describeWithdrawalError(raw?: string): { message: string; hint?: string
     if (text.includes('failed to fetch') || text.includes('network')) {
         return {
             message: 'We could not reach the server.',
-            hint: 'Check your connection and try again — no money has left your wallet.',
+            hint: 'Check your connection, then check your balance before trying again.',
         };
     }
 
-    // Unrecognised: name the source, keep the server's wording, and say what to do.
+    // Unrecognised: keep the server's wording and say what to do.
     return {
-        message: 'The payment provider rejected this withdrawal.',
-        hint: `${raw} — your wallet has not been charged. If this keeps happening, contact support with this message.`,
+        message: 'We could not complete this withdrawal.',
+        hint: `Check your balance before trying again. If this keeps happening, contact support and include this message: "${raw}"`,
     };
 }
 
