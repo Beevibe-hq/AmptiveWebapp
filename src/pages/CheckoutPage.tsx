@@ -11,6 +11,7 @@ import { EventTicket, getTicketEarlyBirdRemaining, getTicketLineTotal, getTicket
 import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
+import { TICKET_SERVICE_FEE, ticketServiceFee } from '@/lib/fees';
 
 type EventRecord = EventTiming & {
     id: string;
@@ -262,7 +263,13 @@ export default function CheckoutPage() {
     };
 
     const ticketCost = tickets.reduce((sum, ticket) => sum + getTicketLineTotal(ticket, selection[ticket.id] || 0), 0);
-    const totalAmount = ticketCost;
+    // ₦100 per paid ticket, on top of the price. Free tickets (and so free events) carry no fee.
+    const paidTicketCount = tickets.reduce((count, ticket) => {
+        const quantity = selection[ticket.id] || 0;
+        return quantity > 0 && getTicketLineTotal(ticket, quantity) > 0 ? count + quantity : count;
+    }, 0);
+    const serviceFee = ticketServiceFee(paidTicketCount);
+    const totalAmount = ticketCost + serviceFee;
 
     // How many tickets are in the basket. The checkout button keys off this rather than the
     // price: a free ticket is a valid selection worth ₦0, and gating on the amount meant
@@ -1177,8 +1184,13 @@ export default function CheckoutPage() {
                                         <span className="text-gray-900">{formatPrice(ticketCost)}</span>
                                     </div>
                                     <div className="flex justify-between text-sm font-medium">
-                                        <span className="text-gray-500">Service Fee</span>
-                                        <span className="text-gray-900">{formatPrice(0)}</span>
+                                        <span className="text-gray-500">
+                                            Service fee
+                                            {paidTicketCount > 0 && (
+                                                <span className="text-gray-400"> · {formatPrice(TICKET_SERVICE_FEE)} × {paidTicketCount}</span>
+                                            )}
+                                        </span>
+                                        <span className="text-gray-900">{formatPrice(serviceFee)}</span>
                                     </div>
                                     <div className="flex justify-between items-center text-2xl font-black text-gray-900 pt-2">
                                         <span>Total</span>
@@ -1280,6 +1292,13 @@ export default function CheckoutPage() {
                                                 );
                                             })}
                                         </div>
+
+                                        {serviceFee > 0 && (
+                                            <div className="flex justify-between items-center py-2 text-sm">
+                                                <span className="text-gray-500">Service fee · {formatPrice(TICKET_SERVICE_FEE)} × {paidTicketCount}</span>
+                                                <span className="font-bold text-gray-900">{formatPrice(serviceFee)}</span>
+                                            </div>
+                                        )}
 
                                         <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
                                             <span className="text-lg font-black text-gray-900">Total</span>

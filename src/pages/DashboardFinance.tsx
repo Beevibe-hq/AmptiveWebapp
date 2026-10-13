@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { WITHDRAWAL_FEE_LABEL, withdrawalFee } from '@/lib/fees';
 import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2, Trash2, ShieldCheck, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
@@ -828,6 +829,10 @@ export default function DashboardFinance() {
         .filter((item) => item.status === 'pending' || item.status === 'processing')
         .reduce((acc, item) => acc + toNumber(item.amount), 0);
     const pendingBalance = walletBalance?.pending_balance ?? 0;
+    // Amptive keeps 5% of every withdrawal; it comes out of the amount withdrawn.
+    const withdrawalGross = toNumber(withdrawalAmount.replace(/,/g, ''));
+    const withdrawalFeeAmount = withdrawalFee(withdrawalGross);
+    const withdrawalNet = Math.max(0, withdrawalGross - withdrawalFeeAmount);
     const availableBalance = walletBalance?.available_balance ?? 0;
 
     const openWithdrawDrawer = () => {
@@ -1918,6 +1923,19 @@ export default function DashboardFinance() {
                                             </div>
                                         </div>
 
+                                        {withdrawalGross > 0 && (
+                                            <div className="rounded-2xl border border-black/5 px-4 py-3 space-y-1.5 text-[13px]">
+                                                <div className="flex justify-between text-black/50">
+                                                    <span>Amptive fee ({WITHDRAWAL_FEE_LABEL})</span>
+                                                    <span>−{formatCurrency(withdrawalFeeAmount)}</span>
+                                                </div>
+                                                <div className="flex justify-between font-semibold text-black">
+                                                    <span>You'll receive</span>
+                                                    <span>{formatCurrency(withdrawalNet)}</span>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="space-y-2">
                                             <p className="text-[13px] font-medium text-gray-700 ml-1">Payout account</p>
                                             {hasBankAccount ? (
@@ -1972,6 +1990,19 @@ export default function DashboardFinance() {
                                                 </p>
                                             )}
                                         </div>
+
+                                        {withdrawalGross > 0 && (
+                                            <div className="rounded-2xl border border-black/5 px-4 py-3 space-y-1.5 text-[13px]">
+                                                <div className="flex justify-between text-black/50">
+                                                    <span>Amptive fee ({WITHDRAWAL_FEE_LABEL})</span>
+                                                    <span>−{formatCurrency(withdrawalFeeAmount)}</span>
+                                                </div>
+                                                <div className="flex justify-between font-semibold text-black">
+                                                    <span>You'll receive</span>
+                                                    <span>{formatCurrency(withdrawalNet)}</span>
+                                                </div>
+                                            </div>
+                                        )}
 
                                         <p className="text-[13px] leading-relaxed text-black/45">
                                             Enter your wallet PIN to complete this withdrawal.

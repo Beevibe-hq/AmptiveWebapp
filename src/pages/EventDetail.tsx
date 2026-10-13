@@ -15,6 +15,7 @@ import { getVenue } from '@/lib/api/venues';
 import { useSEO } from '@/hooks/useSEO';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { TICKET_SERVICE_FEE } from '@/lib/fees';
 
 const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   'lagos': { lat: 6.5244, lng: 3.3792 },
@@ -656,7 +657,10 @@ const EventDetail = () => {
           Get Tickets
         </Link>
       ),
-      footerText: "Secure checkout powered by Paystack"
+      // Say up front that paid tickets carry the service fee, rather than first showing it at checkout.
+      footerText: tickets.some(ticket => !isTicketSoldOut(ticket) && (Number(ticket.price) || 0) > 0)
+        ? `+ ₦${TICKET_SERVICE_FEE.toLocaleString('en-NG')} service fee per paid ticket · Secure checkout powered by Paystack`
+        : "Secure checkout powered by Paystack"
     };
   };
 

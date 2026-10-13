@@ -11,6 +11,8 @@ import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { getEmojiFallback } from '@/utils/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatSupportUrl } from '@/utils/supportUrl';
+import { FeeNotice } from '@/components/FeeNotice';
+import { WITHDRAWAL_FEE_LABEL } from '@/lib/fees';
 
 interface CharacterProgressProps {
     current: number;
@@ -727,6 +729,11 @@ export default function SupportSetup() {
                             </div>
 
                             <form onSubmit={handleSubmit} className="space-y-12">
+                                <FeeNotice>
+                                    Supporters pay exactly what they choose to give. When you withdraw your support earnings,
+                                    Amptive keeps <strong>{WITHDRAWAL_FEE_LABEL}</strong> of the amount withdrawn.
+                                </FeeNotice>
+
                                 {/* Top Stats Cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div className="bg-white p-6 rounded-[24px] border border-black/5 shadow-sm hover:border-black/10 transition-all relative overflow-hidden group">

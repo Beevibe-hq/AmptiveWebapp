@@ -11,6 +11,8 @@ import { getMyCommunities, listCommunities, type Community } from '@/lib/api/com
 import RichTextEditor from '@/components/RichTextEditor';
 import VenueSelector from '@/components/VenueSelector';
 import { DateTimeField } from '@/components/DateTimeField';
+import { FeeNotice } from '@/components/FeeNotice';
+import { TICKET_SERVICE_FEE, WITHDRAWAL_FEE_LABEL } from '@/lib/fees';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api/client';
 import { uploadImage } from '@/lib/api/storage';
@@ -1367,6 +1369,11 @@ const CreateEvent = () => {
                   </div>
 
                   <div className="lg:px-2 space-y-4">
+                    <FeeNotice>
+                      Buyers pay a <strong>₦{TICKET_SERVICE_FEE.toLocaleString('en-NG')} service fee per ticket</strong> on top of your price,
+                      and Amptive keeps <strong>{WITHDRAWAL_FEE_LABEL}</strong> when you withdraw your earnings. Free tickets have no fees.
+                    </FeeNotice>
+
                     {/* Tickets List */}
                     {form.tickets.length > 0 && (
                       <div className="grid gap-3">
