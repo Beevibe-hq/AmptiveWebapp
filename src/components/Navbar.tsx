@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, ArrowLeft } from 'lucide-react';
+import { Search, ArrowLeft, ChevronRight, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Logo from './Logo';
 import TextLogo from './TextLogo';
@@ -10,9 +10,7 @@ import SearchOverlay from './SearchOverlay';
 import { useAuth } from '@/contexts/AuthContext';
 import { isProfileComplete } from '@/lib/api/profiles';
 
-// The AI generator isn't live yet (it returns placeholder images), so its nav button stays
-// hidden until it is. Flip to true to bring the button back.
-const SHOW_AI_GENERATOR = false;
+import { SHOW_AI_GENERATOR } from '@/lib/features';
 
 type MenuItem = {
   name: string;
@@ -469,20 +467,28 @@ const Navbar = ({ hideMenu = false, forceSupportMode = false }: { hideMenu?: boo
                         event.stopPropagation();
                         setActiveDropdown(activeDropdown === 'avatar' ? null : 'avatar');
                       }}
-                      className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gray-100 text-black/80 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+                      className="group flex items-center gap-2 rounded-full p-1 pr-3 transition-colors duration-200 hover:bg-[#EDEFEB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#163300] focus-visible:ring-offset-2"
                       aria-label="Account menu"
+                      aria-expanded={activeDropdown === 'avatar'}
                     >
-                      {authUser?.avatar_url ? (
-                        <img
-                          src={authUser.avatar_url}
-                          alt={authUser?.name || authUser?.email || 'Profile'}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <span className="flex h-full w-full items-center justify-center bg-black text-sm font-semibold uppercase text-white">
-                          {(authUser?.name || authUser?.email || 'A').charAt(0)}
-                        </span>
-                      )}
+                      {/* Styled after Wise: photo (or a person outline) in a soft grey-green circle, thin chevron beside it;
+                          on hover a pale pill wraps both and the circle deepens a shade. */}
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#E8EBE6] transition-colors duration-200 group-hover:bg-[#DFE2DC]">
+                        {authUser?.avatar_url ? (
+                          <img
+                            src={authUser.avatar_url}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <User className="h-5 w-5 text-[#0E0F0C]" strokeWidth={1.75} aria-hidden="true" />
+                        )}
+                      </span>
+                      <ChevronRight
+                        className={`h-4 w-4 shrink-0 text-[#163300] transition-transform duration-200 ${activeDropdown === 'avatar' ? 'rotate-90' : ''}`}
+                        strokeWidth={2}
+                        aria-hidden="true"
+                      />
                     </button>
 
                     <AnimatePresence>
