@@ -216,8 +216,9 @@ export const $communities = {
   leave: (communityId: string) =>
     api.post<unknown>(`${COMMUNITIES_PREFIX}/${communityId}/leave`),
 
+  // The endpoint pages at 10 by default; ask for its maximum so long membership lists aren't cut off.
   getMyCommunities: () =>
-    api.get<unknown>(`${COMMUNITIES_PREFIX}/my-communities`),
+    api.get<unknown>(`${COMMUNITIES_PREFIX}/my-communities?page_size=100`),
 };
 
 // ============================================
