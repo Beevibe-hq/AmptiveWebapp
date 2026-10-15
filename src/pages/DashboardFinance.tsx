@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { WITHDRAWAL_FEE_LABEL, withdrawalFee } from '@/lib/fees';
+import { MIN_WITHDRAWAL_AMOUNT, WITHDRAWAL_FEE_LABEL, withdrawalFee } from '@/lib/fees';
 import { DollarSign, Settings as SettingsIcon, FileText, Download, Plus, X, Search, CircleSlash, CreditCard, Receipt, Building2, Trash2, ShieldCheck, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
@@ -53,7 +53,6 @@ const BANK_DETAILS_STORAGE_KEY = 'amptive_payout_bank_details';
 const getBankDetailsStorageKey = (userKey: string) => `${BANK_DETAILS_STORAGE_KEY}.${userKey}`;
 const WITHDRAWALS_STORAGE_KEY = 'amptive_withdrawal_requests';
 const WALLET_SECURITY_QUESTION_KEY = 'amptive_wallet_security_question';
-const MIN_WITHDRAWAL_AMOUNT = 2000;
 const SECURITY_QUESTIONS = [
     'In what city were you born?',
     'What was the name of your first pet?',
@@ -172,6 +171,15 @@ function describeWithdrawalError(raw?: string): { message: string; hint?: string
         return {
             message: 'We could not use that payout account.',
             hint: 'Check the account under Payout details, or add it again.',
+        };
+    }
+    // e.g. 'Input should be greater than or equal to 10000': the backend's minimum changed
+    // under us before, so read it from the error rather than trusting our copy of it.
+    const backendMinimum = text.match(/greater than or equal to\s*([\d.]+)/);
+    if (backendMinimum) {
+        return {
+            message: `The minimum withdrawal is ₦${Number(backendMinimum[1]).toLocaleString('en-NG')}.`,
+            hint: 'Increase the amount and try again.',
         };
     }
     if (text.includes('minimum') || text.includes('at least')) {
@@ -1921,6 +1929,7 @@ export default function DashboardFinance() {
                                                     placeholder="0"
                                                 />
                                             </div>
+                                            <p className="ml-1 text-[12px] text-black/40">Minimum ₦{MIN_WITHDRAWAL_AMOUNT.toLocaleString('en-NG')}</p>
                                         </div>
 
                                         {withdrawalGross > 0 && (

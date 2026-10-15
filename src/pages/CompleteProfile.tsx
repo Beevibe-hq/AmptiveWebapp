@@ -3,7 +3,6 @@ import Cropper from 'react-easy-crop';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SIGNUP_KEYS } from '@/lib/constants';
 import { register, completeSocialProfile } from '@/lib/api/auth';
-import { api } from '@/lib/api/client';
 import { uploadImage } from '@/lib/api/storage';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,7 +17,11 @@ export default function CompleteProfilePage() {
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
   const params = new URLSearchParams(location.search);
-  const isSocial = params.get('isSocial') === 'true' || location.state?.isSocial || Boolean(api.getToken());
+  // Signed in already (Google, or sent here by the navbar to finish an incomplete profile) vs.
+  // a new email signup. Keyed off a real signed-in user, not a stored token: a stale token left
+  // in the browser used to route email signups down this path, skipping the password steps and
+  // failing on submit with "Session expired".
+  const isSocial = params.get('isSocial') === 'true' || location.state?.isSocial || Boolean(user);
   const email = params.get('email') || user?.email || sessionStorage.getItem(SIGNUP_KEYS.email) || '';
 
   useEffect(() => {
@@ -394,18 +397,19 @@ export default function CompleteProfilePage() {
     }
     setLoading(true);
     try {
-      let profilePictureUrl: string | undefined;
-
-      if (avatarPreview && !avatarPreview.startsWith('data:image/svg')) {
+      // Uploading needs a signed-in user, so for email signups this runs after registering.
+      const uploadAvatar = async (): Promise<string | undefined> => {
+        if (!avatarPreview || avatarPreview.startsWith('data:image/svg')) return undefined;
         // Decode the data URL directly; fetch(data:) is blocked by the prod CSP connect-src
         const [header, base64] = avatarPreview.split(',');
         const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
         const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
         const file = new File([bytes], 'avatar.jpg', { type: mime });
-        profilePictureUrl = (await uploadImage(file, 'profile-picture')) || undefined;
-      }
+        return (await uploadImage(file, 'profile-picture')) || undefined;
+      };
 
-      if (isSocial || api.getToken()) {
+      if (isSocial) {
+        const profilePictureUrl = await uploadAvatar();
         // Complete profile for social users
         await completeSocialProfile({
           username: username.trim().toLowerCase(),
@@ -429,8 +433,15 @@ export default function CompleteProfilePage() {
           return;
         }
 
-        if (profilePictureUrl) {
-          await updateProfile({ profile_picture: profilePictureUrl });
+        // The account exists now; a failed photo upload shouldn't undo the signup.
+        try {
+          const profilePictureUrl = await uploadAvatar();
+          if (profilePictureUrl) {
+            await updateProfile({ profile_picture: profilePictureUrl });
+          }
+        } catch (photoError) {
+          console.error('Profile photo upload failed after signup:', photoError);
+          toastError('Your account is ready, but the profile photo did not upload. You can add it from your profile.');
         }
       }
 

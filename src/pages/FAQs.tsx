@@ -54,7 +54,7 @@ const faqSections = [
       },
       {
         question: 'Can I fund or withdraw from my wallet?',
-        answer: 'You can withdraw your available balance to a linked bank account, confirmed with your wallet PIN. The minimum withdrawal is ₦2,000.',
+        answer: 'You can withdraw your available balance to a linked bank account, confirmed with your wallet PIN. The minimum withdrawal is ₦10,000.',
       },
       {
         question: 'Are there fees on withdrawals?',

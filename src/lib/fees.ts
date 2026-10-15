@@ -8,6 +8,9 @@
 /** Naira charged per paid ticket, paid by the buyer on top of the ticket price. Free tickets carry no fee. */
 export const TICKET_SERVICE_FEE = 100;
 
+/** Smallest withdrawal the backend accepts, in naira. */
+export const MIN_WITHDRAWAL_AMOUNT = 10000;
+
 /** Share of every wallet withdrawal (ticket sales and tips alike) kept by Amptive. */
 export const WITHDRAWAL_FEE_RATE = 0.05;
 
