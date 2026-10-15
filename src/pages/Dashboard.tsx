@@ -19,10 +19,11 @@ import {
     ScanLine,
     Download,
     Loader2,
-    FileText} from 'lucide-react';
+    FileText,
+    AlertCircle} from 'lucide-react';
 import { getSession } from '@/lib/api/auth';
 import { toastSuccess, toastError, toastInfo } from '@/lib/ui/toast';
-import { getEvent, getEventOrders, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { getEvent, getEventOrders, getEventsByUser, isUpcomingEvent, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import DashboardEvents from './DashboardEvents';
 import DashboardFinance from './DashboardFinance';
@@ -418,7 +419,8 @@ const formatTimeAgo = (dateString: string) => {
 };
 
 const formatPercentChange = (current: number, previous: number) => {
-    if (previous <= 0) return current > 0 ? '+100%' : '0%';
+    // Growth from nothing isn't a percentage; "+100%" for a first sale read as doubling.
+    if (previous <= 0) return current > 0 ? 'New' : '0%';
     const change = ((current - previous) / previous) * 100;
     const rounded = Math.round(change);
     return `${rounded > 0 ? '+' : ''}${rounded}%`;
@@ -446,7 +448,7 @@ const getEventStatusDisplay = (status?: string | null) => {
 
 const getChangePillClass = (change: string) => {
     if (change.startsWith('-')) return 'text-red-700 bg-red-50/80 border border-red-200/60';
-    if (change === '0%') return 'text-black/45 bg-black/[0.03] border border-black/5';
+    if (change === '0%' || change === '—') return 'text-black/45 bg-black/[0.03] border border-black/5';
     return 'text-green-700 bg-green-50/80 border border-green-200/60';
 };
 
@@ -465,6 +467,9 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshCount, setRefreshCount] = useState(0);
     const [realEvents, setRealEvents] = useState<StandaloneEvent[]>([]);
+    const [loadError, setLoadError] = useState(false);
+    // Revenue known only from ticket counts (no dated orders), so it can't be split by week.
+    const [revenueUndated, setRevenueUndated] = useState(false);
 
     const [isPaused, setIsPaused] = useState(false);
     const [currentStatIndex, setCurrentStatIndex] = useState(0);
@@ -484,12 +489,23 @@ function DashboardHome({ displayName }: { displayName: string }) {
         attendees: '0%',
     });
 
-    const upcomingEvents = realEvents.filter(event =>
-        new Date(event.scheduled_for ?? event.created_at!) >= new Date()
-    ).slice(0, 3);
+    // Live events first (they're happening now), then the rest soonest-first. Events without a
+    // date, or that have started, ended or been cancelled, aren't upcoming.
+    const allUpcomingEvents = realEvents
+        .filter(isUpcomingEvent)
+        .sort((a, b) => {
+            const aLive = String(a.status || '').toLowerCase() === 'live' ? 1 : 0;
+            const bLive = String(b.status || '').toLowerCase() === 'live' ? 1 : 0;
+            if (aLive !== bLive) return bLive - aLive;
+            return new Date(a.scheduled_for || 0).getTime() - new Date(b.scheduled_for || 0).getTime();
+        });
+    const upcomingEvents = allUpcomingEvents.slice(0, 3);
+    const upcomingCount = allUpcomingEvents.length;
 
-    const upcomingCount = realEvents.filter(event =>
-        new Date(event.scheduled_for ?? event.created_at!) >= new Date()
+    // The Upcoming Events badge: how many start within the next 7 days.
+    const weekAhead = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    const startingThisWeek = allUpcomingEvents.filter(event =>
+        event.scheduled_for && new Date(event.scheduled_for).getTime() <= weekAhead
     ).length;
 
     // ---- Quick Links -----------------------------------------------------
@@ -610,7 +626,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             title: "Upcoming Events",
             subtitle: "Upcoming",
             value: upcomingCount,
-            change: metricChanges.events,
+            change: startingThisWeek > 0 ? `${startingThisWeek} this week` : '—',
             icon: Calendar,
             bgColor: "bg-red-50",
             textColor: "text-red-600"
@@ -679,6 +695,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
     };
 
     const fetchRealEvents = async () => {
+        setLoadError(false);
         try {
             const session = await getSession();
             if (!session || !session.user) return;
@@ -772,8 +789,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
             const currentMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), monthStart, nextMonthStart));
             const previousMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), previousMonthStart, monthStart));
-            const currentMonthTicketFallback = !hasOrderRows ? ticketSoldCount : 0;
-            const currentMonthRevenue = currentMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0) + (!hasOrderRows ? ticketRevenue : 0);
+            const currentMonthRevenue = currentMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
             const previousMonthRevenue = previousMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
             const currentMonthAttendees = new Set<string>();
             const previousMonthAttendees = new Set<string>();
@@ -787,12 +803,15 @@ function DashboardHome({ displayName }: { displayName: string }) {
             const currentMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', monthStart, nextMonthStart)).length;
             const previousMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', previousMonthStart, monthStart)).length;
 
+            // Without dated orders there's nothing to compare month on month; show no change
+            // rather than counting all-time sales as this month's.
             setMetricChanges({
-                sales: formatPercentChange(currentMonthRevenue, previousMonthRevenue),
-                orders: formatPercentChange(currentMonthOrders.length + currentMonthTicketFallback, previousMonthOrders.length),
+                sales: hasOrderRows ? formatPercentChange(currentMonthRevenue, previousMonthRevenue) : '—',
+                orders: hasOrderRows ? formatPercentChange(currentMonthOrders.length, previousMonthOrders.length) : '—',
                 events: formatPercentChange(currentMonthEvents, previousMonthEvents),
-                attendees: formatPercentChange(currentMonthAttendees.size + currentMonthTicketFallback, previousMonthAttendees.size),
+                attendees: hasOrderRows ? formatPercentChange(currentMonthAttendees.size, previousMonthAttendees.size) : '—',
             });
+            setRevenueUndated(!hasOrderRows && ticketRevenue > 0);
 
             const checkedIns = getStoredCheckIns();
             const activity = validOrders
@@ -862,17 +881,6 @@ function DashboardHome({ displayName }: { displayName: string }) {
                 aggregated[monthLabel].weeks[weekIdx] += amount;
             });
 
-            if (!hasOrderRows && ticketRevenue > 0) {
-                const currentMonth = getCurrentMonthLabel();
-                const currentDay = new Date().getDate();
-                const currentWeek = currentDay <= 7 ? 0 : currentDay <= 14 ? 1 : currentDay <= 21 ? 2 : 3;
-                if (!aggregated[currentMonth]) {
-                    aggregated[currentMonth] = { rawTotal: 0, weeks: [0, 0, 0, 0] };
-                }
-                aggregated[currentMonth].rawTotal += ticketRevenue;
-                aggregated[currentMonth].weeks[currentWeek] += ticketRevenue;
-            }
-
             const finalMonthlyData: typeof monthlyData = {};
             Object.entries(aggregated).forEach(([month, data]) => {
                 finalMonthlyData[month] = {
@@ -902,6 +910,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
             }
         } catch (error) {
             console.error('Error fetching dashboard events:', error);
+            setLoadError(true);
         } finally {
             setEventsLoading(false);
         }
@@ -928,15 +937,19 @@ function DashboardHome({ displayName }: { displayName: string }) {
     ]};
 
     const maxK = Math.max(...activeData.points.map(p => p.val || 0));
-    const minK = Math.min(...activeData.points.map(p => p.val || 0));
 
-    // Dynamic Floor and Ceiling
-    const axisMin = minK;
-    let axisMax = Math.ceil(maxK / 10) * 10;
-    if (axisMax <= axisMin) {
-        axisMax = axisMin + 20; // Ensure there is always a range to draw, e.g., if min=20, max=40
-    }
+    // The axis starts at ₦0 so heights compare honestly (starting at the lowest week made a
+    // ₦50k week look empty beside a ₦60k one), and tops out at a round 1/2/5 × 10ⁿ value.
+    const niceCeil = (value: number) => {
+        if (value <= 0) return 10;
+        const magnitude = 10 ** Math.floor(Math.log10(value));
+        const scaled = value / magnitude;
+        return (scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10) * magnitude;
+    };
+    const axisMin = 0;
+    const axisMax = niceCeil(maxK);
     const range = axisMax - axisMin;
+    const axisLabel = (valueInK: number) => formatCondensed(Math.round(valueInK * 1000));
 
     const now = new Date();
     const currentMonthLabel = now.toLocaleString('default', { month: 'short' }) + " '" + now.getFullYear().toString().slice(-2);
@@ -1002,6 +1015,23 @@ function DashboardHome({ displayName }: { displayName: string }) {
                         <span className="md:hidden text-white text-sm font-medium">Refresh</span>
                     </button>
                 </header>
+
+                {loadError && (
+                    <div role="alert" className="mb-6 w-full flex items-center justify-between gap-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3">
+                        <div className="flex items-center gap-2.5 text-[13px] text-red-800">
+                            <AlertCircle className="h-4 w-4 shrink-0" />
+                            <span>We couldn't load your dashboard. The numbers below may be incomplete.</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            className="shrink-0 rounded-full bg-red-600 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
 
                 {/* KPI Section */}
                 <div className="w-full mb-8">
@@ -1144,6 +1174,11 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                     </span>
                                 </div>
                             </div>
+                            {revenueUndated && (
+                                <p className="text-[12px] text-black/45 -mt-2">
+                                    Your sales total is counted from tickets sold, but purchase dates aren't available yet, so this chart can't break it down by week.
+                                </p>
+                            )}
                             <div className="h-48 sm:h-64 lg:h-72 w-full mt-4">
                                 <svg key={`${activeMonth}-${refreshCount}`} className="w-full h-full overflow-visible" viewBox="-40 -20 460 250">
                                     <defs>
@@ -1155,10 +1190,10 @@ function DashboardHome({ displayName }: { displayName: string }) {
 
                                     {/* Y-Axis Labels - Inside SVG for perfect alignment */}
                                     {[
-                                        { val: axisMax, label: `₦${axisMax}k`, y: 0 },
-                                        { val: axisMin + range * 0.66, label: `₦${Math.round(axisMin + range * 0.66)}k`, y: 66.66 },
-                                        { val: axisMin + range * 0.33, label: `₦${Math.round(axisMin + range * 0.33)}k`, y: 133.33 },
-                                        { val: axisMin, label: `₦${axisMin}k`, y: 200 }
+                                        { val: axisMax, label: axisLabel(axisMax), y: 0 },
+                                        { val: axisMin + range * 0.66, label: axisLabel(axisMin + range * 0.66), y: 66.66 },
+                                        { val: axisMin + range * 0.33, label: axisLabel(axisMin + range * 0.33), y: 133.33 },
+                                        { val: axisMin, label: axisLabel(axisMin), y: 200 }
                                     ].map((item, i) => (
                                         <g key={i}>
                                             <text
@@ -1308,9 +1343,12 @@ function DashboardHome({ displayName }: { displayName: string }) {
                         <div className="bg-white border border-black/5 py-5 px-6 rounded-2xl shadow-sm">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-bold text-black">Recent Activity</h3>
-                                <button className="text-[13px] font-semibold text-black/40 hover:text-black transition-colors tracking-wide">
+                                <Link
+                                    to="/dashboard/orders"
+                                    className="text-[13px] font-semibold text-black/40 hover:text-black transition-colors tracking-wide"
+                                >
                                     View All
-                                </button>
+                                </Link>
                             </div>
 
                             <div className="flex flex-col">
