@@ -53,13 +53,17 @@ const BANK_DETAILS_STORAGE_KEY = 'amptive_payout_bank_details';
 const getBankDetailsStorageKey = (userKey: string) => `${BANK_DETAILS_STORAGE_KEY}.${userKey}`;
 const WITHDRAWALS_STORAGE_KEY = 'amptive_withdrawal_requests';
 const WALLET_SECURITY_QUESTION_KEY = 'amptive_wallet_security_question';
+// Must match the backend's SecurityQuestionEnum word for word: it rejects anything else. "What
+// was the name of your first school?" (backend: "What is…") failed every setup that picked it.
 const SECURITY_QUESTIONS = [
-    'In what city were you born?',
-    'What was the name of your first pet?',
-    'What is your childhood nickname?',
-    'What was the name of your first school?',
     "What is your mother's maiden name?",
+    'What was the name of your first pet?',
+    'What is the name of your favorite teacher in high school?',
+    'In what city were you born?',
+    'What is your childhood nickname?',
+    'What is the name of your first school?',
 ];
+const DEFAULT_SECURITY_QUESTION = 'What is your childhood nickname?';
 
 const getUserScopedWithdrawalKey = (userId?: string) => (
     userId ? `${WITHDRAWALS_STORAGE_KEY}:${userId}` : WITHDRAWALS_STORAGE_KEY
@@ -76,10 +80,24 @@ const readSavedWithdrawals = (userId?: string) => {
 
 const readWalletSecurityQuestion = () => {
     try {
-        return localStorage.getItem(WALLET_SECURITY_QUESTION_KEY) || SECURITY_QUESTIONS[2];
+        // A question saved by an older build may no longer be one the backend accepts.
+        const stored = localStorage.getItem(WALLET_SECURITY_QUESTION_KEY);
+        return stored && SECURITY_QUESTIONS.includes(stored) ? stored : DEFAULT_SECURITY_QUESTION;
     } catch {
-        return SECURITY_QUESTIONS[2];
+        return DEFAULT_SECURITY_QUESTION;
     }
+};
+
+/** Turns a wallet-setup failure into something a person can act on; the raw reason goes to the console. */
+const describeWalletSetupError = (raw?: string): string => {
+    const text = String(raw || '').toLowerCase();
+    if (raw) console.error('Wallet setup failed:', raw);
+    if (text.includes('security question answer') || text.includes('answer')) return 'Enter an answer to your security question, then try again.';
+    if (text.includes('security question')) return 'Please choose one of the security questions from the list, then try again.';
+    if (text.includes('pin')) return 'Your wallet PIN must be exactly 4 digits. Please re-enter it and try again.';
+    if (text.includes('already')) return 'Your wallet is already set up. Close this and refresh the page.';
+    if (text.includes('failed to fetch') || text.includes('load failed') || text.includes('network')) return "We couldn't reach the server. Check your connection and try again.";
+    return "We couldn't set up your wallet. Please try again in a moment.";
 };
 
 const PinInput = ({ value, onChange, length = 4, autoFocus = false }: { value: string, onChange: (v: string) => void, length?: number, autoFocus?: boolean }) => {
@@ -957,7 +975,7 @@ export default function DashboardFinance() {
             if (!result.ok) {
                 setWalletSetupSuccess(false);
                 setWalletSetupStep('result');
-                setWalletSetupError(result.message || 'Could not set up your wallet.');
+                setWalletSetupError(describeWalletSetupError(result.message));
                 return;
             }
 

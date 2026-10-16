@@ -181,8 +181,20 @@ async function executeRequest<T>(
     const errorBody = await response.json().catch(() => ({}));
     console.error('API Error Response:', errorBody);
     let errorMessage = errorBody.message || errorBody.detail || `HTTP ${response.status}`;
-    if (errorBody.errors && Array.isArray(errorBody.errors)) {
-      errorMessage += ` (Validation: ${JSON.stringify(errorBody.errors)})`;
+    if (Array.isArray(errorBody.errors) && errorBody.errors.length > 0) {
+      // Pages show error.message straight to users, so make it a sentence ("Amount: Input should
+      // be greater than or equal to 10000") instead of "Field validation error (Validation: [{…}])".
+      // The raw list rides along as fieldErrors for code that needs to branch on a field.
+      const readable = errorBody.errors
+        .map((item: any) => {
+          const field = String(item?.field ?? (Array.isArray(item?.loc) ? item.loc[item.loc.length - 1] : '') ?? '').replace(/_/g, ' ').trim();
+          const message = String(item?.message ?? item?.msg ?? '').trim();
+          if (!message) return '';
+          return field ? `${field.charAt(0).toUpperCase()}${field.slice(1)}: ${message}` : message;
+        })
+        .filter(Boolean)
+        .join(' · ');
+      throw Object.assign(new Error(readable || errorMessage), { fieldErrors: errorBody.errors, status: response.status });
     } else if (typeof errorBody === 'object' && Object.keys(errorBody).length > 0 && !errorBody.message && !errorBody.detail) {
       errorMessage = JSON.stringify(errorBody);
     }
