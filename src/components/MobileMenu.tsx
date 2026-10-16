@@ -13,12 +13,14 @@ import {
   ShoppingBag,
   LogIn,
   LayoutDashboard,
-  Heart
+  Heart,
+  ScanLine,
 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import UserAvatar from './UserAvatar';
+import { useSupportPageLink } from '@/hooks/useSupportPageLink';
 
 type BaseLink = {
   name: string;
@@ -52,10 +54,8 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
   const { user, loading, logout: contextLogout } = useAuth();
 
   // Navigation links for authenticated users with icons
-  const hasEnabledTips = user?.support_enabled === true || (user as any)?.accept_tips === true;
-  // Once their support page exists, Accept Gifts opens it instead of disappearing.
-  const supportPageSlug = user?.username || user?.user_id;
-  const acceptGiftsPath = hasEnabledTips && supportPageSlug ? `/support/${supportPageSlug}` : '/profile/support-setup';
+  // Their own support page once it exists (looked up from the support profile), else setup.
+  const acceptGiftsPath = useSupportPageLink(user);
 
   const authLinks: LinkItem[] = [
     {
@@ -73,6 +73,11 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
       name: 'Create Event',
       path: '/events/create',
       icon: <PlusSquare className="w-7 h-7 mr-4" />
+    },
+    {
+      name: 'Check-in',
+      path: '/dashboard/check-in',
+      icon: <ScanLine className="w-7 h-7 mr-4" />
     },
 
     // Divider after first 2 items

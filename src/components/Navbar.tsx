@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { isProfileComplete } from '@/lib/api/profiles';
 
 import { SHOW_AI_GENERATOR } from '@/lib/features';
+import { useSupportPageLink } from '@/hooks/useSupportPageLink';
 
 type MenuItem = {
   name: string;
@@ -111,15 +112,14 @@ const Navbar = ({ hideMenu = false, forceSupportMode = false }: { hideMenu?: boo
   // Removed auto-redirect on route change; incomplete sessions are signed out silently instead.
 
   // Navigation links for authenticated users
-  const hasEnabledTips = authUser?.support_enabled === true || (authUser as any)?.accept_tips === true;
-  // Once their support page exists, Accept Gifts opens it (same link as "Go to My Support Page"
-  // in setup) rather than vanishing from the menu.
-  const supportPageSlug = authUser?.username || authUser?.user_id;
-  const acceptGiftsPath = hasEnabledTips && supportPageSlug ? `/support/${supportPageSlug}` : '/profile/support-setup';
+  // Their own support page once it exists (looked up from the support profile), else setup.
+  const acceptGiftsPath = useSupportPageLink(authUser);
 
   const authLinks: NavLink[] = [
     { name: 'Accept Gifts', path: acceptGiftsPath } as MenuItem,
     { name: 'Create Event', path: '/events/create' },
+    // One click to the door: hosts scan tickets from here.
+    { name: 'Check-in', path: '/dashboard/check-in' },
     { name: 'Explore', path: '/explore' },
     {
       name: 'More',
