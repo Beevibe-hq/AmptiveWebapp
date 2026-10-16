@@ -624,18 +624,21 @@ const EventDetail = () => {
       };
     }
 
+    // No tickets: a free event saved before free tickets were added automatically. Visitors
+    // can't create a ticket themselves (only the host can), so say it's free and needs nothing.
     if (!hasTickets) {
       return {
         button: (
-          <button disabled className={`${baseClasses} bg-gray-100 text-gray-400 cursor-not-allowed`}>
-            No Tickets Available
-          </button>
+          <div className={`${baseClasses} bg-emerald-50 text-emerald-700 cursor-default`}>
+            Free event
+          </div>
         ),
-        footerText: null
+        footerText: 'No ticket needed · just show up'
       };
     }
 
     const isCompletelySoldOut = hasTickets && tickets.every(isTicketSoldOut);
+    const allTicketsFree = tickets.every(ticket => (Number(ticket.price) || 0) === 0);
 
     if (isCompletelySoldOut) {
       return {
@@ -654,11 +657,13 @@ const EventDetail = () => {
           to={`/events/${event.event_id}/checkout`}
           className={`${baseClasses} bg-black text-white block`}
         >
-          Get Tickets
+          {allTicketsFree ? 'Get free ticket' : 'Get Tickets'}
         </Link>
       ),
       // Say up front that paid tickets carry the service fee, rather than first showing it at checkout.
-      footerText: tickets.some(ticket => !isTicketSoldOut(ticket) && (Number(ticket.price) || 0) > 0)
+      footerText: allTicketsFree
+        ? 'Free · just your name and email, no account needed'
+        : tickets.some(ticket => !isTicketSoldOut(ticket) && (Number(ticket.price) || 0) > 0)
         ? `+ ₦${TICKET_SERVICE_FEE.toLocaleString('en-NG')} service fee per paid ticket · Secure checkout powered by Paystack`
         : "Secure checkout powered by Paystack"
     };
@@ -1069,7 +1074,8 @@ const EventDetail = () => {
                   </div>
                 ) : (
                   <div className="p-8 text-center rounded-3xl border border-dashed border-gray-200 bg-gray-50/50">
-                    <p className="text-gray-500">No tickets available yet.</p>
+                    <p className="font-semibold text-gray-900">This event is free</p>
+                    <p className="mt-1 text-sm text-gray-500">No ticket needed, just show up.</p>
                   </div>
                 )}
               </section>

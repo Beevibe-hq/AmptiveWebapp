@@ -1040,6 +1040,29 @@ const CreateEvent = () => {
         }
       }
 
+      /*
+       * An event saved with no tickets is free. Give it a ₦0, unlimited "Free admission" ticket
+       * so guests can claim one through checkout without an account (the backend's RSVP needs
+       * one), and the host gets a real attendee list and check-in. Drafts are left alone so a
+       * host still deciding on tickets isn't handed one they then have to delete.
+       */
+      if (eventId && !asDraft && form.tickets.length === 0) {
+        try {
+          await createNewTicket({
+            label: 'Free admission',
+            price: 0,
+            currency: 'NGN',
+            quantity_total: null,
+            benefits: [],
+            color_theme: 'silver',
+            is_physical: false,
+          }, eventId);
+        } catch (ticketError) {
+          console.error('Could not add the free admission ticket', ticketError);
+          toastError('Your event is saved, but we could not add its free ticket. Add a ₦0 ticket so guests can register.');
+        }
+      }
+
       toastSuccess(asDraft ? 'Draft saved successfully!' : (id ? 'Event updated successfully!' : 'Event created successfully!'));
       if (!id) {
         if (asDraft && eventId) {
