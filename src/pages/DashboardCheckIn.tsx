@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { Camera, CheckCircle2, Search, Ticket, UserCheck, XCircle } from 'lucide-react';
-import { getEventsByUser, getEventOrders, StandaloneEvent } from '@/lib/api/events';
+import { getEventEndTime, getEventsByUser, getEventOrders, StandaloneEvent } from '@/lib/api/events';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import { $tickets } from '@/lib/api/services';
 import { TICKET_THEMES } from '@/lib/constants';
@@ -436,10 +436,28 @@ export default function DashboardCheckIn() {
         const fetchEvents = async () => {
             try {
                 const data = await getEventsByUser();
-                const checkInEvents = (data || []).filter(event => {
-                    const status = normalize(event.status);
-                    return status && !['draft', 'pending', 'cancelled', 'canceled', 'archived'].includes(status);
-                });
+                /*
+                 * Drop events that are over. Doors stay open a while past the end (late arrivals,
+                 * re-entry), and an event with no end time would otherwise "end" the moment it
+                 * starts, exactly when hosts need it, so allow 12h from the start in that case.
+                 */
+                const now = Date.now();
+                const HOUR = 60 * 60 * 1000;
+                const isStillOpen = (event: StandaloneEvent) => {
+                    const end = getEventEndTime(event);
+                    if (Number.isNaN(end)) return true; // no date: can't tell, keep it
+                    const grace = event.ended_at ? 2 * HOUR : 12 * HOUR;
+                    return end + grace > now;
+                };
+                const startOf = (event: StandaloneEvent) => new Date(event.started_at || event.scheduled_for || 0).getTime();
+
+                const checkInEvents = (data || [])
+                    .filter(event => {
+                        const status = normalize(event.status);
+                        return status && !['draft', 'pending', 'cancelled', 'canceled', 'archived', 'ended', 'completed', 'past'].includes(status);
+                    })
+                    .filter(isStillOpen)
+                    .sort((a, b) => startOf(a) - startOf(b));
                 setEvents(checkInEvents);
             } catch {
                 setEvents([]);
