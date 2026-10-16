@@ -248,6 +248,18 @@ export function mergeSupportProfileIdentity(
   };
 }
 
+/**
+ * Whether this profile has a support page, live or switched offline. A page that was set up and
+ * later taken offline still exists: its owner is editing it, not creating a new one.
+ */
+export function hasSupportPage(profile: SupportProfile | null | undefined): boolean {
+  if (!profile) return false;
+  return Boolean(profile.support_enabled ?? profile.accept_tips) ||
+    (profile.support_enabled ?? profile.accept_tips) !== undefined ||
+    Boolean(profile.support_tagline || profile.support_message || profile.support_button_text) ||
+    (Array.isArray(profile.support_amounts) && profile.support_amounts.length > 0);
+}
+
 export async function getMySupportProfile(): Promise<SupportProfile | null> {
   try {
     const response = await api.get<unknown>(`${SUPPORT_PREFIX}/`);

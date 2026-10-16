@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'; // Refined Support Me Journey
 import { useNavigate } from 'react-router-dom';
 import { getCurrentUser } from '@/lib/api/auth';
-import { getMySupportProfile, updateSupportProfile, SupportProfile } from '@/lib/api/support';
+import { getMySupportProfile, updateSupportProfile, SupportProfile, hasSupportPage as profileHasSupportPage } from '@/lib/api/support';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import {  ArrowLeft, Check, Heart, Save, Sparkles, Wallet, Gift, ArrowRight, Users, Store, Building2, Brush, Calendar, Copy , Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatSupportUrl } from '@/utils/supportUrl';
 import { FeeNotice } from '@/components/FeeNotice';
 import { WITHDRAWAL_FEE_LABEL } from '@/lib/fees';
+import { invalidateSupportPageLink } from '@/hooks/useSupportPageLink';
 
 interface CharacterProgressProps {
     current: number;
@@ -373,13 +374,7 @@ export default function SupportSetup() {
                 const profile = await getMySupportProfile();
                 if (profile) {
                     const isAcceptingTips = profile.support_enabled ?? profile.accept_tips ?? false;
-                    // A page that was set up and later switched offline is still an
-                    // existing page — the user is editing it, not creating a new one.
-                    const pageExists =
-                        isAcceptingTips ||
-                        (profile.support_enabled ?? profile.accept_tips) !== undefined ||
-                        Boolean(profile.support_tagline || profile.support_message || profile.support_button_text) ||
-                        (Array.isArray(profile.support_amounts) && profile.support_amounts.length > 0);
+                    const pageExists = profileHasSupportPage(profile);
                     setHasSupportPage(pageExists);
                     setSupportEnabled(isAcceptingTips);
                     setSupportMessage(profile.support_message || profile.support_tagline || '');
@@ -478,6 +473,9 @@ export default function SupportSetup() {
                 );
                 return;
             }
+
+            // The menu's Accept Gifts link should now point at this page.
+            invalidateSupportPageLink();
 
             toastSuccess(
                 isCreating
