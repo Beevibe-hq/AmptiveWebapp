@@ -16,6 +16,7 @@ import { useSEO } from '@/hooks/useSEO';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { TICKET_SERVICE_FEE } from '@/lib/fees';
+import { hostPinContent } from '@/lib/mapPin';
 
 const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   'lagos': { lat: 6.5244, lng: 3.3792 },
@@ -48,13 +49,15 @@ function VenueMap({
   longitude,
   locationQuery,
   venueName,
-  hostAvatarUrl
+  hostAvatarUrl,
+  hostName
 }: {
   latitude?: number | null;
   longitude?: number | null;
   locationQuery?: string;
   venueName?: string;
   hostAvatarUrl?: string;
+  hostName?: string;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
@@ -110,16 +113,12 @@ function VenueMap({
     /*
      * Host avatar pin marker.
      *
-     * The glyph sits underneath and the photo covers it, so a missing or broken avatar
-     * simply reveals a neutral location mark. Both the empty case and the onerror case
+     * The host's initial (or a person glyph) sits underneath and the photo covers it, so a
+     * missing or broken avatar shows that instead of an empty white bubble. Both the empty case and the onerror case
      * used to point at a hardcoded photo of one particular person, which meant that
      * face appeared on every event whose host had no picture of their own.
      */
-    // Escaped: this string is injected as HTML, so a quote in the URL would break out.
-    const safeAvatar = hostAvatarUrl ? String(hostAvatarUrl).replace(/"/g, '&quot;') : '';
-    const avatarImg = safeAvatar
-      ? `<img src="${safeAvatar}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.remove();" />`
-      : '';
+    const avatarImg = hostPinContent(hostAvatarUrl, hostName);
     const iconHtml = `
       <div style="position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;">
         <div style="position:relative;width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
@@ -161,7 +160,7 @@ function VenueMap({
       map.remove();
       mapInstance.current = null;
     };
-  }, [latitude, longitude, locationQuery, hostAvatarUrl]);
+  }, [latitude, longitude, locationQuery, hostAvatarUrl, hostName]);
 
   return (
     <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-gray-200 bg-gray-100 shadow-sm group">
@@ -1104,6 +1103,7 @@ const EventDetail = () => {
                     locationQuery={fallbackMapQuery}
                     venueName={physicalVenue?.name || event.location?.venue}
                     hostAvatarUrl={event.host?.profile_picture || (event.host as any)?.profile_image_url || (event.host as any)?.avatar_url || organizerProfile?.avatar_url || organizerProfile?.profile_picture || undefined}
+                    hostName={event.host?.name || event.host?.username || undefined}
                   />
                 </section>
               ) : null}

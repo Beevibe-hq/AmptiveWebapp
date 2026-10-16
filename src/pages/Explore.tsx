@@ -13,6 +13,7 @@ import { getTicketsForEvent } from '@/lib/api/tickets';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ReactCalendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
+import { hostPinContent } from '@/lib/mapPin';
 
 const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
     // Nigeria & West Africa
@@ -815,11 +816,8 @@ function ExploreLeafletMap({ events, locFilter, isLoading, userCoords, viewMode,
                 const hostAvatar = event.host?.profile_picture || (event.host as any)?.avatar_url || (event.host as any)?.profile_image_url || (event as any).host_avatar_url || (event as any).user_avatar;
                 const hostName = event.host?.name || event.host?.username || 'Host';
 
-                // Escaped: injected as HTML, so a quote in the URL would break out.
-                const safeAvatar = hostAvatar ? String(hostAvatar).replace(/"/g, '&quot;') : '';
-                const avatarImg = safeAvatar
-                  ? `<img src="${safeAvatar}" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;" onerror="this.remove();" />`
-                  : '';
+                // Photo over the host's initial, so hosts without a picture don't get an empty pin.
+                const avatarImg = hostPinContent(hostAvatar, hostName === 'Host' ? '' : hostName);
 
                 const iconHtml = `
                     <div class="custom-pin-wrapper" style="position: relative; display: inline-flex; flex-direction: column; align-items: center; cursor: pointer;">
