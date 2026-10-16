@@ -21,7 +21,15 @@ type EventRecord = EventTiming & {
     user_id?: string | null;
     event_id?: string;
     thumbnail_url?: string | null;
+    status?: string | null;
 };
+
+/**
+ * A draft, or an event with no start date yet, isn't on sale: buyers would pay for something
+ * with no date ("Date TBD") that the host hasn't published. A direct link still reaches this page.
+ */
+const isNotOnSaleYet = (event: Pick<EventRecord, 'status' | 'start_time'>) =>
+    String(event.status || '').toLowerCase() === 'draft' || !event.start_time;
 
 /**
  * The native input is kept for semantics — keyboard, label association, form behaviour —
@@ -283,6 +291,10 @@ export default function CheckoutPage() {
         // since before the event ended.
         if (isEventPast(event)) {
             toastError('This event has ended, so ticket sales are closed.');
+            return;
+        }
+        if (isNotOnSaleYet(event)) {
+            toastError("Tickets for this event aren't on sale yet.");
             return;
         }
 
@@ -888,6 +900,7 @@ export default function CheckoutPage() {
     };
 
     const isPastEvent = event ? isEventPast(event) : false;
+    const notOnSaleYet = event ? !isPastEvent && isNotOnSaleYet(event) : false;
 
     const availableTickets = tickets.filter(t => !isTicketSoldOut(t));
     const soldOutTickets = tickets.filter(isTicketSoldOut);
@@ -973,6 +986,13 @@ export default function CheckoutPage() {
                                     <h3 className="font-bold text-xl text-gray-900 tracking-tight">Event Has Ended</h3>
                                     <p className="text-sm font-medium text-gray-500 max-w-sm mx-auto">
                                         Ticket sales are closed because this event has already taken place.
+                                    </p>
+                                </div>
+                            ) : notOnSaleYet ? (
+                                <div className="p-8 rounded-[2rem] border border-amber-100 bg-amber-50/60 text-center space-y-3 my-10">
+                                    <h3 className="font-bold text-xl text-gray-900 tracking-tight">Tickets aren't on sale yet</h3>
+                                    <p className="text-sm font-medium text-gray-500 max-w-sm mx-auto">
+                                        The host hasn't published this event or set its date. Check back once it's announced.
                                     </p>
                                 </div>
                             ) : (
