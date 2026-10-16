@@ -6,6 +6,7 @@ import { toastSuccess, toastError } from '@/lib/ui/toast';
 import VenueForm from './VenueForm';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import L from 'leaflet';
+import { hostPinContent } from '@/lib/mapPin';
 
 const AMPTIVE_APP_VENUE_ID = 'virtual-amptive-app';
 const AMPTIVE_APP_VENUE: Venue = {
@@ -66,14 +67,9 @@ function MiniVenueMap({
       }).addTo(map);
     }
 
-    // Circular avatar pin marker matching EventDetail: the organiser's own picture, and
-    // a plain white circle when there isn't one. It used to fall back to a hardcoded
-    // portrait of one particular person, which showed on every create-event map.
-    // Escaped: this string is injected as HTML, so a quote in the URL would break out.
-    const safeAvatar = hostAvatarUrl ? String(hostAvatarUrl).replace(/"/g, '&quot;') : '';
-    const avatarImg = safeAvatar
-      ? `<img src="${safeAvatar}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.remove();" />`
-      : '';
+    // Circular avatar pin marker matching EventDetail: the organiser's own picture over a
+    // person glyph, so organisers without a picture don't get an empty white bubble.
+    const avatarImg = hostPinContent(hostAvatarUrl);
     const iconHtml = `
       <div style="position:relative;display:inline-flex;flex-direction:column;align-items:center;">
         <div style="position:relative;width:48px;height:48px;border-radius:50%;background:#ffffff;border:4px solid #ffffff;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.18);">
