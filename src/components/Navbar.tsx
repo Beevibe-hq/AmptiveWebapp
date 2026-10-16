@@ -112,10 +112,13 @@ const Navbar = ({ hideMenu = false, forceSupportMode = false }: { hideMenu?: boo
 
   // Navigation links for authenticated users
   const hasEnabledTips = authUser?.support_enabled === true || (authUser as any)?.accept_tips === true;
-  const shouldShowAcceptTips = !hasEnabledTips;
+  // Once their support page exists, Accept Gifts opens it (same link as "Go to My Support Page"
+  // in setup) rather than vanishing from the menu.
+  const supportPageSlug = authUser?.username || authUser?.user_id;
+  const acceptGiftsPath = hasEnabledTips && supportPageSlug ? `/support/${supportPageSlug}` : '/profile/support-setup';
 
   const authLinks: NavLink[] = [
-    ...(shouldShowAcceptTips ? [{ name: 'Accept Gifts', path: '/profile/support-setup' } as MenuItem] : []),
+    { name: 'Accept Gifts', path: acceptGiftsPath } as MenuItem,
     { name: 'Create Event', path: '/events/create' },
     { name: 'Explore', path: '/explore' },
     {

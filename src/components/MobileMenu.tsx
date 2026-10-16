@@ -53,14 +53,16 @@ const MobileMenu = ({ isOpen, onClose, onOpenSearch }: MobileMenuProps) => {
 
   // Navigation links for authenticated users with icons
   const hasEnabledTips = user?.support_enabled === true || (user as any)?.accept_tips === true;
-  const shouldShowAcceptTips = !hasEnabledTips;
+  // Once their support page exists, Accept Gifts opens it instead of disappearing.
+  const supportPageSlug = user?.username || user?.user_id;
+  const acceptGiftsPath = hasEnabledTips && supportPageSlug ? `/support/${supportPageSlug}` : '/profile/support-setup';
 
   const authLinks: LinkItem[] = [
-    ...(shouldShowAcceptTips ? [{
+    {
       name: 'Accept Gifts',
-      path: '/profile/support-setup',
+      path: acceptGiftsPath,
       icon: <Heart className="w-7 h-7 mr-4" />
-    } as MenuLink] : []),
+    } as MenuLink,
     // First group (top items)
     {
       name: 'Explore',

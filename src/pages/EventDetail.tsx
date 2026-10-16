@@ -613,6 +613,18 @@ const EventDetail = () => {
       };
     }
 
+    // Not published, or no date yet: don't send visitors to checkout for it.
+    if (isDraft || !event.scheduled_for) {
+      return {
+        button: (
+          <button disabled className={`${baseClasses} bg-gray-100 text-gray-500 cursor-not-allowed`}>
+            Not on sale yet
+          </button>
+        ),
+        footerText: "The host hasn't published this event yet"
+      };
+    }
+
     if (isEventEnded) {
       return {
         button: (
