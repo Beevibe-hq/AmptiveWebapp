@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, ChevronDown, Users, Search, Wallet, Eye } from "lucide-react";
+import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, Search, Wallet, Eye } from "lucide-react";
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
@@ -11,6 +11,7 @@ import { getMyCommunities, listCommunities, type Community } from '@/lib/api/com
 import RichTextEditor from '@/components/RichTextEditor';
 import VenueSelector from '@/components/VenueSelector';
 import { DateTimeField } from '@/components/DateTimeField';
+import { CommunityPicker } from '@/components/CommunityPicker';
 import { FeeNotice } from '@/components/FeeNotice';
 import { TICKET_SERVICE_FEE, WITHDRAWAL_FEE_LABEL } from '@/lib/fees';
 import { QRCodeSVG } from 'qrcode.react';
@@ -383,10 +384,8 @@ const CreateEvent = () => {
   const [visibleGalleryImages, setVisibleGalleryImages] = useState<string[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loadingCommunities, setLoadingCommunities] = useState(false);
-  const [communityMenuOpen, setCommunityMenuOpen] = useState(false);
   const { dominantColor, setDominantColor } = useTheme();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const communityMenuRef = useRef<HTMLDivElement | null>(null);
   const filePreviewUrlRef = useRef<string | null>(null);
   const [showWalletPrompt, setShowWalletPrompt] = useState(false);
   const coverInputId = useMemo(() => `cover-upload-${Math.random().toString(36).slice(2)}`, []);
@@ -664,19 +663,6 @@ const CreateEvent = () => {
       cancelled = true;
     };
   }, [ready]);
-
-  useEffect(() => {
-    if (!communityMenuOpen) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!communityMenuRef.current?.contains(event.target as Node)) {
-        setCommunityMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [communityMenuOpen]);
 
   useEffect(() => {
     if (!ready || !sourceEventId || !userId) return;
@@ -1160,7 +1146,6 @@ const CreateEvent = () => {
   }
 
   const isPublished = !!id && eventStatus.toLowerCase() !== 'draft';
-  const selectedCommunity = communities.find(community => community.community_id === form.communityId);
 
   if (showWalletPrompt) {
     return (
@@ -1280,65 +1265,14 @@ const CreateEvent = () => {
                     Community
                   </div>
 
-                  <div ref={communityMenuRef} className="relative lg:px-2">
-                      <button
-                        type="button"
-                        onClick={() => setCommunityMenuOpen(prev => !prev)}
-                        disabled={loadingCommunities}
-                        className="flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-left text-sm font-medium text-gray-900 shadow-sm bg-black/5 transition-all duration-200 hover:bg-black/[0.07] focus:outline-none focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span className="flex min-w-0 items-center gap-3">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/70 text-gray-400">
-                            {selectedCommunity?.image || selectedCommunity?.cover_image ? (
-                              <img src={selectedCommunity.image || selectedCommunity.cover_image} alt="" className="h-full w-full object-cover object-center" />
-                            ) : (
-                              <Users className="h-4 w-4" />
-                            )}
-                          </span>
-                          <span className="truncate">
-                            {loadingCommunities
-                              ? 'Loading communities...'
-                              : selectedCommunity?.name || 'Select a community'}
-                          </span>
-                        </span>
-                        <ChevronDown className={`h-4.5 w-4.5 shrink-0 text-gray-400 transition-transform duration-200 ${communityMenuOpen ? 'rotate-180 text-blue-500' : ''}`} />
-                      </button>
-
-                      {communityMenuOpen && (
-                        <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-black/5 bg-white p-1.5 shadow-xl shadow-black/10 animate-in fade-in zoom-in-95 duration-150">
-                          {communities.length === 0 && (
-                            <div className="px-3 py-3 text-sm font-medium text-gray-400">
-                              No communities available
-                            </div>
-                          )}
-                          {communities.map((community) => {
-                            const isSelected = form.communityId === community.community_id;
-                            return (
-                              <button
-                                key={community.community_id}
-                                type="button"
-                                onClick={() => {
-                                  setForm(prev => ({ ...prev, communityId: community.community_id }));
-                                  setCommunityMenuOpen(false);
-                                }}
-                                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
-                                  isSelected ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
-                                }`}
-                              >
-                                <span className={`flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg ${isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-50 text-gray-400'}`}>
-                                  {community.image || community.cover_image ? (
-                                    <img src={community.image || community.cover_image} alt="" className="h-full w-full object-cover object-center" />
-                                  ) : (
-                                    <Users className="h-4 w-4" />
-                                  )}
-                                </span>
-                                <span className="min-w-0 flex-1 truncate">{community.name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                  <div className="lg:px-2">
+                    <CommunityPicker
+                      communities={communities}
+                      value={form.communityId}
+                      onChange={(communityId) => setForm(prev => ({ ...prev, communityId }))}
+                      loading={loadingCommunities}
+                    />
+                  </div>
                 </section>
 
                 {/* Schedule */}
