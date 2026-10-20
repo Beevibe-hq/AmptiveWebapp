@@ -129,8 +129,9 @@ export const $users = {
       body: JSON.stringify(data),
     }),
 
+  // Public profile: sent without a token when nobody is signed in.
   getById: (userId: string) =>
-    api.get<UserProfile>(`${USERS_PREFIX}/${userId}`),
+    api.get<UserProfile>(`${USERS_PREFIX}/${userId}`, { skipAuth: !api.getToken() }),
 };
 
 // ============================================

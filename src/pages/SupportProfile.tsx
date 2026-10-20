@@ -7,6 +7,7 @@ import DownloadCardModal from '@/components/DownloadCardModal';
 import Navbar from '@/components/Navbar';
 import SupportEditModal from '@/components/SupportEditModal';
 import { getCurrentUser } from '@/lib/api/auth';
+import { getProfileByUserId } from '@/lib/api/profiles';
 import { getSupportProfile, getSupportProfileByUsername, mergeSupportProfileIdentity, paySupportCreator, getSupportHistory, getSupportActivity, SupportProfile as SupportProfileType, SupportHistoryItem } from '@/lib/api/support';
 import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
@@ -483,9 +484,11 @@ export default function SupportProfile() {
         // Retrieve support profile by username or user ID
         let profileData: SupportProfileType | null = await getSupportProfileByUsername(id);
         if (!profileData) {
-          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
           if (isUuid) {
-            profileData = await getSupportProfile(id);
+            // /users/{id} doesn't say whether gifts are on; resolve the username and ask /support.
+            const account = await getProfileByUserId(id);
+            profileData = (account?.username && await getSupportProfileByUsername(account.username)) || await getSupportProfile(id);
           }
         }
 
