@@ -490,12 +490,11 @@ const CreateEvent = () => {
       toastError("Enter a ticket price, or 0 if it's free.");
       return;
     }
-    // Required for now: the backend's checkout treats a blank quantity as zero stock and refuses
-    // every purchase ("Not enough inventory remaining"), even though elsewhere blank means
-    // unlimited. Drop this once checkout treats null as unlimited.
-    const quantity = parseInt(ticketForm.quantity, 10);
-    if (!Number.isFinite(quantity) || quantity < 1) {
-      toastError('Enter how many of this ticket are available (at least 1).');
+    // Blank means unlimited.
+    const quantityText = ticketForm.quantity.trim();
+    const quantity = quantityText === '' ? undefined : parseInt(quantityText, 10);
+    if (quantity !== undefined && (!Number.isFinite(quantity) || quantity < 1)) {
+      toastError('Quantity must be at least 1, or leave it blank for unlimited.');
       return;
     }
     const benefits = ticketForm.benefits
@@ -531,7 +530,7 @@ const CreateEvent = () => {
         event_id: '',
         quantity_total: quantity ?? null,
         quantity_sold: 0,
-        quantity_remaining: quantity ?? 0,
+        quantity_remaining: quantity ?? null,
         reserved_quantity: 0,
         is_active: false,
         has_early_bird: false
@@ -724,7 +723,7 @@ const CreateEvent = () => {
               id: '',
               event_id: '',
               quantity_sold: 0,
-              quantity_remaining: base.quantity_total ?? 0,
+              quantity_remaining: base.quantity_total ?? null,
             };
           }),
           handRaising: event.hand_raising!,
@@ -917,19 +916,6 @@ const CreateEvent = () => {
       return;
     }
 
-    // Tickets without a quantity can't be bought (the backend reads blank as zero stock), so
-    // catch them here; this is how older events with blank quantities get fixed on next save.
-    if (!relaxedDraftSave) {
-      const missingQuantity = form.tickets.find(ticket => {
-        const quantity = Number(ticket.quantity);
-        return ticket.quantity === undefined || ticket.quantity === null || (ticket.quantity as unknown) === '' || !Number.isFinite(quantity) || quantity < 1;
-      });
-      if (missingQuantity) {
-        toastError(`Set how many "${missingQuantity.label || 'ticket'}" tickets are available before saving.`);
-        return;
-      }
-    }
-
     const isPhysicalEvent = form.venueType !== 'virtual';
     if (!relaxedDraftSave && isPhysicalEvent && !form.endDateTime) {
       toastError('Please set an end date and time for physical events.');
@@ -1062,8 +1048,7 @@ const CreateEvent = () => {
             label: 'Free admission',
             price: 0,
             currency: 'NGN',
-            // A fixed cap rather than null (unlimited): checkout treats null as zero stock.
-            quantity_total: 10000,
+            quantity_total: null,
             benefits: [],
             color_theme: 'silver',
             is_physical: false,
@@ -2057,9 +2042,8 @@ const CreateEvent = () => {
                         type="number"
                         value={ticketForm.quantity}
                         onChange={(e) => setTicketForm(prev => ({ ...prev, quantity: e.target.value }))}
-                        placeholder="e.g. 500"
+                        placeholder="Unlimited"
                         min="1"
-                        required
                         step="1"
                         className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-black/5"
                       />
@@ -2076,7 +2060,7 @@ const CreateEvent = () => {
                         ))}
                       </div>
                       <p className="mt-2 text-xs text-gray-500">
-                        How many can be sold. Type a number, or click one above
+                        How many can be sold. Leave blank for unlimited
                       </p>
                     </div>
                   </div>

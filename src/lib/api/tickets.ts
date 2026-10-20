@@ -10,7 +10,7 @@ export interface EventTicket {
   currency: string;
   quantity_total: number | null;
   quantity_sold: number;
-  quantity_remaining: number;
+  quantity_remaining: number | null;
   reserved_quantity: number;
   is_active: boolean;
   benefits?: string[];

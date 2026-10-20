@@ -413,7 +413,12 @@ export default function CheckoutPage() {
 
             const result = await checkoutTicket(eventId!, requestWithCallback, { skipAuth: isGuest });
 
-            if (result.purchase.status === 'successful' && result.purchase.amount === 0) {
+            // A free order completes without Paystack. The backend reports it as 'issued' (older
+            // builds said 'successful') with no payment link; anything else needs the link.
+            const status = String(result.purchase.status || '').toLowerCase();
+            const isFreeAndDone = Number(result.purchase.amount) === 0 && !result.payment_url
+                && ['successful', 'issued', 'paid', 'completed'].includes(status);
+            if (isFreeAndDone) {
                 setSuccess(true);
                 toastSuccess("Tickets secured!");
             } else if (result.payment_url) {
