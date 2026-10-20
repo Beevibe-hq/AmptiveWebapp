@@ -266,18 +266,25 @@ const ProfilePage = () => {
           let targetSupportProfile = null;
           
           // Fallback to hostData.user_id if available and it's a UUID, because by-username API might not exist
-          const isUrlUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
-          const hasHostUserId = hostData?.user_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostData.user_id);
+          const isUrlUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+          const hasHostUserId = hostData?.user_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostData.user_id);
           
           if (isUrlUuid) {
             profileData = await getProfileByUserId(targetId);
-            targetSupportProfile = await getSupportProfile(targetId);
           } else if (hasHostUserId) {
             profileData = await getProfileByUserId(hostData.user_id!);
-            targetSupportProfile = await getSupportProfile(hostData.user_id!);
           } else {
             profileData = await getProfileByUsername(targetId);
-            targetSupportProfile = await getSupportProfileByUsername(targetId);
+          }
+
+          // Whether they accept gifts only comes from /support/{username}; /users/{id} doesn't
+          // say. Search links by ID, so look the support profile up by the loaded username.
+          const supportUsername = profileData?.username || hostData?.username || (isUrlUuid ? '' : targetId);
+          if (supportUsername) {
+            targetSupportProfile = await getSupportProfileByUsername(supportUsername);
+          }
+          if (!targetSupportProfile) {
+            targetSupportProfile = await getSupportProfile(isUrlUuid ? targetId : (hostData?.user_id || targetId));
           }
 
           if (targetSupportProfile) {
