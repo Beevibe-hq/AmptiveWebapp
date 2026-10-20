@@ -279,13 +279,11 @@ export async function deleteTicket(ticketId: string): Promise<{ ok: boolean; err
   }
 }
 
+// The backend has no bulk delete; removing a ticket type deactivates it, one at a time.
 export async function deleteTickets(ticketIds: string[]): Promise<{ ok: boolean; error?: string }> {
-  try {
-    await $tickets.bulkDelete(ticketIds);
-    return { ok: true, error: undefined };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
+  const results = await Promise.allSettled(ticketIds.map(id => $tickets.delete(id)));
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  return failed ? { ok: false, error: (failed.reason as Error)?.message } : { ok: true, error: undefined };
 }
 
 export async function checkoutTicket(eventId: string, request: CheckoutRequest, options?: { skipAuth?: boolean }): Promise<CheckoutResponse> {

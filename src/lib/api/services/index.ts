@@ -244,9 +244,6 @@ export const $tickets = {
   delete: (ticketId: string) =>
     api.delete<unknown>(`${TICKETS_PREFIX}/${ticketId}/deactivate`),
 
-  bulkDelete: (ticketIds: string[]) =>
-    api.post<unknown>(`${TICKETS_PREFIX}/bulk-delete`, { ids: ticketIds }),
-
   checkout: (eventId: string, data: unknown, options?: { skipAuth?: boolean }) =>
     api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/checkout`, data, options),
 
