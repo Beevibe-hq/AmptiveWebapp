@@ -698,7 +698,8 @@ const CreateEvent = () => {
           return;
         }
 
-        const tickets = await getTicketsForEvent(sourceEventId);
+        // Removed tickets are deactivated, not deleted; keep them out of the form.
+        const tickets = (await getTicketsForEvent(sourceEventId) || []).filter(t => t.is_active !== false);
         
         setForm(prev => ({
           ...prev,
@@ -1019,12 +1020,16 @@ const CreateEvent = () => {
       // Handle tickets
       if (eventId) {
         const currentTickets = id ? await getTicketsForEvent(eventId) : [];
-        const currentTicketIds = (currentTickets || []).map(t => t.id);
+        const currentTicketIds = (currentTickets || []).filter(t => t.is_active !== false).map(t => t.id);
         const formTicketIds = new Set(form.tickets.map(t => t.id).filter(id => !id.startsWith('ticket-')));
         const ticketsToDelete = currentTicketIds.filter(tid => !formTicketIds.has(tid));
 
         if (ticketsToDelete.length > 0) {
-          await deleteTickets(ticketsToDelete);
+          const removed = await deleteTickets(ticketsToDelete);
+          if (!removed.ok) {
+            console.error('Failed to remove tickets', removed.error);
+            toastError('Your event is saved, but we could not remove a ticket you deleted. Please try again.');
+          }
         }
       }
 
