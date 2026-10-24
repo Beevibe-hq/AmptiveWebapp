@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, Search, Wallet, Eye } from "lucide-react";
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent } from '@/lib/api/events';
+import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent, deleteEvent } from '@/lib/api/events';
 import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme } from '@/lib/api/tickets';
 import { createVenue, type VenueCreateRequest } from '@/lib/api/venues';
 import { getCurrentUser, refreshSession } from '@/lib/api/auth';
@@ -370,6 +370,8 @@ const CreateEvent = () => {
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [deletingEvent, setDeletingEvent] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -1152,6 +1154,27 @@ const CreateEvent = () => {
 
   const isPublished = !!id && eventStatus.toLowerCase() !== 'draft';
 
+  // The API accepts a delete only for a DRAFT or CANCELLED event, host only. This page
+  // is reached from the host's own dashboard, so status is the remaining gate.
+  const normalisedStatus = eventStatus.toUpperCase();
+  const canDeleteEvent = normalisedStatus === 'DRAFT' || normalisedStatus === 'CANCELLED';
+
+  const handleDeleteEvent = async () => {
+    if (!id || deletingEvent) return;
+    setDeletingEvent(true);
+    try {
+      const { ok, error } = await deleteEvent(id);
+      if (!ok) {
+        toastError(error || 'We could not delete this event. Please try again.');
+        return;
+      }
+      toastSuccess('Event deleted.');
+      navigate('/dashboard/events');
+    } finally {
+      setDeletingEvent(false);
+    }
+  };
+
   if (showWalletPrompt) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-100/90 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1669,6 +1692,23 @@ const CreateEvent = () => {
                       {id ? 'Cancel Changes' : 'Cancel'}
                     </button>
                   </>
+                )}
+
+                {/* Deleting is only offered where the API accepts it — a DRAFT or
+                    CANCELLED event the host owns. Sits apart from the save actions so it
+                    can't be mistaken for one. */}
+                {id && canDeleteEvent && (
+                  <div className="mt-8 border-t border-gray-100 pt-6 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={deletingEvent || submitting || publishing}
+                      className="inline-flex items-center justify-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-red-600 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete this event
+                    </button>
+                  </div>
                 )}
               </div>
             </form>
@@ -2283,6 +2323,47 @@ const CreateEvent = () => {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deleting can't be undone, so it asks first and names the event. */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-event-heading"
+          onClick={() => { if (!deletingEvent) setShowDeleteConfirm(false); }}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 id="delete-event-heading" className="text-lg font-bold text-gray-900">Delete this event?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-gray-600">
+              {form.title ? (
+                <><span className="font-medium text-gray-900">{form.title}</span> will be removed from your dashboard. This can't be undone.</>
+              ) : (
+                <>This event will be removed from your dashboard. This can't be undone.</>
+              )}
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deletingEvent}
+                className="px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteEvent}
+                disabled={deletingEvent}
+                className="flex items-center gap-2 rounded-full bg-red-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
+              >
+                {deletingEvent && <Loader2 className="h-4 w-4 animate-spin" />}
+                {deletingEvent ? 'Deleting…' : 'Delete event'}
+              </button>
             </div>
           </div>
         </div>
