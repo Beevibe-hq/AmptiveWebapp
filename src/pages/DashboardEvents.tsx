@@ -1,9 +1,9 @@
 import { useEffect, useState, type MouseEvent } from 'react';
-import { Plus, Search, CalendarDays, Ticket, Share2 } from 'lucide-react';
+import { Plus, Search, CalendarDays, Ticket, Share2, Trash2, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getSession } from '@/lib/api/auth';
-import { getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { deleteEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 
@@ -51,6 +51,37 @@ export default function DashboardEvents() {
      * The whole card is a <Link>, so the click has to be stopped here or sharing would
      * navigate the organiser into the edit screen instead.
      */
+    /**
+     * The API only accepts a delete for a DRAFT or CANCELLED event, host only. This list
+     * is already host-scoped, so status is the remaining gate — offering it on a
+     * SCHEDULED or LIVE event would just earn a rejection.
+     */
+    const canDelete = (status?: string | null) => {
+        const s = String(status || '').toUpperCase();
+        return s === 'DRAFT' || s === 'CANCELLED';
+    };
+
+    const [pendingDelete, setPendingDelete] = useState<StandaloneEvent | null>(null);
+    const [deleting, setDeleting] = useState(false);
+
+    const confirmDelete = async () => {
+        if (!pendingDelete || deleting) return;
+        const target = pendingDelete;
+        setDeleting(true);
+        try {
+            const { ok, error } = await deleteEvent(target.event_id);
+            if (!ok) {
+                toastError(error || 'We could not delete this event. Please try again.');
+                return;
+            }
+            setEvents((prev) => prev.filter((e) => e.event_id !== target.event_id));
+            setPendingDelete(null);
+            toastSuccess(`"${target.title}" was deleted.`);
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     const handleShare = async (e: MouseEvent<HTMLButtonElement>, eventId: string, title: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -276,6 +307,23 @@ export default function DashboardEvents() {
                                     >
                                         <Share2 className="w-4 h-4" />
                                     </button>
+                                    {canDelete(event.status) && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                // The whole card is a Link; without this the
+                                                // click navigates to the edit page instead.
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setPendingDelete(event);
+                                            }}
+                                            aria-label={`Delete ${event.title}`}
+                                            title="Delete event"
+                                            className="shrink-0 rounded-lg border border-gray-200 py-1.5 px-2.5 text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </Link>
@@ -327,6 +375,50 @@ export default function DashboardEvents() {
                             </button>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Deleting can't be undone, so it asks first and names the event — a trash
+                icon on a grid of similar cards is easy to hit on the wrong one. */}
+            {pendingDelete && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="delete-event-title"
+                    onClick={() => { if (!deleting) setPendingDelete(null); }}
+                >
+                    <div
+                        className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h2 id="delete-event-title" className="text-lg font-bold text-gray-900">
+                            Delete this event?
+                        </h2>
+                        <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                            <span className="font-medium text-gray-900">{pendingDelete.title}</span> will be
+                            removed from your dashboard. This can't be undone.
+                        </p>
+                        <div className="mt-6 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setPendingDelete(null)}
+                                disabled={deleting}
+                                className="px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmDelete}
+                                disabled={deleting}
+                                className="flex items-center gap-2 rounded-full bg-red-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
+                            >
+                                {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                                {deleting ? 'Deleting…' : 'Delete event'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div >
