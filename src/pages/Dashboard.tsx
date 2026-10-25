@@ -471,6 +471,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const [loadError, setLoadError] = useState(false);
     // Revenue known only from ticket counts (no dated orders), so it can't be split by week.
     const [revenueUndated, setRevenueUndated] = useState(false);
+    const [statsAllTime, setStatsAllTime] = useState(false);
 
     const [isPaused, setIsPaused] = useState(false);
     const [currentStatIndex, setCurrentStatIndex] = useState(0);
@@ -599,7 +600,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
     const stats = [
         {
             title: "Total Sales",
-            subtitle: "Revenue",
+            subtitle: statsAllTime ? "Revenue · all time" : "Revenue · last 30 days",
             value: totalSales >= 1000000000
                 ? (totalSales / 1000000000).toFixed(1).replace(/\.0$/, '')
                 : totalSales >= 1000000
@@ -616,7 +617,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
         },
         {
             title: "Orders",
-            subtitle: "Purchases",
+            subtitle: statsAllTime ? "Purchases · all time" : "Purchases · last 30 days",
             value: orderCount,
             change: metricChanges.orders,
             icon: ShoppingCart,
@@ -634,7 +635,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
         },
         {
             title: "Attendees",
-            subtitle: "Total Attendees",
+            subtitle: statsAllTime ? "Attendees · all time" : "Attendees · last 30 days",
             value: attendeeCount,
             change: metricChanges.attendees,
             icon: Users,
@@ -768,50 +769,42 @@ function DashboardHome({ displayName }: { displayName: string }) {
             });
             setEventSales(salesByEvent);
 
-            const orderRevenue = validOrders.reduce((acc, order) => acc + getOrderAmount(order), 0);
-            const total = hasOrderRows ? orderRevenue : ticketRevenue;
-            const attendees = new Set<string>();
-            validOrders.forEach(order => {
-                getOrderTickets(order).forEach((ticket: any) => {
-                    attendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id);
-                });
+            // Sales, orders and attendees cover the last 30 days; the badge compares them with
+            // the 30 days before. (Upcoming Events is a count of what's ahead, not a window.)
+            const DAY_MS = 24 * 60 * 60 * 1000;
+            const now = new Date();
+            const windowStart = new Date(now.getTime() - 30 * DAY_MS);
+            const previousWindowStart = new Date(now.getTime() - 60 * DAY_MS);
+            const windowEnd = new Date(now.getTime() + 60 * 1000);
+
+            const recentOrders = validOrders.filter(order => isInRange(getOrderDate(order), windowStart, windowEnd));
+            const previousOrders = validOrders.filter(order => isInRange(getOrderDate(order), previousWindowStart, windowStart));
+            const recentRevenue = recentOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
+            const previousRevenue = previousOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
+            const recentAttendees = new Set<string>();
+            const previousAttendees = new Set<string>();
+            recentOrders.forEach(order => {
+                getOrderTickets(order).forEach((ticket: any) => recentAttendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id));
+            });
+            previousOrders.forEach(order => {
+                getOrderTickets(order).forEach((ticket: any) => previousAttendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id));
             });
 
-            setTotalSales(total);
-            setOrderCount(hasOrderRows ? validOrders.length : ticketSoldCount);
-            setAttendeeCount(hasOrderRows ? attendees.size : ticketSoldCount);
+            // Without dated orders the only figures are all-time ticket counts, which can't be
+            // split by date; show them, labelled as all-time, with no comparison.
+            setStatsAllTime(!hasOrderRows);
+            setTotalSales(hasOrderRows ? recentRevenue : ticketRevenue);
+            setOrderCount(hasOrderRows ? recentOrders.length : ticketSoldCount);
+            setAttendeeCount(hasOrderRows ? recentAttendees.size : ticketSoldCount);
 
-            const monthStart = new Date();
-            monthStart.setDate(1);
-            monthStart.setHours(0, 0, 0, 0);
-            const nextMonthStart = new Date(monthStart);
-            nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
-            const previousMonthStart = new Date(monthStart);
-            previousMonthStart.setMonth(previousMonthStart.getMonth() - 1);
+            const currentMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', windowStart, windowEnd)).length;
+            const previousMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', previousWindowStart, windowStart)).length;
 
-            const currentMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), monthStart, nextMonthStart));
-            const previousMonthOrders = validOrders.filter(order => isInRange(getOrderDate(order), previousMonthStart, monthStart));
-            const currentMonthRevenue = currentMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
-            const previousMonthRevenue = previousMonthOrders.reduce((sum, order) => sum + getOrderAmount(order), 0);
-            const currentMonthAttendees = new Set<string>();
-            const previousMonthAttendees = new Set<string>();
-            currentMonthOrders.forEach(order => {
-                getOrderTickets(order).forEach((ticket: any) => currentMonthAttendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id));
-            });
-            previousMonthOrders.forEach(order => {
-                getOrderTickets(order).forEach((ticket: any) => previousMonthAttendees.add(getBuyerEmail(order, ticket) || ticket?.id || order?.id));
-            });
-
-            const currentMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', monthStart, nextMonthStart)).length;
-            const previousMonthEvents = events.filter(event => isInRange(event.scheduled_for || event.created_at || '', previousMonthStart, monthStart)).length;
-
-            // Without dated orders there's nothing to compare month on month; show no change
-            // rather than counting all-time sales as this month's.
             setMetricChanges({
-                sales: hasOrderRows ? formatPercentChange(currentMonthRevenue, previousMonthRevenue) : '—',
-                orders: hasOrderRows ? formatPercentChange(currentMonthOrders.length, previousMonthOrders.length) : '—',
+                sales: hasOrderRows ? formatPercentChange(recentRevenue, previousRevenue) : '—',
+                orders: hasOrderRows ? formatPercentChange(recentOrders.length, previousOrders.length) : '—',
                 events: formatPercentChange(currentMonthEvents, previousMonthEvents),
-                attendees: hasOrderRows ? formatPercentChange(currentMonthAttendees.size, previousMonthAttendees.size) : '—',
+                attendees: hasOrderRows ? formatPercentChange(recentAttendees.size, previousAttendees.size) : '—',
             });
             setRevenueUndated(!hasOrderRows && ticketRevenue > 0);
 
@@ -1048,7 +1041,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                             <stat.icon className="w-5 h-5" />
                                         </div>
                                     </div>
-                                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getChangePillClass(String(stat.change))}`}>
+                                    <span title={stat.title === 'Upcoming Events' ? 'Starting in the next 7 days' : 'Compared with the previous 30 days'} className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getChangePillClass(String(stat.change))}`}>
                                         {stat.change}
                                     </span>
                                 </div>
@@ -1079,7 +1072,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                     <stat.icon className="w-5 h-5" />
                                                 </div>
                                             </div>
-                                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getChangePillClass(String(stat.change))}`}>
+                                            <span title={stat.title === 'Upcoming Events' ? 'Starting in the next 7 days' : 'Compared with the previous 30 days'} className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getChangePillClass(String(stat.change))}`}>
                                                 {stat.change}
                                             </span>
                                         </div>
