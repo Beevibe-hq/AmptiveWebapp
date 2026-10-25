@@ -22,6 +22,7 @@ import {
     FileText,
     AlertCircle} from 'lucide-react';
 import { getSession } from '@/lib/api/auth';
+import { api } from '@/lib/api/client';
 import { toastSuccess, toastError, toastInfo } from '@/lib/ui/toast';
 import { getEvent, getEventOrders, getEventsByUser, isUpcomingEvent, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
@@ -690,6 +691,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
         setIsRefreshing(true);
         setEventsLoading(true);
         setRefreshCount(prev => prev + 1);
+        api.clearCache();
         await fetchRealEvents();
         setIsRefreshing(false);
     };
@@ -704,7 +706,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
             const events = data || [];
             setRealEvents(events);
 
-            const ticketsByEvent = await Promise.all(
+            // Tickets and orders don't depend on each other, so fetch them together.
+            const [ticketsByEvent, eventOrderRowsByEvent] = await Promise.all([Promise.all(
                 events.map(async (event) => {
                     const eventId = getEventId(event);
                     const embeddedTickets = getEventTicketTypes(event);
@@ -713,9 +716,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                         : await getTicketsForEvent(eventId).catch(() => []);
                     return { event, tickets: tickets || [] };
                 })
-            );
-
-            const eventOrderRows = (await Promise.all(events.map(async event => {
+            ), Promise.all(events.map(async event => {
                 const eventId = getEventId(event);
                 const rows = await getEventOrders(eventId).catch(() => []);
                 return (rows || []).map((order: any) => ({
@@ -723,7 +724,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
                     __eventId: order.event_id || order.purchase?.event_id || eventId,
                     __eventTitle: order.event_title || order.events?.title || order.event?.title || event.title || 'this event',
                 }));
-            }))).flat();
+            }))]);
+            const eventOrderRows = eventOrderRowsByEvent.flat();
             const seenOrders = new Set<string>();
             const allOrders = eventOrderRows.filter((order: any, index) => {
                 const identity = getOrderIdentity(order) || `${order.__eventId || order.event_id || 'event'}:${getOrderDate(order)}:${getOrderAmount(order)}:${index}`;

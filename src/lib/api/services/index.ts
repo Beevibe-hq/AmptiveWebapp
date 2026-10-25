@@ -121,7 +121,7 @@ const VENUES_PREFIX = '/venues';
 // ============================================
 
 export const $users = {
-  getCurrent: () => api.get<UserProfile>(`${USERS_PREFIX}/me`),
+  getCurrent: () => api.getCached<UserProfile>(`${USERS_PREFIX}/me`),
 
   update: (data: Partial<UserProfile>) =>
     api.request<UserProfile>(`${USERS_PREFIX}/me`, {
@@ -188,14 +188,14 @@ export const $events = {
 
   getForCurrentUser: (params?: Record<string, string>) => {
     const endpoint = EVENTS_PREFIX + '/me/' + (params ? `?${new URLSearchParams(params).toString()}` : '');
-    return api.get<{ events: unknown[]; total: number }>(endpoint);
+    return api.getCached<{ events: unknown[]; total: number }>(endpoint);
   },
 
   publish: (eventId: string, payload: { scheduled_date: string; reason?: string }) =>
     api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/publish`, payload),
 
   getOrders: (eventId: string) =>
-    api.get<unknown>(`${EVENTS_PREFIX}/${eventId}/orders`),
+    api.getCached<unknown>(`${EVENTS_PREFIX}/${eventId}/orders`),
 };
 
 // ============================================
@@ -234,7 +234,7 @@ export const $tickets = {
     api.get<any>(`${TICKETS_PREFIX}/${ticketId}`),
 
   getForEvent: (eventId: string) =>
-    api.get<{ tickets: any }>(`${TICKETS_PREFIX}/events/${eventId}/list`, {skipAuth: true}),
+    api.getCached<{ tickets: any }>(`${TICKETS_PREFIX}/events/${eventId}/list`, {skipAuth: true}),
 
   getMine: () =>
     api.get<{ tickets: any[] }>(`${TICKETS_PREFIX}/me`),
@@ -261,7 +261,7 @@ export const $tickets = {
     api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/tickets/validate?ticket_code=${encodeURIComponent(ticketCode)}`),
 
   getOrdersForEvent: (eventId: string) =>
-    api.get<unknown>(`${TICKETS_PREFIX}/events/${eventId}/orders/list`),
+    api.getCached<unknown>(`${TICKETS_PREFIX}/events/${eventId}/orders/list`),
 };
 
 // ============================================
