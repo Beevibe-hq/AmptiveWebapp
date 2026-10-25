@@ -999,12 +999,28 @@ const CreateEvent = () => {
           return;
         }
       } else {
-        const result = await createNewEvent(insertPayload);
+        // The API schedules an event straight away if it's created with a date, and has
+        // no draft flag. So a new draft is created without its dates, which keeps it in
+        // DRAFT, and the dates are added by an update, which doesn't change the status.
+        const createPayload = asDraft
+          ? { ...insertPayload, scheduled_for: undefined, ended_at: undefined }
+          : insertPayload;
+        const result = await createNewEvent(createPayload);
         if (!result.id) {
           toastError('Event was created but we could not retrieve its ID.');
           return;
         }
         eventId = result.id;
+        if (asDraft && (insertPayload.scheduled_for || insertPayload.ended_at)) {
+          const dated = await updateEvent(eventId, {
+            scheduled_for: insertPayload.scheduled_for,
+            ended_at: insertPayload.ended_at,
+          });
+          if (!dated.ok) {
+            console.error('Draft saved without its dates', dated.error);
+            toastError('Your draft is saved, but its date could not be. Open it and set the date again.');
+          }
+        }
       }
 
       // Handle tickets
