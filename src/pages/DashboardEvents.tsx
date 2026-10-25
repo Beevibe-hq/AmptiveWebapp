@@ -1,9 +1,9 @@
 import { useEffect, useState, type MouseEvent } from 'react';
-import { Plus, Search, CalendarDays, Ticket, Share2, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Search, CalendarDays, Ticket, Share2, Trash2, Loader2, Ban } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getSession } from '@/lib/api/auth';
-import { deleteEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
+import { cancelEvent, deleteEvent, getEventsByUser, StandaloneEvent } from '@/lib/api/events';
 import { getTicketsForEvent } from '@/lib/api/tickets';
 import amptiveLogo from '@/assets/amptivelogo.svg';
 
@@ -59,6 +59,42 @@ export default function DashboardEvents() {
     const canDelete = (status?: string | null) => {
         const s = String(status || '').toUpperCase();
         return s === 'DRAFT' || s === 'CANCELLED';
+    };
+
+    // A published event can't be deleted until it's cancelled.
+    const canCancel = (status?: string | null) => String(status || '').toUpperCase() === 'SCHEDULED';
+
+    const [pendingCancel, setPendingCancel] = useState<StandaloneEvent | null>(null);
+    const [cancelSoldCount, setCancelSoldCount] = useState<number | null>(null);
+    const [cancelling, setCancelling] = useState(false);
+
+    const openCancel = async (event: StandaloneEvent) => {
+        setPendingCancel(event);
+        setCancelSoldCount(null);
+        try {
+            const tickets = await getTicketsForEvent(event.event_id);
+            setCancelSoldCount(tickets.reduce((sum, t) => sum + (Number(t.quantity_sold) || 0), 0));
+        } catch {
+            setCancelSoldCount(0);
+        }
+    };
+
+    const confirmCancel = async () => {
+        if (!pendingCancel || cancelling) return;
+        const target = pendingCancel;
+        setCancelling(true);
+        try {
+            const { ok, error } = await cancelEvent(target.event_id);
+            if (!ok) {
+                toastError(error || 'We could not cancel this event. Please try again.');
+                return;
+            }
+            setEvents((prev) => prev.map((e) => (e.event_id === target.event_id ? { ...e, status: 'CANCELLED' } : e)));
+            setPendingCancel(null);
+            toastSuccess(`"${target.title}" was cancelled. You can delete it now.`);
+        } finally {
+            setCancelling(false);
+        }
     };
 
     const [pendingDelete, setPendingDelete] = useState<StandaloneEvent | null>(null);
@@ -281,6 +317,9 @@ export default function DashboardEvents() {
                                 <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-0.5">
                                     <CalendarDays className="w-[1.2em] h-[1.2em] text-red-500" />
                                     <span>{event.scheduled_for ? formatDate(event.scheduled_for!) : formatDate(event.created_at!)}</span>
+                                    {String(event.status || '').toUpperCase() === 'CANCELLED' && (
+                                        <span className="ml-1 rounded-full bg-red-50 px-1.5 py-px text-[10px] font-semibold text-red-600">Cancelled</span>
+                                    )}
                                 </div>
                                 <h3 className="text-[13px] font-semibold text-gray-900 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">{event.title}</h3>
                                 <div className="flex flex-col mb-2 mt-1">
@@ -307,6 +346,22 @@ export default function DashboardEvents() {
                                     >
                                         <Share2 className="w-4 h-4" />
                                     </button>
+                                    {!isPast && canCancel(event.status) && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                // The whole card is a Link; stop it navigating.
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                openCancel(event);
+                                            }}
+                                            aria-label={`Cancel ${event.title}`}
+                                            title="Cancel event"
+                                            className="shrink-0 rounded-lg border border-gray-200 py-1.5 px-2.5 text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                        >
+                                            <Ban className="w-4 h-4" />
+                                        </button>
+                                    )}
                                     {canDelete(event.status) && (
                                         <button
                                             type="button"
@@ -375,6 +430,59 @@ export default function DashboardEvents() {
                             </button>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Cancelling doesn't refund anyone, so the host sees how many tickets are out. */}
+            {pendingCancel && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="cancel-event-title"
+                    onClick={() => { if (!cancelling) setPendingCancel(null); }}
+                >
+                    <div
+                        className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h2 id="cancel-event-title" className="text-lg font-bold text-gray-900">
+                            Cancel this event?
+                        </h2>
+                        <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                            <span className="font-medium text-gray-900">{pendingCancel.title}</span> will be
+                            marked as cancelled and stop selling tickets. You can delete it afterwards.
+                        </p>
+                        {cancelSoldCount === null ? (
+                            <p className="mt-3 flex items-center gap-2 text-sm text-gray-500">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Checking ticket sales…
+                            </p>
+                        ) : cancelSoldCount > 0 && (
+                            <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-800">
+                                {cancelSoldCount === 1 ? '1 ticket has' : `${cancelSoldCount.toLocaleString()} tickets have`} been
+                                sold. Cancelling won't refund buyers automatically.
+                            </p>
+                        )}
+                        <div className="mt-6 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setPendingCancel(null)}
+                                disabled={cancelling}
+                                className="px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 disabled:opacity-50"
+                            >
+                                Keep event
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmCancel}
+                                disabled={cancelling || cancelSoldCount === null}
+                                className="flex items-center gap-2 rounded-full bg-red-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
+                            >
+                                {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
+                                {cancelling ? 'Cancelling…' : 'Cancel event'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

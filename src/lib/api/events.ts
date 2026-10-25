@@ -221,6 +221,16 @@ export async function updateEvent(eventId: string, event: StandaloneEventUpdateR
   }
 }
 
+// Moves the event to CANCELLED. Ticket holders aren't refunded by this call.
+export async function cancelEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await $events.cancel(eventId);
+    return { ok: true, error: undefined };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 export async function deleteEvent(eventId: string): Promise<{ ok: boolean; error?: string }> {
   try {
     await $events.delete(eventId);

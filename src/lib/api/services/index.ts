@@ -183,6 +183,9 @@ export const $events = {
   delete: (eventId: string) =>
     api.delete<unknown>(`${EVENTS_PREFIX}/${eventId}`),
 
+  cancel: (eventId: string) =>
+    api.post<unknown>(`${EVENTS_PREFIX}/${eventId}/cancel`),
+
   getForCurrentUser: (params?: Record<string, string>) => {
     const endpoint = EVENTS_PREFIX + '/me/' + (params ? `?${new URLSearchParams(params).toString()}` : '');
     return api.get<{ events: unknown[]; total: number }>(endpoint);
