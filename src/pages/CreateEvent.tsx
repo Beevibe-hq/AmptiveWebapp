@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, Search, Wallet, Eye } from "lucide-react";
+import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe, RefreshCw, X, Plus, Edit2, Trash2 , Loader2, Search, Wallet, Eye, Ban } from "lucide-react";
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent, deleteEvent } from '@/lib/api/events';
+import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent, deleteEvent, cancelEvent } from '@/lib/api/events';
 import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme } from '@/lib/api/tickets';
 import { createVenue, type VenueCreateRequest } from '@/lib/api/venues';
 import { getCurrentUser, refreshSession } from '@/lib/api/auth';
@@ -372,6 +372,8 @@ const CreateEvent = () => {
   const [publishing, setPublishing] = useState(false);
   const [deletingEvent, setDeletingEvent] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [cancellingEvent, setCancellingEvent] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -1158,6 +1160,27 @@ const CreateEvent = () => {
   // is reached from the host's own dashboard, so status is the remaining gate.
   const normalisedStatus = eventStatus.toUpperCase();
   const canDeleteEvent = normalisedStatus === 'DRAFT' || normalisedStatus === 'CANCELLED';
+  // A published event has to be cancelled before it can be deleted. ('PUBLISHED' is what
+  // this page sets locally right after publishing.)
+  const canCancelEvent = normalisedStatus === 'SCHEDULED' || normalisedStatus === 'PUBLISHED';
+  const ticketsSold = form.tickets.reduce((sum, t) => sum + (Number(t.quantity_sold) || 0), 0);
+
+  const handleCancelEvent = async () => {
+    if (!id || cancellingEvent) return;
+    setCancellingEvent(true);
+    try {
+      const { ok, error } = await cancelEvent(id);
+      if (!ok) {
+        toastError(error || 'We could not cancel this event. Please try again.');
+        return;
+      }
+      setEventStatus('CANCELLED');
+      setShowCancelConfirm(false);
+      toastSuccess('Event cancelled. You can delete it now if you want it gone.');
+    } finally {
+      setCancellingEvent(false);
+    }
+  };
 
   const handleDeleteEvent = async () => {
     if (!id || deletingEvent) return;
@@ -1697,6 +1720,20 @@ const CreateEvent = () => {
                 {/* Deleting is only offered where the API accepts it — a DRAFT or
                     CANCELLED event the host owns. Sits apart from the save actions so it
                     can't be mistaken for one. */}
+                {id && canCancelEvent && (
+                  <div className="mt-8 border-t border-gray-100 pt-6 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowCancelConfirm(true)}
+                      disabled={cancellingEvent || submitting || publishing}
+                      className="inline-flex items-center justify-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-red-600 disabled:opacity-50"
+                    >
+                      <Ban className="h-4 w-4" />
+                      Cancel this event
+                    </button>
+                  </div>
+                )}
+
                 {id && canDeleteEvent && (
                   <div className="mt-8 border-t border-gray-100 pt-6 text-center">
                     <button
@@ -2323,6 +2360,50 @@ const CreateEvent = () => {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancelling doesn't refund anyone, so the host is told how many tickets are out. */}
+      {showCancelConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-event-heading"
+          onClick={() => { if (!cancellingEvent) setShowCancelConfirm(false); }}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 id="cancel-event-heading" className="text-lg font-bold text-gray-900">Cancel this event?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-gray-600">
+              {form.title ? <span className="font-medium text-gray-900">{form.title}</span> : 'This event'} will be
+              marked as cancelled and stop selling tickets. You can delete it afterwards.
+            </p>
+            {ticketsSold > 0 && (
+              <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-800">
+                {ticketsSold === 1 ? '1 ticket has' : `${ticketsSold.toLocaleString()} tickets have`} been sold.
+                Cancelling won't refund buyers automatically.
+              </p>
+            )}
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={cancellingEvent}
+                className="px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 disabled:opacity-50"
+              >
+                Keep event
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEvent}
+                disabled={cancellingEvent}
+                className="flex items-center gap-2 rounded-full bg-red-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
+              >
+                {cancellingEvent && <Loader2 className="h-4 w-4 animate-spin" />}
+                {cancellingEvent ? 'Cancelling…' : 'Cancel event'}
+              </button>
             </div>
           </div>
         </div>
