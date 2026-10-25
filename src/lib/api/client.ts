@@ -227,10 +227,59 @@ async function executeRequest<T>(
   return data as T;
 }
 
+/*
+ * Short-lived cache for the reads every dashboard page repeats (the signed-in user, the
+ * host's events, each event's tickets and orders). Without it, moving between dashboard
+ * pages refetched all of them every time. Identical requests in flight share one fetch.
+ * Any write clears the whole cache, before and after it runs, so nothing shown after an
+ * edit is stale; so does signing in or out.
+ */
+const GET_CACHE_TTL_MS = 30 * 1000;
+const getCache = new Map<string, { at: number; promise: Promise<unknown> }>();
+
+function clearGetCache(): void {
+  getCache.clear();
+}
+
+function cloneData<T>(data: T): T {
+  // Callers own what they get back; never hand two pages the same object to mutate.
+  try {
+    return structuredClone(data);
+  } catch {
+    return data;
+  }
+}
+
+async function getCached<T>(endpoint: string, options: { skipAuth?: boolean } = {}): Promise<T> {
+  const key = `${localStorage.getItem(ACCESS_TOKEN_KEY) || ''}|${endpoint}`;
+  const hit = getCache.get(key);
+  if (hit && Date.now() - hit.at < GET_CACHE_TTL_MS) {
+    return cloneData((await hit.promise) as T);
+  }
+  const promise = executeRequest<T>(endpoint, { method: 'GET', ...options, isFormData: false });
+  const entry = { at: Date.now(), promise };
+  getCache.set(key, entry);
+  promise.catch(() => {
+    if (getCache.get(key) === entry) getCache.delete(key);
+  });
+  return cloneData(await promise);
+}
+
+async function runWrite<T>(endpoint: string, options: RequestInit & { skipAuth?: boolean; isFormData?: boolean }): Promise<T> {
+  clearGetCache();
+  try {
+    return await executeRequest<T>(endpoint, options);
+  } finally {
+    clearGetCache();
+  }
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit & { skipAuth?: boolean } = {}
 ): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET') return runWrite<T>(endpoint, { ...options, isFormData: false });
   return executeRequest<T>(endpoint, { ...options, isFormData: false });
 }
 
@@ -238,7 +287,7 @@ async function requestFormData<T>(
   endpoint: string,
   options: RequestInit & { skipAuth?: boolean } = {}
 ): Promise<T> {
-  return executeRequest<T>(endpoint, { ...options, isFormData: true });
+  return runWrite<T>(endpoint, { ...options, isFormData: true });
 }
 
 export const api = {
@@ -246,6 +295,11 @@ export const api = {
   requestFormData,
 
   get: <T>(endpoint: string, options?: { skipAuth?: boolean }) => request<T>(endpoint, { method: 'GET', ...options }),
+
+  /** Like get, but reuses a response from the last 30 s (see getCache above). */
+  getCached: <T>(endpoint: string, options?: { skipAuth?: boolean }) => getCached<T>(endpoint, options),
+
+  clearCache: clearGetCache,
 
   patch: <T>(endpoint: string, body?: unknown) =>
     request<T>(endpoint, {
@@ -296,6 +350,7 @@ export const api = {
   },
 
   setSessionTokens: (accessToken: string, refreshToken?: string | null, expiresIn?: number) => {
+    clearGetCache();
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
@@ -315,6 +370,7 @@ export const api = {
   },
 
   clearSessionTokens: () => {
+    clearGetCache();
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(ACCESS_TOKEN_EXPIRY_KEY);
