@@ -16,6 +16,9 @@ export interface EventTicket {
   benefits?: string[];
   color_theme?: TicketTheme | null;
   is_physical?: boolean;
+  /** A group ticket: one purchase, one QR code, admits group_size people. */
+  is_group?: boolean | null;
+  group_size?: number | null;
   created_at?: string;
   quantity?: number;
   has_early_bird?: boolean;
@@ -78,6 +81,62 @@ const toFiniteNumber = (value: unknown): number | null => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 };
+
+/** How many people one of this ticket admits: group_size for a group ticket, else 1. */
+export function getTicketGroupSize(ticket: object | null | undefined): number {
+  const record = ticket as { is_group?: unknown; group_size?: unknown } | null | undefined;
+  if (!record || !record.is_group) return 1;
+  const size = Number(record.group_size);
+  return Number.isFinite(size) && size > 1 ? Math.floor(size) : 1;
+}
+
+/** "Group of 4" for a group ticket, null for a per-guest one. */
+export function getTicketGroupLabel(ticket: object | null | undefined): string | null {
+  const size = getTicketGroupSize(ticket);
+  return size > 1 ? `Group of ${size}` : null;
+}
+
+const firstFiniteNumber = (...values: unknown[]): number | null => {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+};
+
+/*
+ * How many people a group ticket has admitted so far, and how many it has left. The API
+ * doesn't document these responses, so read the names it is likely to use; callers fall
+ * back to the check-in history (sumCheckInScans) when neither is present.
+ */
+export function readAdmittedCount(record: any): number | null {
+  if (!record || typeof record !== 'object') return null;
+  return firstFiniteNumber(
+    record.admitted_count, record.checked_in_count, record.check_in_count, record.checkin_count,
+    record.admitted, record.total_admitted, record.entries_used, record.used_count, record.scanned_count,
+    record.ticket?.admitted_count, record.ticket?.checked_in_count,
+  );
+}
+
+export function readRemainingAdmissions(record: any): number | null {
+  if (!record || typeof record !== 'object') return null;
+  return firstFiniteNumber(
+    record.remaining_admissions, record.admissions_remaining, record.remaining_count, record.remaining,
+    record.entries_remaining, record.people_remaining, record.ticket?.remaining_admissions,
+  );
+}
+
+/** Total people admitted across a ticket's check-in scans (each scan carries its count). */
+export function sumCheckInScans(response: any): number | null {
+  const list = Array.isArray(response)
+    ? response
+    : [response?.check_ins, response?.checkins, response?.scans, response?.items, response?.results, response?.data].find(Array.isArray);
+  if (!list) return readAdmittedCount(response);
+  return list.reduce((sum: number, scan: any) => sum + (firstFiniteNumber(
+    scan?.count, scan?.admitted, scan?.admitted_count, scan?.quantity, scan?.people, scan?.headcount,
+  ) ?? 1), 0);
+}
 
 export function getTicketRemaining(ticket: TicketAvailabilityData): number | null {
   const directRemaining = toFiniteNumber(

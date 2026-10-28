@@ -1,13 +1,13 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import {  Plus, Minus, ChevronDown, CheckCircle2, Check, Ticket , Loader2 } from "lucide-react";
+import {  Plus, Minus, ChevronDown, CheckCircle2, Check, Ticket , Loader2, Users } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { TICKET_THEMES } from '@/lib/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent, isEventPast, type EventTiming } from '@/lib/api/events';
-import { EventTicket, getTicketEarlyBirdRemaining, getTicketLineTotal, getTicketRemaining, getTicketsForEvent, getTicketUnitPrice, isTicketSoldOut } from '@/lib/api/tickets';
+import { EventTicket, getTicketEarlyBirdRemaining, getTicketGroupLabel, getTicketLineTotal, getTicketRemaining, getTicketsForEvent, getTicketUnitPrice, isTicketSoldOut } from '@/lib/api/tickets';
 import { checkoutTicket, type CheckoutItem, type Attendee, type CheckoutRequest } from '@/lib/api/tickets';
 import { UserProfile } from '@/lib/api/services';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
@@ -572,7 +572,7 @@ export default function CheckoutPage() {
                             Attendee Details
                         </h2>
                         <p className="text-sm text-gray-500 mt-1">
-                            For your <span className="font-bold text-black">{ticketType?.label}</span> ticket
+                            For your <span className="font-bold text-black">{ticketType?.label}</span> ticket{getTicketGroupLabel(ticketType) ? ` · ${getTicketGroupLabel(ticketType)}. You'll get one QR code for the whole group.` : ''}
                             {isGuest && <> · we'll send it to the email below</>}
                         </p>
                     </div>
@@ -660,7 +660,7 @@ export default function CheckoutPage() {
                                             <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-widest w-fit">
                                                 Ticket {idx + 1} of 2
                                             </span>
-                                            <span className="mt-2 text-xs font-bold text-gray-500 uppercase tracking-tight">{ticketType?.label}</span>
+                                            <span className="mt-2 text-xs font-bold text-gray-500 uppercase tracking-tight">{ticketType?.label}{getTicketGroupLabel(ticketType) ? ` · ${getTicketGroupLabel(ticketType)}` : ''}</span>
                                         </div>
                                         <Checkbox
                                             id={`isMe-${idx}`}
@@ -751,7 +751,7 @@ export default function CheckoutPage() {
                                             <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-widest w-fit">
                                                 Ticket {idx + 1} of {attendees.length}
                                             </span>
-                                            <span className="mt-2 text-xs font-bold text-gray-500 uppercase tracking-tight">{ticketType?.label}</span>
+                                            <span className="mt-2 text-xs font-bold text-gray-500 uppercase tracking-tight">{ticketType?.label}{getTicketGroupLabel(ticketType) ? ` · ${getTicketGroupLabel(ticketType)}` : ''}</span>
                                         </div>
                                         <Checkbox
                                             id={`isMe-${idx}`}
@@ -1025,6 +1025,12 @@ export default function CheckoutPage() {
                                                         <div className="py-3 px-5 flex items-center justify-between gap-4">
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="min-w-0">
+                                                                    {getTicketGroupLabel(ticket) && (
+                                                                        <span className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                                                                            <Users className="h-3.5 w-3.5" />
+                                                                            {getTicketGroupLabel(ticket)}
+                                                                        </span>
+                                                                    )}
                                                                     <h3 className="truncate font-bold text-gray-900">{ticket.label}</h3>
                                                                     <div className="mt-1 flex flex-wrap items-center gap-2">
                                                                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-tight">
@@ -1444,7 +1450,7 @@ export default function CheckoutPage() {
                                                                         </span>
                                                                     </div>
                                                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-white/20 border-white/20 ${theme.text} w-fit opacity-80`}>
-                                                                        {hasEarlyBirdPrice ? 'EARLY BIRD' : 'PER GUEST'}
+                                                                        {getTicketGroupLabel(t)?.toUpperCase() ?? (hasEarlyBirdPrice ? 'EARLY BIRD' : 'PER GUEST')}
                                                                     </span>
                                                                 </div>
 
@@ -1546,7 +1552,7 @@ export default function CheckoutPage() {
                                                                                     </span>
                                                                                 </div>
                                                                             <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-white/20 border-white/20 ${theme.text} w-fit opacity-80`}>
-                                                                                {hasEarlyBirdPrice ? 'EARLY BIRD' : 'PER GUEST'}
+                                                                                {getTicketGroupLabel(t)?.toUpperCase() ?? (hasEarlyBirdPrice ? 'EARLY BIRD' : 'PER GUEST')}
                                                                             </span>
                                                                         </div>
 

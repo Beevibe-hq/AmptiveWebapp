@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Ticket as TicketIcon, X, ChevronDown, User, Edit2 } from 'lucide-react';
+import { Calendar, MapPin, Ticket as TicketIcon, X, ChevronDown, User, Edit2, Share2, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getPurchasesByUser, transferTicket, type TicketPurchase } from '@/lib/api/purchases';
 import { getEvent } from '@/lib/api/events';
@@ -10,6 +10,65 @@ import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { TICKET_THEMES } from '@/lib/constants';
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import amptiveLogo from '@/assets/amptivelogo.svg';
+import { getTicketGroupSize } from '@/lib/api/tickets';
+
+// People one bought ticket admits. The group size can come on the ticket, its metadata or
+// its embedded ticket type.
+const myTicketGroupSize = (ticket: any): number => Math.max(
+    getTicketGroupSize(ticket),
+    getTicketGroupSize(ticket?.metadata),
+    getTicketGroupSize(ticket?.ticket_type),
+    getTicketGroupSize(ticket?.event_tickets),
+    Number(ticket?.group_size) > 1 ? Math.floor(Number(ticket.group_size)) : 1,
+    Number(ticket?.metadata?.group_size) > 1 ? Math.floor(Number(ticket.metadata.group_size)) : 1,
+);
+
+/*
+ * A group ticket is one QR code for everyone, so the buyer needs to hand it on. Turns the
+ * on-screen QR into a PNG and opens the share sheet, or downloads it where there isn't one.
+ */
+const shareGroupQr = async (ticket: any, eventTitle: string) => {
+    const svg = document.getElementById(`ticket-qr-${ticket.id}`);
+    if (!svg) return;
+    let markup = new XMLSerializer().serializeToString(svg);
+    if (!markup.includes('xmlns=')) markup = markup.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+    try {
+        const image = new Image();
+        await new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = reject;
+            image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+        });
+        const size = 600;
+        const margin = 48;
+        const canvas = document.createElement('canvas');
+        canvas.width = size + margin * 2;
+        canvas.height = size + margin * 2;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, margin, margin, size, size);
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) return;
+        const name = `${(eventTitle || 'ticket').replace(/[^\w-]+/g, '-').toLowerCase()}-group-ticket.png`;
+        const file = new File([blob], name, { type: 'image/png' });
+        const text = `Our group ticket for ${eventTitle || 'the event'}. Show this QR code at the entrance.`;
+        if (navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], title: eventTitle, text }).catch(() => undefined);
+            return;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = name;
+        link.click();
+        URL.revokeObjectURL(url);
+        toastSuccess('QR code saved. Send it to the people in your group.');
+    } catch {
+        toastError('Could not prepare the QR code. Take a screenshot of it instead.');
+    }
+};
 
 const CARD_PLACEHOLDER_GRADIENTS = [
     'from-[#2d1b69] via-[#312558] to-[#10142a]',
@@ -570,6 +629,12 @@ const MyTickets = () => {
                                                         <div className="flex-1 min-w-0">
                                                             <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate">
                                                                 {ticket.attendee_name || 'Attendee'}
+                                                                {myTicketGroupSize(ticket) > 1 && (
+                                                                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-violet-50 px-1.5 py-0.5 align-middle text-[9px] font-semibold text-violet-700">
+                                                                        <Users className="h-2.5 w-2.5" />
+                                                                        Group of {myTicketGroupSize(ticket)}
+                                                                    </span>
+                                                                )}
                                                             </p>
                                                             <div className="mt-0.5 flex items-center gap-2">
                                                                 <span className="text-[9px] sm:text-[10px] font-mono text-gray-400 tracking-wider">
@@ -647,6 +712,7 @@ const MyTickets = () => {
                                                                 <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-5 px-3.5 sm:px-4 py-4">
                                                                     <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-100">
                                                                         <QRCodeSVG
+                                                                            id={`ticket-qr-${ticket.id}`}
                                                                             value={ticket.qr_code_data || ticket.ticket_code || ''}
                                                                             size={120}
                                                                             level="M"
@@ -662,9 +728,28 @@ const MyTickets = () => {
                                                                         {ticket.attendee_email && (
                                                                             <p className="text-[10px] sm:text-[11px] text-gray-400">{ticket.attendee_email}</p>
                                                                         )}
-                                                                        <p className="text-[10px] text-gray-400 mt-0.5 leading-relaxed max-w-[200px]">
-                                                                            Present this QR code at the venue entrance.
-                                                                        </p>
+                                                                        {myTicketGroupSize(ticket) > 1 ? (
+                                                                            <>
+                                                                                <p className="text-[10px] text-gray-500 mt-0.5 leading-relaxed max-w-[220px]">
+                                                                                    One QR code for your group of {myTicketGroupSize(ticket)}. Share it with the people coming with you; each person is counted as they enter.
+                                                                                </p>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        void shareGroupQr(ticket, group.event?.title || '');
+                                                                                    }}
+                                                                                    className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-black px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-white transition hover:bg-black/80"
+                                                                                >
+                                                                                    <Share2 className="h-3 w-3" />
+                                                                                    Share with group
+                                                                                </button>
+                                                                            </>
+                                                                        ) : (
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5 leading-relaxed max-w-[200px]">
+                                                                                Present this QR code at the venue entrance.
+                                                                            </p>
+                                                                        )}
                                                                         <p className="text-[9px] text-gray-400 mt-0.5">
                                                                             Purchased {safeDateFormat(ticket.purchase_date, 'MMM d, yyyy') || 'recently'}
                                                                         </p>
@@ -987,7 +1072,7 @@ const MyTickets = () => {
                                                         {formatCompactPrice(price, currency)}
                                                     </span>
                                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
-                                                        {isEarlyBirdTicket ? 'Early Bird' : 'Per guest'}
+                                                        {myTicketGroupSize(ticket) > 1 ? `Group of ${myTicketGroupSize(ticket)}` : isEarlyBirdTicket ? 'Early Bird' : 'Per guest'}
                                                     </span>
                                                 </div>
                                             </div>

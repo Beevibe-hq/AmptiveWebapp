@@ -4,7 +4,7 @@ import {  Calendar, MapPin, Image as ImageIcon, Ticket, Upload, Sparkles, Globe,
 import { toastError, toastSuccess } from '@/lib/ui/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getEvent, createEvent as createNewEvent, updateEvent, publishEvent, deleteEvent, cancelEvent } from '@/lib/api/events';
-import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme } from '@/lib/api/tickets';
+import { getTicketsForEvent, createTicket as createNewTicket, updateTicket, deleteTickets, EventTicket, TicketTheme, getTicketGroupLabel } from '@/lib/api/tickets';
 import { createVenue, type VenueCreateRequest } from '@/lib/api/venues';
 import { getCurrentUser, refreshSession } from '@/lib/api/auth';
 import { getMyCommunities, listCommunities, type Community } from '@/lib/api/communities';
@@ -413,6 +413,8 @@ const CreateEvent = () => {
     benefits: string;
     color_theme: TicketTheme;
     quantity: string;
+    is_group: boolean;
+    group_size: string;
   }>({
     title: '',
     price: '',
@@ -420,6 +422,8 @@ const CreateEvent = () => {
     quantity: '',
     benefits: '',
     color_theme: 'silver',
+    is_group: false,
+    group_size: '',
   });
 
   const normalizeTicketEarlyBird = (ticket: EventTicket): EventTicket => {
@@ -455,14 +459,16 @@ const CreateEvent = () => {
       color_theme: ticket.color_theme,
       early_bird_discount_percent: earlyBirdDiscount,
       early_bird_max_count: earlyBirdUnits,
+      group_size: ticket.is_group ? ticket.group_size ?? null : null,
     };
 
-    return options.includePhysical ? { ...payload, is_physical: false } : payload;
+    // is_group is only accepted when the ticket is created; updates can change the size.
+    return options.includePhysical ? { ...payload, is_physical: false, is_group: !!ticket.is_group } : payload;
   };
 
   // Ticket handlers
   const handleAddTicket = () => {
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '', is_group: false, group_size: '' });
     setEditingTicketId(null);
     setMobileTab('details');
     setShowTicketForm(true);
@@ -476,6 +482,8 @@ const CreateEvent = () => {
       benefits: ticket.benefits?.join('\n') ?? "",
       color_theme: ticket.color_theme || 'silver',
       quantity: ticket.quantity?.toString() || '',
+      is_group: !!ticket.is_group,
+      group_size: ticket.is_group && ticket.group_size ? String(ticket.group_size) : '',
     });
     setEditingTicketId(ticket.id);
     setMobileTab('details');
@@ -501,6 +509,12 @@ const CreateEvent = () => {
       toastError('Quantity must be at least 1, or leave it blank for unlimited.');
       return;
     }
+    const groupSize = ticketForm.is_group ? parseInt(ticketForm.group_size, 10) : null;
+    if (ticketForm.is_group && (!Number.isFinite(groupSize) || (groupSize as number) < 2)) {
+      toastError('Enter how many people the group ticket admits (at least 2).');
+      return;
+    }
+    const groupFields = { is_group: ticketForm.is_group, group_size: groupSize };
     const benefits = ticketForm.benefits
       .split('\n')
       .map(b => b.trim())
@@ -512,12 +526,12 @@ const CreateEvent = () => {
         showType: deriveShowType(prev.tickets.map(t => (t.id === editingTicketId ? { ...t, price } : t))),
         tickets: prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, label: ticketForm.title, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
+            ? { ...t, label: ticketForm.title, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity, ...groupFields }
             : t
         ),
         price: deriveEventPrice(prev.tickets.map(t =>
           t.id === editingTicketId
-            ? { ...t, label: ticketForm.title, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity }
+            ? { ...t, label: ticketForm.title, title: ticketForm.title, price, currency: ticketForm.currency, benefits, color_theme: ticketForm.color_theme, quantity, ...groupFields }
             : t
         )),
       }));
@@ -537,13 +551,14 @@ const CreateEvent = () => {
         quantity_remaining: quantity ?? null,
         reserved_quantity: 0,
         is_active: false,
-        has_early_bird: false
+        has_early_bird: false,
+        ...groupFields,
       };
       setForm(prev => ({ ...prev, showType: deriveShowType([...prev.tickets, newTicket]), tickets: [...prev.tickets, newTicket], price: deriveEventPrice([...prev.tickets, newTicket]) }));
     }
 
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '', is_group: false, group_size: '' });
     setEditingTicketId(null);
   };
 
@@ -561,7 +576,7 @@ const CreateEvent = () => {
 
   const handleCancelTicketForm = () => {
     setShowTicketForm(false);
-    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '' });
+    setTicketForm({ title: '', price: '', currency: 'NGN', benefits: '', color_theme: 'silver', quantity: '', is_group: false, group_size: '' });
     setEditingTicketId(null);
   };
 
@@ -1423,6 +1438,11 @@ const CreateEvent = () => {
                                 <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold ">
                                   {formatTicketPrice(ticket.price, ticket.currency)}
                                 </span>
+                                {getTicketGroupLabel(ticket) && (
+                                  <span className="px-2.5 py-1 rounded-full bg-violet-50 text-violet-700 text-xs font-bold">
+                                    {getTicketGroupLabel(ticket)}
+                                  </span>
+                                )}
                               </div>
                               <p className="text-sm text-gray-500 mt-1 pl-6 line-clamp-1">
                                 {deriveTicketBenefits(ticket).join(' • ')}
@@ -2132,9 +2152,67 @@ const CreateEvent = () => {
                       />
                     </div>
 
+                    {/* Group ticket: one purchase and one QR code that admits several people.
+                        The API takes is_group only when a ticket is created, so it's locked
+                        once the ticket is saved; the group size can still change. */}
+                    <div className="w-full sm:col-span-2 rounded-2xl bg-black/5 px-5 py-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Group ticket</p>
+                          <p className="mt-0.5 text-xs leading-relaxed text-gray-500">
+                            One buyer pays once and gets one QR code that admits the whole group.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={ticketForm.is_group}
+                          aria-label="Group ticket"
+                          disabled={!!editingTicketId && !editingTicketId.startsWith('ticket-')}
+                          onClick={() => setTicketForm(prev => ({ ...prev, is_group: !prev.is_group, group_size: !prev.is_group && !prev.group_size ? '4' : prev.group_size }))}
+                          className={`relative mt-0.5 h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${ticketForm.is_group ? 'bg-blue-600' : 'bg-gray-300'}`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${ticketForm.is_group ? 'translate-x-5' : ''}`} />
+                        </button>
+                      </div>
+                      {!!editingTicketId && !editingTicketId.startsWith('ticket-') && (
+                        <p className="mt-2 text-xs text-gray-500">
+                          This can't be switched after the ticket is saved. Add a new ticket instead.
+                        </p>
+                      )}
+                      {ticketForm.is_group && (
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            People per group *
+                          </label>
+                          <input
+                            type="number"
+                            value={ticketForm.group_size}
+                            onChange={(e) => setTicketForm(prev => ({ ...prev, group_size: e.target.value }))}
+                            placeholder="e.g. 4"
+                            min="2"
+                            step="1"
+                            className="block w-full rounded-2xl px-5 py-4 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all duration-200 shadow-sm bg-white"
+                          />
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {[2, 4, 5, 6, 10].map(num => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setTicketForm(prev => ({ ...prev, group_size: num.toString() }))}
+                                className="px-3 py-1 text-xs font-medium text-gray-700 bg-white hover:bg-gray-100 rounded-full transition-colors"
+                              >
+                                {num}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="w-full sm:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Quantity Available
+                        {ticketForm.is_group ? 'Groups Available' : 'Quantity Available'}
                       </label>
                       <input
                         type="number"
@@ -2158,7 +2236,7 @@ const CreateEvent = () => {
                         ))}
                       </div>
                       <p className="mt-2 text-xs text-gray-500">
-                        How many can be sold. Leave blank for unlimited
+                        {ticketForm.is_group ? 'How many group tickets can be sold. Leave blank for unlimited' : 'How many can be sold. Leave blank for unlimited'}
                       </p>
                     </div>
                   </div>
@@ -2302,7 +2380,9 @@ const CreateEvent = () => {
                                   {previewTicket.price === 0 ? 'Free' : formatCompactPrice(previewTicket.price, previewTicket.currency)}
                                 </span>
                                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold  ${theme.badge} ${theme.badgeText} flex-shrink-0 opacity-80`}>
-                                  {hasPreviewEarlyBird ? 'Early Bird' : 'Per guest'}
+                                  {ticketForm.is_group && Number(ticketForm.group_size) > 1
+                                    ? `Group of ${Number(ticketForm.group_size)}`
+                                    : hasPreviewEarlyBird ? 'Early Bird' : 'Per guest'}
                                 </span>
                               </div>
                             </div>

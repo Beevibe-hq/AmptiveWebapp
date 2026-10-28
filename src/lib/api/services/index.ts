@@ -257,8 +257,13 @@ export const $tickets = {
   transfer: (ticketCode: string, targetEmail: string) =>
     api.post<unknown>(`${TICKETS_PREFIX}/${encodeURIComponent(ticketCode)}/transfer`, { target_email: targetEmail }),
 
-  validateForCheckIn: (eventId: string, ticketCode: string) =>
-    api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/tickets/validate?ticket_code=${encodeURIComponent(ticketCode)}`),
+  // count admits that many people on a group ticket; leave it at 1 for everything else.
+  validateForCheckIn: (eventId: string, ticketCode: string, count = 1) =>
+    api.post<unknown>(`${TICKETS_PREFIX}/events/${eventId}/tickets/validate?ticket_code=${encodeURIComponent(ticketCode)}${count > 1 ? `&count=${count}` : ''}`),
+
+  // Every scan of one ticket, with how many it admitted: the running total for a group.
+  getCheckIns: (eventId: string, ticketCode: string) =>
+    api.get<unknown>(`${TICKETS_PREFIX}/events/${eventId}/tickets/${encodeURIComponent(ticketCode)}/check-ins`),
 
   getOrdersForEvent: (eventId: string) =>
     api.getCached<unknown>(`${TICKETS_PREFIX}/events/${eventId}/orders/list`),

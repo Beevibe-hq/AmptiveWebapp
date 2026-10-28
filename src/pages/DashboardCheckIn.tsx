@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { Camera, CheckCircle2, Search, Ticket, UserCheck, XCircle } from 'lucide-react';
+import { Camera, CheckCircle2, Minus, Plus, Search, Ticket, UserCheck, Users, XCircle } from 'lucide-react';
 import { getEventEndTime, getEventsByUser, getEventOrders, StandaloneEvent } from '@/lib/api/events';
 import { AmptiveSpinner } from '@/components/AmptiveSpinner';
 import { $tickets } from '@/lib/api/services';
 import { TICKET_THEMES } from '@/lib/constants';
+import { getTicketGroupSize, getTicketsForEvent, readAdmittedCount, readRemainingAdmissions, sumCheckInScans, type EventTicket } from '@/lib/api/tickets';
 
 type CheckInTicket = {
     id: string;
@@ -19,6 +20,16 @@ type CheckInTicket = {
     colorTheme: string;
     orderId: string;
     checkedAt?: string;
+    /** People this ticket admits: 1, or the size of a group ticket. */
+    groupSize: number;
+    /** People already admitted on a group ticket, when known. */
+    admitted: number | null;
+};
+
+type GroupPrompt = {
+    ticket: CheckInTicket;
+    admitted: number;
+    count: number;
 };
 
 type ScanResult = {
@@ -302,7 +313,7 @@ const getStoredCheckInTime = (checkedIn: Record<string, string>, ticket: CheckIn
     return timestamp || checkedIn[ticket.id] || '';
 };
 
-const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent): CheckInTicket[] => {
+const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent, ticketTypes: EventTicket[] = []): CheckInTicket[] => {
     const ticketOverrides = readTicketDetailOverrides();
     return orders.flatMap((order) => {
         const eventTitle = order.event_title || order.events?.title || fallbackEvent?.title || 'Untitled event';
@@ -359,6 +370,28 @@ const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent): CheckInT
             );
             const id = firstValue(ticketId, code, qr, orderId ? `${orderId}:${index}` : `ticket:${index}`);
             const checkedAt = getTicketCheckedAt(ticket, order);
+            // Group size can sit on the ticket, its embedded type, or only on the event's
+            // ticket type list, so look in all three.
+            const typeId = firstValue(
+                ticket.ticket_type_id,
+                ticket.ticketTypeId,
+                ticket.event_ticket_id,
+                getNested(ticket, 'event_tickets.id'),
+                getNested(ticket, 'ticket_type.id'),
+                order.ticket_type_id,
+            );
+            const ownSize = Number(ticket.group_size) > 1 ? Math.floor(Number(ticket.group_size)) : 1;
+            const groupSize = Math.max(
+                ownSize,
+                getTicketGroupSize(ticket),
+                getTicketGroupSize(ticket.event_tickets),
+                getTicketGroupSize(ticket.ticket_type),
+                getTicketGroupSize(ticketTypes.find(type => type.id === typeId)),
+            );
+            const admitted = groupSize > 1 ? readAdmittedCount(ticket) : null;
+            const backendCheckedIn = Boolean(ticket.checked_in || ticket.checkedIn || ticket.is_checked_in || ticket.isCheckedIn || checkedAt);
+            // A group ticket is only used up once everyone on it has entered.
+            const isUsed = groupSize > 1 && admitted !== null ? admitted >= groupSize : backendCheckedIn;
             const override = [ticketId, code, qr, id]
                 .map(value => String(value || ''))
                 .find(value => value && ticketOverrides[value])
@@ -369,9 +402,11 @@ const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent): CheckInT
                 id,
                 code,
                 qr,
-                status: ticket.checked_in || ticket.checkedIn || ticket.is_checked_in || ticket.isCheckedIn || checkedAt
+                status: isUsed
                     ? 'checked-in'
-                    : ticket.ticket_status || ticket.status || order.ticket_status || order.status || 'valid',
+                    : groupSize > 1 && backendCheckedIn
+                        ? 'valid'
+                        : ticket.ticket_status || ticket.status || order.ticket_status || order.status || 'valid',
                 eventId,
                 eventTitle,
                 attendeeName: override?.attendee_name || ticket.attendee_name || order.attendee_name || buyerName,
@@ -399,6 +434,8 @@ const flattenOrders = (orders: any[], fallbackEvent?: StandaloneEvent): CheckInT
                 ),
                 orderId,
                 checkedAt,
+                groupSize,
+                admitted,
             };
         });
     }).filter((ticket) => ticket.id || ticket.code || ticket.qr);
@@ -414,6 +451,7 @@ export default function DashboardCheckIn() {
     const [ordersLoading, setOrdersLoading] = useState(false);
     const [validating, setValidating] = useState(false);
     const [result, setResult] = useState<ScanResult | null>(null);
+    const [groupPrompt, setGroupPrompt] = useState<GroupPrompt | null>(null);
     const [scanFeedback, setScanFeedback] = useState<ScanFeedback>(null);
     const [captureAnimation, setCaptureAnimation] = useState<CaptureAnimation>(null);
     const [cameraActive, setCameraActive] = useState(false);
@@ -479,8 +517,11 @@ export default function DashboardCheckIn() {
             setOrdersLoading(true);
             try {
                 const selectedEvent = events.find(event => event.event_id === selectedEventId);
-                const orders = await getEventOrders(selectedEventId);
-                const nextTickets = flattenOrders(orders, selectedEvent);
+                const [orders, ticketTypes] = await Promise.all([
+                    getEventOrders(selectedEventId),
+                    getTicketsForEvent(selectedEventId).catch(() => [] as EventTicket[]),
+                ]);
+                const nextTickets = flattenOrders(orders, selectedEvent, ticketTypes);
                 setTickets(nextTickets);
                 const backendCheckedIn = nextTickets.filter(ticket => getTicketStatus(ticket) === 'checked-in');
                 if (backendCheckedIn.length > 0) {
@@ -606,8 +647,17 @@ export default function DashboardCheckIn() {
     };
 
     const selectedEvent = events.find(event => event.event_id === selectedEventId);
-    const checkedInCount = tickets.filter(ticket => getStoredCheckInTime(checkedIn, ticket) || getTicketStatus(ticket) === 'checked-in').length;
-    const waitingCount = tickets.filter(ticket => getTicketStatus(ticket) === 'valid' && !getStoredCheckInTime(checkedIn, ticket)).length;
+    // Counted in people, so a group ticket with 6 of 10 in adds 6 and 4.
+    const admittedOn = (ticket: CheckInTicket) => {
+        if (ticket.groupSize > 1) {
+            if (ticket.admitted !== null) return Math.min(ticket.admitted, ticket.groupSize);
+            return getTicketStatus(ticket) === 'checked-in' ? ticket.groupSize : 0;
+        }
+        return getStoredCheckInTime(checkedIn, ticket) || getTicketStatus(ticket) === 'checked-in' ? 1 : 0;
+    };
+    const countableTickets = tickets.filter(ticket => !['cancelled', 'refunded'].includes(getTicketStatus(ticket)));
+    const checkedInCount = countableTickets.reduce((sum, ticket) => sum + admittedOn(ticket), 0);
+    const waitingCount = countableTickets.reduce((sum, ticket) => sum + ticket.groupSize, 0) - checkedInCount;
 
     const recentTickets = useMemo(() => {
         return tickets
@@ -639,8 +689,113 @@ export default function DashboardCheckIn() {
         )));
     };
 
+    // Records a group ticket's running total; it only counts as used once everyone's in.
+    const recordGroupAdmission = (ticket: CheckInTicket, admitted: number) => {
+        const full = admitted >= ticket.groupSize;
+        if (full) {
+            markTicketCheckedIn(ticket);
+        } else if (admitted > 0) {
+            const timestamp = new Date().toISOString();
+            setCheckedIn(prev => {
+                const next = { ...prev, [ticket.id]: timestamp };
+                getTicketStorageKeys(ticket).forEach(key => { next[key] = timestamp; });
+                return next;
+            });
+        }
+        setTickets(prev => prev.map(item => (
+            item.id === ticket.id ? { ...item, admitted, status: full ? 'checked-in' : 'valid' } : item
+        )));
+    };
+
+    // The backend's check-in history is the source of truth for how many are already in.
+    const fetchGroupAdmitted = async (ticket: CheckInTicket) => {
+        try {
+            const history = await $tickets.getCheckIns(ticket.eventId || selectedEventId, ticket.code || ticket.id);
+            const total = sumCheckInScans(history);
+            if (total !== null) return total;
+        } catch {
+            // Fall back to what the orders list said.
+        }
+        return ticket.admitted ?? 0;
+    };
+
+    const openGroupCheckIn = async (ticket: CheckInTicket) => {
+        validatingRef.current = true;
+        setValidating(true);
+        try {
+            const admitted = Math.min(await fetchGroupAdmitted(ticket), ticket.groupSize);
+            const remaining = ticket.groupSize - admitted;
+            const current = { ...ticket, admitted };
+            if (remaining <= 0) {
+                recordGroupAdmission(ticket, admitted);
+                setGroupPrompt(null);
+                triggerScanFeedback('error');
+                setResult({
+                    type: 'warning',
+                    title: 'Group already in',
+                    message: `All ${ticket.groupSize} people on this ticket have entered.`,
+                    ticket: { ...current, status: 'checked-in' },
+                });
+                return;
+            }
+            setGroupPrompt({ ticket: current, admitted, count: remaining });
+            triggerScanFeedback('success');
+            setResult({
+                type: 'success',
+                title: `Group of ${ticket.groupSize}`,
+                message: admitted > 0
+                    ? `${admitted} already in, ${remaining} to come. How many are entering now?`
+                    : 'How many people are entering now?',
+                ticket: current,
+            });
+        } finally {
+            validatingRef.current = false;
+            setValidating(false);
+        }
+    };
+
+    const admitGroup = async () => {
+        if (!groupPrompt || validatingRef.current) return;
+        const { ticket, admitted, count } = groupPrompt;
+        validatingRef.current = true;
+        setValidating(true);
+        try {
+            const response = await $tickets.validateForCheckIn(ticket.eventId || selectedEventId, ticket.code || ticket.id, count);
+            let total = readAdmittedCount(response);
+            const left = readRemainingAdmissions(response);
+            if (total === null && left !== null) total = ticket.groupSize - left;
+            if (total === null) total = admitted + count;
+            total = Math.min(total, ticket.groupSize);
+            const remaining = ticket.groupSize - total;
+            recordGroupAdmission(ticket, total);
+            setGroupPrompt(null);
+            triggerScanFeedback('success');
+            setResult({
+                type: 'success',
+                title: `${count} admitted`,
+                message: remaining > 0
+                    ? `${remaining} of ${ticket.groupSize} still to come on this ticket.`
+                    : `Everyone on this ticket is in (${ticket.groupSize} of ${ticket.groupSize}).`,
+                ticket: { ...ticket, admitted: total, status: remaining > 0 ? 'valid' : 'checked-in' },
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '';
+            triggerScanFeedback('error');
+            setResult({
+                type: 'error',
+                title: 'Check-in failed',
+                message: message || 'Unable to admit this group right now. Please try again.',
+                ticket,
+            });
+        } finally {
+            validatingRef.current = false;
+            setValidating(false);
+        }
+    };
+
     const checkInCode = async (code: string) => {
         if (validatingRef.current) return;
+        setGroupPrompt(null);
 
         const ticket = findTicket(code);
 
@@ -663,6 +818,11 @@ export default function DashboardCheckIn() {
                 message: `This ticket is ${status} and should not be admitted.`,
                 ticket,
             });
+            return;
+        }
+
+        if (ticket.groupSize > 1) {
+            await openGroupCheckIn(ticket);
             return;
         }
 
@@ -920,7 +1080,7 @@ export default function DashboardCheckIn() {
                     <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
                         {[
                             ['Tickets', tickets.length],
-                            ['Checked in', checkedInCount],
+                            ['People in', checkedInCount],
                             ['Waiting', waitingCount],
                         ].map(([label, value]) => (
                             <div key={label} className="min-w-[74px]">
@@ -1100,7 +1260,68 @@ export default function DashboardCheckIn() {
                                             <dt className="text-black/35">Code</dt>
                                             <dd className="mt-1 truncate font-mono font-semibold text-black">{result.ticket.code || result.ticket.id}</dd>
                                         </div>
+                                        {result.ticket.groupSize > 1 && (
+                                            <div className="col-span-2">
+                                                <dt className="text-black/35">Group</dt>
+                                                <dd className="mt-1 font-semibold text-black">
+                                                    {result.ticket.admitted ?? 0} of {result.ticket.groupSize} in
+                                                </dd>
+                                            </div>
+                                        )}
                                     </dl>
+
+                                    {/* A group ticket admits as many as are at the door now; the
+                                        rest can come in later on the same QR code. */}
+                                    {groupPrompt && groupPrompt.ticket.id === result.ticket.id && (
+                                        <div className="mt-5 rounded-2xl bg-violet-50 p-4">
+                                            <div className="flex items-center gap-2 text-sm font-semibold text-violet-800">
+                                                <Users className="h-4 w-4" />
+                                                Admitting now
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setGroupPrompt(prev => prev && { ...prev, count: Math.max(1, prev.count - 1) })}
+                                                    disabled={validating || groupPrompt.count <= 1}
+                                                    aria-label="One fewer"
+                                                    className="flex h-10 w-10 items-center justify-center rounded-full border border-violet-200 bg-white text-violet-700 disabled:opacity-30"
+                                                >
+                                                    <Minus className="h-4 w-4" />
+                                                </button>
+                                                <div className="text-center">
+                                                    <p className="text-[28px] font-semibold leading-none text-black">{groupPrompt.count}</p>
+                                                    <p className="mt-1 text-[11px] font-medium text-black/40">
+                                                        of {groupPrompt.ticket.groupSize - groupPrompt.admitted} remaining
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setGroupPrompt(prev => prev && { ...prev, count: Math.min(prev.ticket.groupSize - prev.admitted, prev.count + 1) })}
+                                                    disabled={validating || groupPrompt.count >= groupPrompt.ticket.groupSize - groupPrompt.admitted}
+                                                    aria-label="One more"
+                                                    className="flex h-10 w-10 items-center justify-center rounded-full border border-violet-200 bg-white text-violet-700 disabled:opacity-30"
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={admitGroup}
+                                                disabled={validating}
+                                                className="mt-4 w-full rounded-full bg-black py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+                                            >
+                                                {validating ? 'Admitting…' : `Admit ${groupPrompt.count}`}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setGroupPrompt(null); setResult(null); }}
+                                                disabled={validating}
+                                                className="mt-2 w-full py-1.5 text-xs font-medium text-black/45 hover:text-black"
+                                            >
+                                                Not now
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="border-y border-dashed border-black/10 py-10 text-center text-sm font-medium text-black/35">
@@ -1122,7 +1343,9 @@ export default function DashboardCheckIn() {
                                         <div key={ticket.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                                             <div className="min-w-0">
                                                 <p className="truncate text-sm font-semibold text-black">{ticket.attendeeName || 'Guest'}</p>
-                                                <p className="truncate text-xs text-black/40">{ticket.ticketLabel}</p>
+                                                <p className="truncate text-xs text-black/40">
+                                                    {ticket.ticketLabel}{ticket.groupSize > 1 ? ` · ${ticket.admitted ?? 0} of ${ticket.groupSize} in` : ''}
+                                                </p>
                                             </div>
                                             <span className="shrink-0 text-[11px] font-semibold text-black/40">
                                                 {new Date(getStoredCheckInTime(checkedIn, ticket)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

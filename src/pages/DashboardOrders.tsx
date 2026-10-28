@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, Search, Filter, ChevronDown, ExternalLink, Eye, X, XCircle, Clock, CheckCircle2, Ban, UserCheck, CircleSlash, Check, Scan } from 'lucide-react';
 import { getEventOrders, getEventsByUser } from '@/lib/api/events';
 import { getPaymentTransactions } from '@/lib/api/finance';
-import { getTicketsForEvent } from '@/lib/api/tickets';
+import { getTicketGroupSize, getTicketsForEvent, readAdmittedCount } from '@/lib/api/tickets';
 
 const BillIcon = ({ className, fill }: { className?: string, fill?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill={fill || "none"} viewBox="0 0 256 256">
@@ -116,13 +116,37 @@ const getDisplayTicketId = (ticket: any) => String(
 );
 
 const isTicketCheckedIn = (ticket: any) => {
+    // A group ticket is attended only once everyone on it is in; a partial admit isn't.
+    if (Number(ticket.group_size) > 1) {
+        if (ticket.admitted_count !== null && ticket.admitted_count !== undefined) {
+            return Number(ticket.admitted_count) >= Number(ticket.group_size);
+        }
+    }
     const status = normalizeValue(ticket.ticket_status || ticket.status || ticket.check_in_status || ticket.checkInStatus);
     if (['used', 'scanned', 'attended', 'checked-in', 'checked_in', 'check-in', 'check_in', 'validated', 'redeemed'].includes(status)) return true;
     if (ticket.checked_in || ticket.checkedIn || ticket.is_checked_in || ticket.isCheckedIn) return true;
     if (ticket.checked_in_at || ticket.checkedInAt || ticket.scanned_at || ticket.scannedAt || ticket.used_at || ticket.usedAt || ticket.validated_at || ticket.validatedAt || ticket.redeemed_at || ticket.redeemedAt) return true;
 
+    // The check-in screen also stores partial group admits locally, so don't read those
+    // as "attended" for a group ticket.
+    if (Number(ticket.group_size) > 1) return false;
     const localCheckIns = getLocalCheckIns();
     return getTicketCheckInKeys(ticket).some(key => Boolean(localCheckIns[key]));
+};
+
+const groupFieldsFor = (ticket: any, ticketTypes: any[] = []) => {
+    const typeId = ticket.ticket_type_id || ticket.ticketTypeId || ticket.event_ticket_id || ticket.event_tickets?.id || ticket.ticket_type?.id;
+    const ownSize = Number(ticket.group_size) > 1 ? Math.floor(Number(ticket.group_size)) : 1;
+    const groupSize = Math.max(
+        ownSize,
+        getTicketGroupSize(ticket),
+        getTicketGroupSize(ticket.event_tickets),
+        getTicketGroupSize(ticket.ticket_type),
+        getTicketGroupSize(ticketTypes.find((type: any) => type.id === typeId)),
+    );
+    return groupSize > 1
+        ? { group_size: groupSize, admitted_count: readAdmittedCount(ticket) }
+        : {};
 };
 
 export default function DashboardOrders() {
@@ -334,6 +358,7 @@ export default function DashboardOrders() {
         const tickets = Array.isArray(order.tickets) && order.tickets.length > 0
             ? order.tickets.map((ticket: any) => ({
                 ...ticket,
+                ...groupFieldsFor(ticket, order.__ticketTypes),
                 event_id: ticket.event_id || order.event_id || purchase.event_id,
                 attendee_name: ticket.attendee_name || ticket.attendeeName || ticket.name || '',
                 attendee_email: ticket.attendee_email || ticket.attendeeEmail || ticket.email || '',
@@ -348,6 +373,7 @@ export default function DashboardOrders() {
                 },
             }))
             : [{
+                ...groupFieldsFor(order, order.__ticketTypes),
                 id: order.ticket_id || firstTicket?.id || order.id || purchase.id,
                 event_id: order.event_id || purchase.event_id,
                 attendee_name: order.attendee_name || firstTicket?.attendee_name || buyerName,
@@ -409,12 +435,17 @@ export default function DashboardOrders() {
         const rows = await Promise.all((events || []).map(async (event: any) => {
             const eventId = event.event_id || event.id;
             if (!eventId) return [];
-            const eventOrders = await getEventOrders(eventId).catch((error) => {
-                failures.push(error);
-                return [];
-            });
+            const [eventOrders, ticketTypes] = await Promise.all([
+                getEventOrders(eventId).catch((error) => {
+                    failures.push(error);
+                    return [];
+                }),
+                // Group size lives on the ticket type, which the order may not carry.
+                getTicketsForEvent(eventId).catch(() => []),
+            ]);
             return (eventOrders || []).map((order: any) => normalizeOrder({
                 ...order,
+                __ticketTypes: ticketTypes,
                 event_id: order.event_id || eventId,
                 event_title: order.event_title || order.events?.title || order.event?.title || event.title,
             }));
@@ -1228,6 +1259,14 @@ export default function DashboardOrders() {
                                                                                         <p className="text-[14px] font-semibold text-black">{label}</p>
                                                                                         {renderStatusIndicator()}
                                                                                     </div>
+                                                                                    {Number(ticket.group_size) > 1 && (
+                                                                                        <p className="text-[12px] font-medium text-violet-700">
+                                                                                            Group of {ticket.group_size}
+                                                                                            {ticket.admitted_count !== null && ticket.admitted_count !== undefined
+                                                                                                ? ` · ${Math.min(Number(ticket.admitted_count), Number(ticket.group_size))} of ${ticket.group_size} in`
+                                                                                                : ''}
+                                                                                        </p>
+                                                                                    )}
                                                                                 </div>
                                                                             </div>
                                                                         </td>
