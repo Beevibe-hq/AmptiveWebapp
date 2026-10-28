@@ -10,6 +10,7 @@ import SupportCard from '@/components/SupportCard';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { getEmojiFallback } from '@/utils/avatar';
 import { useAuth } from '@/contexts/AuthContext';
+import WalletSetupPrompt from '@/components/WalletSetupPrompt';
 import { formatSupportUrl } from '@/utils/supportUrl';
 import { FeeNotice } from '@/components/FeeNotice';
 import { WITHDRAWAL_FEE_LABEL } from '@/lib/fees';
@@ -317,6 +318,8 @@ export default function SupportSetup() {
     const [step, setStep] = useState<Step>('welcome');
     const [profileType, setProfileType] = useState<'creator' | 'business' | 'organizer' | null>(null);
     const [isLinkCopied, setIsLinkCopied] = useState(false);
+    // Gifts pay out to a wallet, and the API won't create a support page without one.
+    const [showWalletPrompt, setShowWalletPrompt] = useState(false);
 
     // Support State
     const [supportEnabled, setSupportEnabled] = useState(false);
@@ -393,6 +396,10 @@ export default function SupportSetup() {
                     if (pageExists) {
                         setStep('settings');
                     }
+                }
+                // Ask for the wallet before they fill in the page, not when they press save.
+                if (!currentUser.is_wallet_setup && !(profile && profileHasSupportPage(profile))) {
+                    setShowWalletPrompt(true);
                 }
             } catch (error) {
                 console.error('Error loading profile:', error);
@@ -494,6 +501,11 @@ export default function SupportSetup() {
             }
         } catch (error: any) {
             console.error('Error saving support settings:', error);
+            // "You must setup a wallet before creating a support profile": offer the setup.
+            if (/wallet/i.test(String(error?.message || ''))) {
+                setShowWalletPrompt(true);
+                return;
+            }
             toastError(error.message || 'Failed to save changes.');
         } finally {
             setSaving(false);
@@ -518,6 +530,10 @@ export default function SupportSetup() {
         return (
             <AmptiveSplash />
         );
+    }
+
+    if (showWalletPrompt) {
+        return <WalletSetupPrompt reason="Gifts are paid into your Amptive wallet." />;
     }
 
     return (

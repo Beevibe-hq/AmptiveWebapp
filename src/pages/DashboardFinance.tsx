@@ -920,6 +920,21 @@ export default function DashboardFinance() {
     const returnTo = requestedReturnTo?.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : null;
     const autoOpenWalletSetup = searchParams.get('setupWallet') === '1';
     const autoOpenedWalletSetupRef = useRef(false);
+    const returnLabel = returnTo?.startsWith('/events/create')
+        ? 'Continue creating your event'
+        : returnTo?.startsWith('/profile/support-setup')
+            ? 'Continue to Accept Gifts'
+            : 'Continue';
+
+    // Once the wallet exists, take them back to what they were doing without another click.
+    useEffect(() => {
+        if (!walletSetupSuccess || !returnTo) return;
+        const timer = window.setTimeout(() => {
+            setIsWalletSetupOpen(false);
+            navigate(returnTo, { replace: true });
+        }, 1500);
+        return () => window.clearTimeout(timer);
+    }, [walletSetupSuccess, returnTo, navigate]);
 
     useEffect(() => {
         if (autoOpenWalletSetup && walletSetupRequired && !autoOpenedWalletSetupRef.current) {
@@ -1838,7 +1853,7 @@ export default function DashboardFinance() {
                                             <p className="mx-auto mt-2 max-w-[300px] text-[13px] leading-relaxed text-black/45">
                                                 {walletSetupSuccess
                                                     ? returnTo
-                                                        ? 'Your wallet is ready. Pick up where you left off.'
+                                                        ? 'Your wallet is ready. Taking you back now…'
                                                         : 'Your wallet is ready. You can now view balances and continue with payouts.'
                                                     : walletSetupError || 'We could not create your wallet. Please try again.'}
                                             </p>
@@ -1855,7 +1870,7 @@ export default function DashboardFinance() {
                                                 }}
                                                 className="mt-8 inline-flex items-center justify-center rounded-full bg-black px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
                                             >
-                                                {walletSetupSuccess ? (returnTo?.startsWith('/events/create') ? 'Continue creating your event' : returnTo ? 'Continue' : 'Open Wallet') : 'Try Again'}
+                                                {walletSetupSuccess ? (returnTo ? returnLabel : 'Open Wallet') : 'Try Again'}
                                             </button>
                                         </motion.div>
                                     )}
