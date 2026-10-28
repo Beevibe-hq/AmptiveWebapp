@@ -393,7 +393,8 @@ export default function DashboardOrders() {
             ...order,
             id: order.id || purchase.id || order.purchase_id || firstTicket?.purchase_id || order.ticket_id,
             transaction_id: order.transaction_id || purchase.transaction_id,
-            created_at: order.created_at || purchase.created_at || order.purchase_date || order.purchased_at || firstTicket?.created_at || new Date().toISOString(),
+            // No date means no date: showing today's instead made old orders look new.
+            created_at: order.created_at || purchase.created_at || order.purchase_date || order.purchased_at || purchase.paid_at || firstTicket?.created_at || '',
             total_amount: amount,
             status,
             ticket_status: ticketStatus,
@@ -542,7 +543,8 @@ export default function DashboardOrders() {
             }
 
             // Sort by date (descending)
-            uniqueOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            const orderTime = (order: any) => new Date(order.created_at).getTime() || 0;
+            uniqueOrders.sort((a, b) => orderTime(b) - orderTime(a));
 
             setOrders(uniqueOrders);
         } catch (error) {
@@ -574,6 +576,7 @@ export default function DashboardOrders() {
 
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
+        if (!dateString || Number.isNaN(date.getTime())) return '—';
         return date.toLocaleDateString('en-GB', {
             day: '2-digit',
             month: '2-digit',

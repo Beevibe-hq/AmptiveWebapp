@@ -183,7 +183,25 @@ const getSoldTicketCount = (order: any) => {
     return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 };
 
-const getOrderDate = (order: any) => order?.created_at || order?.purchase_date || order?.purchased_at || order?.updated_at || new Date().toISOString();
+// Orders from the orders list keep their date on the nested purchase, so look there and on
+// the tickets too. Returns '' rather than "now" when there's no date: a made-up "now" put
+// every old order under "just now", in this week's revenue and in the last-30-days cards.
+const getOrderDate = (order: any): string => order?.created_at
+    || order?.purchase_date
+    || order?.purchased_at
+    || order?.paid_at
+    || order?.purchase?.created_at
+    || order?.purchase?.paid_at
+    || order?.purchase?.purchase_date
+    || order?.tickets?.[0]?.created_at
+    || order?.purchase?.updated_at
+    || order?.updated_at
+    || '';
+
+const dateValue = (dateString: string) => {
+    const time = new Date(dateString).getTime();
+    return Number.isNaN(time) ? 0 : time;
+};
 
 const getOrderAmount = (order: any) => {
     const directAmount = Number(
@@ -407,6 +425,7 @@ const getTicketPrice = (ticket: any) => Math.max(0, toNumber(
 ));
 
 const formatTimeAgo = (dateString: string) => {
+    if (!dateValue(dateString)) return '';
     const date = new Date(dateString);
     const diffMs = Date.now() - date.getTime();
     const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
@@ -850,7 +869,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
                     });
                     return rows;
                 })
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                // Undated entries sort last instead of jumping to the top.
+                .sort((a, b) => dateValue(b.date) - dateValue(a.date))
                 .slice(0, 6);
             setRecentActivity(activity);
 
@@ -863,6 +883,8 @@ function DashboardHome({ displayName }: { displayName: string }) {
             }
 
             validOrders.forEach(order => {
+                // An order with no date can't be placed in a week; leave it out of the chart.
+                if (!dateValue(getOrderDate(order))) return;
                 const date = new Date(getOrderDate(order));
                 const monthLabel = date.toLocaleString('default', { month: 'short' }) + " '" + date.getFullYear().toString().slice(-2);
                 const day = date.getDate();
@@ -1379,7 +1401,7 @@ function DashboardHome({ displayName }: { displayName: string }) {
                                                     )}
                                                 </div>
                                                 <span>
-                                                    <span className="font-semibold text-black">{feed.subject}</span> {feed.action} <span className="font-semibold text-black">{feed.target}</span> · {feed.time}
+                                                    <span className="font-semibold text-black">{feed.subject}</span> {feed.action} <span className="font-semibold text-black">{feed.target}</span>{feed.time ? ` · ${feed.time}` : ''}
                                                 </span>
                                             </div>
                                             {i !== arr.length - 1 && <div className="h-px bg-black/5 my-2.5"></div>}
