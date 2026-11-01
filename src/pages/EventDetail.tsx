@@ -10,7 +10,7 @@ import { toastSuccess, toastError } from '@/lib/ui/toast';
 import { getCurrentUser } from '@/lib/api/auth';
 import { getEvent, getRelatedEvents, isEventPast, publishEvent, StandaloneEvent } from '@/lib/api/events';
 import { getProfileByUserId } from '@/lib/api/profiles';
-import { getTicketEarlyBirdRemaining, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '@/lib/api/tickets';
+import { getTicketEarlyBirdRemaining, getTicketGroupLabel, getTicketUnitPrice, getTicketsForEvent, isTicketSoldOut } from '@/lib/api/tickets';
 import { getVenue } from '@/lib/api/venues';
 import { useSEO } from '@/hooks/useSEO';
 import L from 'leaflet';
@@ -970,7 +970,7 @@ const EventDetail = () => {
                                         </div>
                                       ) : (
                                         <button className={`px-5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 ${theme.text} text-xs font-bold transition-colors uppercase whitespace-nowrap`}>
-                                          PER GUEST
+                                          {getTicketGroupLabel(ticket) ?? 'PER GUEST'}
                                         </button>
                                       )}
                                     </div>

@@ -390,24 +390,27 @@ export default function SupportProfile() {
   };
 
   const handleShareProfile = async () => {
-    const url = window.location.href;
+    // The vanity link, same as the copy button — not window.location.href, which shares
+    // whatever address the page happens to be open at (a localhost build, or the
+    // /support/<slug> path form rather than the tip domain people expect).
+    const linkSlug = profile?.username || profile?.user_id || id;
+    const url = formatSupportUrl(profile, linkSlug);
     const title = `${profile?.full_name || 'Creator'}'s Amptive Support Profile`;
-    const text = `Support ${profile?.full_name || 'Creator'} on Amptive!`;
 
-    if (navigator.share && navigator.canShare && navigator.canShare({ url, title, text })) {
+    // No `text`: share targets append it beside the link, and the page's own preview
+    // card already says who this is.
+    if (navigator.share && navigator.canShare && navigator.canShare({ url, title })) {
       try {
-        await navigator.share({
-          title,
-          text,
-          url
-        });
+        await navigator.share({ title, url });
       } catch (err) {
         console.error('Error sharing profile:', err);
       }
     } else {
       try {
         await navigator.clipboard.writeText(url);
-        alert('Profile link copied to clipboard!');
+        // Same confirmation the copy button uses, rather than a browser alert.
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2500);
       } catch (err) {
         console.error('Failed to copy link:', err);
       }
@@ -840,74 +843,54 @@ export default function SupportProfile() {
         {paymentStatus === 'idle' && (
           <>
         {/* Action Buttons Floating Right */}
+        {/* Desktop keeps the full row. Below md it narrows to the eye and the arrow:
+            the row is anchored to the right edge, and at 375px the centred avatar runs
+            to x≈260, so a four-button row ended up behind it and Settings was invisible.
+            Settings moves beside Edit page on mobile; Copy is dropped there because the
+            link pill directly below already copies. */}
         <div className="absolute top-24 right-4 md:right-12 flex items-center gap-3">
-          {isOwner ? (
+          {isOwner && (
             <>
-              <button 
+              <button
                 onClick={() => navigate(`/support/${profile.username || profile.user_id}?viewAs=public`)}
-                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-blue-600 group relative"
+                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-blue-600 group relative shadow-sm"
                 title="View as public"
               >
                 <Eye size={20} />
                 <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">View Public</span>
               </button>
-              <button 
+              <button
                 onClick={() => navigate('/profile/support-setup')}
-                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-black group relative"
+                className="hidden md:block p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 transition-all hover:text-black group relative"
                 title="Support Settings"
               >
                 <Settings size={20} />
                 <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Settings</span>
               </button>
-              <button 
-                onClick={handleCopySupportLink} 
-                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-black transition-colors duration-200 ease-out shadow-sm group relative"
-                title="Copy link"
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.span
-                    key={copiedLink ? 'copied' : 'copy'}
-                    initial={{ opacity: 0, scale: 0.72, rotate: -12 }}
-                    animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                    exit={{ opacity: 0, scale: 0.72, rotate: 12 }}
-                    transition={{ type: 'spring', stiffness: 420, damping: 24, mass: 0.55 }}
-                    className="block text-black"
-                  >
-                    {copiedLink ? <Check size={20} /> : <Copy size={20} />}
-                  </motion.span>
-                </AnimatePresence>
-                <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                  {copiedLink ? 'Copied!' : 'Copy'}
-                </span>
-              </button>
-              <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-black hover:bg-gray-50 transition-colors duration-200 shadow-sm" title="Share profile"><SupportShareIcon /></button>
-            </>
-          ) : (
-            <>
-              <button 
-                onClick={handleCopySupportLink} 
-                className="p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-black transition-colors duration-200 ease-out shadow-sm group relative"
-                title="Copy link"
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.span
-                    key={copiedLink ? 'copied' : 'copy'}
-                    initial={{ opacity: 0, scale: 0.72, rotate: -12 }}
-                    animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                    exit={{ opacity: 0, scale: 0.72, rotate: 12 }}
-                    transition={{ type: 'spring', stiffness: 420, damping: 24, mass: 0.55 }}
-                    className="block text-black"
-                  >
-                    {copiedLink ? <Check size={20} /> : <Copy size={20} />}
-                  </motion.span>
-                </AnimatePresence>
-                <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                  {copiedLink ? 'Copied!' : 'Copy'}
-                </span>
-              </button>
-              <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-black hover:bg-gray-50 transition-colors duration-200 shadow-sm" title="Share profile"><SupportShareIcon /></button>
             </>
           )}
+          <button
+            onClick={handleCopySupportLink}
+            className="hidden md:block p-2.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-black transition-colors duration-200 ease-out shadow-sm group relative"
+            title="Copy link"
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={copiedLink ? 'copied' : 'copy'}
+                initial={{ opacity: 0, scale: 0.72, rotate: -12 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.72, rotate: 12 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 24, mass: 0.55 }}
+                className="block text-black"
+              >
+                {copiedLink ? <Check size={20} /> : <Copy size={20} />}
+              </motion.span>
+            </AnimatePresence>
+            <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              {copiedLink ? 'Copied!' : 'Copy'}
+            </span>
+          </button>
+          <button onClick={handleShareProfile} className="p-2.5 rounded-full bg-white border border-gray-100 text-black hover:bg-gray-50 transition-colors duration-200 shadow-sm" title="Share profile"><SupportShareIcon /></button>
         </div>
 
         <div className="max-w-4xl mx-auto px-4">
@@ -1001,9 +984,19 @@ export default function SupportProfile() {
               </div>
 
               {isOwner && (
-                <div className="pt-4">
+                <div className="pt-4 flex items-center justify-center gap-3">
                   <button onClick={() => setIsEditModalOpen(true)} className="bg-black text-white px-10 py-3 rounded-full text-sm font-bold hover:bg-gray-800 transition-all hover:scale-105 active:scale-95">
                     Edit page
+                  </button>
+                  {/* Mobile only — desktop keeps Settings in the floating row, which has
+                      the room for it there. */}
+                  <button
+                    onClick={() => navigate('/profile/support-setup')}
+                    className="md:hidden p-2.5 rounded-full bg-white border border-gray-200 text-gray-500 shadow-sm transition-all hover:bg-gray-50 hover:text-black"
+                    title="Support Settings"
+                    aria-label="Support settings"
+                  >
+                    <Settings size={20} />
                   </button>
                 </div>
               )}
