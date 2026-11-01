@@ -142,7 +142,10 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
       const fileName = `${profile.user_id}/${type}-${Date.now()}.${fileExt}`;
       const file = new File([blob], fileName, { type: `image/${fileExt}` });
 
-      const purpose = type === 'avatar' ? 'profile-picture' : 'community-image';
+      // The banner is the user's own cover photo, not a community image — uploading it
+      // with the community purpose makes the backend treat it as a community cover,
+      // which only admins may change.
+      const purpose = type === 'avatar' ? 'profile-picture' : 'cover-photo';
       const publicUrl = await uploadImage(file, purpose);
 
       setFormData(prev => ({
@@ -241,7 +244,7 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 h-[100dvh] z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
           {/* Backdrop */}
           <motion.div
           initial={{ opacity: 0 }}
@@ -257,7 +260,9 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-          className="relative w-full max-w-xl bg-white rounded-t-[32px] sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[90vh]"
+          // dvh, not vh: on mobile Chrome vh is the *large* viewport (toolbars hidden), so a
+          // 92vh sheet overflows the visible area and slides its header under the address bar.
+          className="relative w-full max-w-xl bg-white rounded-t-[32px] sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92dvh] sm:max-h-[90dvh]"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-100">
@@ -588,9 +593,9 @@ export default function SupportEditModal({ isOpen, onClose, profile, onSave }: S
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 p-4"
+              className="fixed inset-0 h-[100dvh] z-[110] flex items-center justify-center bg-black/90 p-4"
             >
-              <div className="w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[80vh]">
+              <div className="w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[80dvh]">
                 <div className="flex items-center justify-between p-4 border-b border-gray-100">
                   <button onClick={() => setCropOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                     <X size={20} className="text-gray-900" />

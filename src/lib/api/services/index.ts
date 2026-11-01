@@ -100,7 +100,15 @@ export interface AvailabilityResponse {
   message: string;
 }
 
-export type ImageUploadPurpose = 'profile-picture' | 'livestream-banner' | 'community-image'
+// Mirrors ImagePurposeEnum in the backend OpenAPI spec.
+export type ImageUploadPurpose =
+  | 'profile-picture'
+  | 'cover-photo'
+  | 'event-banner'
+  | 'livestream-banner'
+  | 'community-image'
+  | 'blog-image'
+  | 'notification-image'
 
 export { $blogLikes } from './blog-likes';
 export { $finance } from './finance';
