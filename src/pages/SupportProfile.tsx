@@ -143,19 +143,11 @@ export default function SupportProfile() {
       statusParam === 'completed' ||
       (Boolean(reference) && statusParam !== 'cancelled' && statusParam !== 'failed');
 
-    if (isSuccessful) return 'processing';
-
-    try {
-      const raw = sessionStorage.getItem('pending_support_data');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && (!parsed.initiatedAt || Date.now() - parsed.initiatedAt < 15 * 60 * 1000)) {
-          return 'processing';
-        }
-      }
-    } catch {}
-
-    return 'idle';
+    // Only a reference can put this page into the sending animation, because only a
+    // reference can be confirmed. Pending details in sessionStorage survive a cancelled
+    // checkout, so treating them as "a payment is in flight" replayed the paper plane
+    // on every reload. They stay for prefilling the form, nothing more.
+    return isSuccessful ? 'processing' : 'idle';
   });
   const [isRedirectingToGateway, setIsRedirectingToGateway] = useState(false);
   const isProcessingSuccessRef = useRef(false);
