@@ -13,6 +13,7 @@ import { toPng, toBlob } from 'html-to-image';
 import Confetti from 'react-confetti';
 import { extractDominantColors } from '@/utils/colorExtractor';
 import { playSwoosh, playSuccessChime } from '@/utils/audio';
+import { resolvePaymentOutcome, type PaymentOutcome } from '@/lib/api/payment';
 import { AmptiveSplash } from '@/components/AmptiveSpinner';
 import { useSEO } from '@/hooks/useSEO';
 import { formatSupportUrl, getSupportDomainPrefix } from '@/utils/supportUrl';
@@ -131,7 +132,7 @@ export default function SupportProfile() {
   });
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentChannel, setPaymentChannel] = useState<string>('paystack');
-  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success'>(() => {
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'pending' | 'success'>(() => {
     if (typeof window === 'undefined') return 'idle';
     const searchParams = new URLSearchParams(window.location.search);
     const reference = searchParams.get('reference') || searchParams.get('trxref') || searchParams.get('tx_ref');
@@ -157,8 +158,14 @@ export default function SupportProfile() {
     return 'idle';
   });
   const [isRedirectingToGateway, setIsRedirectingToGateway] = useState(false);
-  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProcessingSuccessRef = useRef(false);
+  // Payment confirmation polls past the animation, so it has to stop touching state
+  // once this page goes away.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
   const [shadowColor, setShadowColor] = useState<string | null>(null);
   const [isDownloadingCard, setIsDownloadingCard] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
@@ -529,7 +536,7 @@ export default function SupportProfile() {
     }
   }, [paymentStatus]);
 
-  const triggerSuccessFlow = useCallback((refFromUrl?: string) => {
+  const triggerSuccessFlow = useCallback(async (refFromUrl?: string) => {
     if (isProcessingSuccessRef.current) return;
     isProcessingSuccessRef.current = true;
 
@@ -541,7 +548,7 @@ export default function SupportProfile() {
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        parsedRef = parsed.reference || parsedRef || `ref-${Date.now()}`;
+        parsedRef = parsed.reference || parsedRef;
 
         if (parsed.amount) {
           setSelectedTier(parsed.amount);
@@ -552,43 +559,74 @@ export default function SupportProfile() {
       } catch {}
     }
 
-    // Check if this specific payment was already processed in this session
-    const processedKey = 'amptive_processed_support_refs';
-    let processedRefs: string[] = [];
-    try {
-      const savedRefs = JSON.parse(sessionStorage.getItem(processedKey) || '[]');
-      processedRefs = Array.isArray(savedRefs) ? savedRefs : [];
-    } catch {}
-
-    if (parsedRef && processedRefs.includes(parsedRef)) {
-      // A previous event already completed this payment. Do not repeat its activity
-      // work, but never leave this return route stranded in an invisible loader.
-      setPaymentStatus('success');
+    // No reference means nothing can be confirmed, so never claim the gift was sent.
+    // Returning to this tab is not evidence that a payment happened — the supporter
+    // may simply have closed the gateway.
+    if (!parsedRef) {
+      setIsRedirectingToGateway(false);
+      setPaymentStatus('idle');
       isProcessingSuccessRef.current = false;
       return;
     }
-    if (parsedRef) {
-      processedRefs.push(parsedRef);
-      sessionStorage.setItem(processedKey, JSON.stringify(processedRefs));
-    }
+
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const alive = () => isMountedRef.current;
+
+    const finish = (outcome: PaymentOutcome) => {
+      if (!alive()) return;
+      if (outcome === 'successful') {
+        setPaymentStatus('success');
+        playSuccessChime();
+        fetchActivity();
+      } else {
+        setPaymentStatus('idle');
+        setPaymentError('Payment was not completed. Please try again.');
+        toast.error('Payment was not completed. Please try again.');
+      }
+      isProcessingSuccessRef.current = false;
+    };
 
     setIsRedirectingToGateway(false);
     setPaymentStatus('processing');
     playSwoosh();
-
-    // Refresh live activity data from backend
     fetchActivity();
 
-    if (successTimerRef.current) {
-      clearTimeout(successTimerRef.current);
+    // Confirm with the backend while the paper plane is in the air, so the animation
+    // costs us nothing and the verdict is real by the time it lands.
+    const animationEndsAt = Date.now() + 3800;
+    let outcome = await resolvePaymentOutcome(parsedRef);
+
+    while (outcome === 'pending' && alive() && Date.now() < animationEndsAt) {
+      await wait(1200);
+      outcome = await resolvePaymentOutcome(parsedRef);
     }
 
-    successTimerRef.current = setTimeout(() => {
-      setPaymentStatus('success');
-      playSuccessChime();
-      fetchActivity();
+    const remaining = animationEndsAt - Date.now();
+    if (remaining > 0) await wait(remaining);
+    if (!alive()) return;
+
+    if (outcome !== 'pending') {
+      finish(outcome);
+      return;
+    }
+
+    // Bank transfers can settle minutes after the supporter is back on this page.
+    // Say so plainly rather than guessing, and keep checking in the background.
+    setPaymentStatus('pending');
+
+    const giveUpAt = Date.now() + 2 * 60 * 1000;
+    while (outcome === 'pending' && alive() && Date.now() < giveUpAt) {
+      await wait(5000);
+      outcome = await resolvePaymentOutcome(parsedRef);
+    }
+
+    if (!alive()) return;
+    if (outcome === 'pending') {
+      // Still unresolved: leave the honest "being confirmed" screen up.
       isProcessingSuccessRef.current = false;
-    }, 3800);
+      return;
+    }
+    finish(outcome);
   }, [fetchActivity]);
 
   // Handle return from payment gateway (Paystack / Flutterwave) & modal events
@@ -620,9 +658,21 @@ export default function SupportProfile() {
     }
 
     // Also handle postMessage events (when Paystack/Flutterwave communicates success via iframe/modal)
+    const GATEWAY_ORIGINS = /(^|\.)(paystack\.(com|co)|flutterwave\.com)$/i;
+
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data) return;
+
+      // Any page could post a "success" message at us, so require it to come from the
+      // gateway itself and to name a reference we can actually verify.
+      let origin: string;
+      try {
+        origin = new URL(event.origin).hostname;
+      } catch {
+        return;
+      }
+      if (!GATEWAY_ORIGINS.test(origin)) return;
 
       const isPaystackSuccess =
         data === 'paystack:success' ||
@@ -630,23 +680,20 @@ export default function SupportProfile() {
         data?.event === 'charge.success' ||
         data?.status === 'success';
 
-      if (isPaystackSuccess) {
-        triggerSuccessFlow();
+      const reference = data?.reference || data?.trxref || data?.data?.reference;
+
+      if (isPaystackSuccess && reference) {
+        triggerSuccessFlow(String(reference));
       }
     };
 
-    // When the supporter finishes on Paystack and returns/focuses back on this tab
+    // Returning to this tab says nothing about whether money moved — the supporter is
+    // just as likely to have closed the gateway as to have paid. This used to declare
+    // success on any refocus, which is why cancelling showed "gift sent".
+    // Only clear the redirect spinner; the gateway's own redirect carries the reference
+    // and drives the real confirmation.
     const handleWindowFocusOrVisibility = () => {
-      try {
-        const raw = sessionStorage.getItem('pending_support_data');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          // If initiated within the last 15 minutes, trigger the success animation flow
-          if (parsed && (!parsed.initiatedAt || Date.now() - parsed.initiatedAt < 15 * 60 * 1000)) {
-            triggerSuccessFlow(parsed.reference);
-          }
-        }
-      } catch {}
+      setIsRedirectingToGateway(false);
     };
 
     window.addEventListener('message', handleMessage);
@@ -1079,6 +1126,17 @@ export default function SupportProfile() {
               >
                 Sending your {actionWord.toLowerCase()}...
               </motion.h3>
+            </div>
+          ) : paymentStatus === 'pending' ? (
+            <div className="fixed inset-0 z-[80] flex min-h-screen flex-col items-center justify-center gap-5 overflow-hidden bg-white px-6 text-center">
+              <Loader2 size={44} className="animate-spin text-gray-900" />
+              <h3 className="text-2xl md:text-3xl font-bold text-gray-900">
+                Confirming your {actionWord.toLowerCase()}
+              </h3>
+              <p className="max-w-sm text-sm leading-relaxed text-gray-500">
+                Bank transfers can take a few minutes to clear. You can close this page —
+                {' '}{profile?.full_name || 'the creator'} will see it as soon as it lands.
+              </p>
             </div>
           ) : paymentStatus === 'success' ? (
             <div className="relative z-[81] max-w-4xl mx-auto px-4 md:px-0 flex flex-col items-center justify-center text-center space-y-6 py-12">
