@@ -29,7 +29,10 @@ export default function PaystackCallback() {
                     const parsed = JSON.parse(pendingSupportRaw);
                     const targetUser = parsed.username || '';
                     if (targetUser) {
-                        navigate(`/support/${encodeURIComponent(targetUser)}?reference=${encodeURIComponent(reference)}&status=successful`, { replace: true });
+                        // Pass only the reference. Asserting `status=successful` here made
+                        // every return look like a paid gift, including cancellations —
+                        // the support page verifies the reference itself.
+                        navigate(`/support/${encodeURIComponent(targetUser)}?reference=${encodeURIComponent(reference)}`, { replace: true });
                         return;
                     }
                 }
@@ -41,7 +44,15 @@ export default function PaystackCallback() {
 
                 const verificationResult = await verifyPaymentRef(reference, isGuest);
 
-                if (verificationResult && verificationResult.status) {
+                // `status` only reports that the lookup succeeded — it stays true for
+                // references the gateway never collected. The transaction's own status
+                // (or an actual purchase record) is what says the money moved.
+                const transactionStatus = String(verificationResult?.transaction?.status || '').toLowerCase();
+                const paid =
+                    Boolean(verificationResult?.purchase) ||
+                    ['successful', 'success', 'completed', 'paid'].includes(transactionStatus);
+
+                if (paid) {
                     setStatus('success');
                     setMessage('Payment successful! Your tickets have been secured.');
                     toastSuccess('Payment successful!');
