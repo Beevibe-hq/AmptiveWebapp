@@ -325,6 +325,10 @@ export default function CheckoutPage() {
                 toastError('Your email is required for guest checkout.');
                 return;
             }
+            if (isGuest && !buyerName.trim()) {
+                toastError('Your name is required for guest checkout.');
+                return;
+            }
             const incomplete = attendees.some(a => !a.name.trim() || !a.email.trim());
             if (incomplete) {
                 toastError("Please fill in all attendee names and emails.");
@@ -540,12 +544,13 @@ export default function CheckoutPage() {
                         />
                     </div>
                     <div className="space-y-1.5">
-                        <label className="block text-sm font-medium text-gray-700">Full Name (Optional)</label>
+                        <label className="block text-sm font-medium text-gray-700">Full Name <span className="text-red-500">*</span></label>
                         <input
                             type="text"
                             value={buyerName}
                             onChange={(e) => setBuyerName(e.target.value)}
                             placeholder="Your full name"
+                            required
                             className="w-full h-10 rounded-[10px] border border-black/10 bg-transparent px-2.5 text-[15px] leading-[26px] text-gray-900 transition-colors placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-0"
                         />
                     </div>
@@ -835,6 +840,11 @@ export default function CheckoutPage() {
 
                             if (!email.trim()) {
                                 toastError('Add your email below first — that is where your tickets go.');
+                                document.getElementById('guest-contact')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                return;
+                            }
+                            if (!name.trim()) {
+                                toastError('Add your name below first.');
                                 document.getElementById('guest-contact')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                 return;
                             }
