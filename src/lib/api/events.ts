@@ -12,6 +12,8 @@ export interface StandaloneEvent {
   scheduled_for?: string | null;
   started_at?: string | null;
   ended_at?: string | null;
+  /** The planned end the host set. `ended_at` is when it actually ended. */
+  scheduled_end_at?: string | null;
   stream_url?: string | null;
   stream_key?: string | null;
   playback_url?: string | null;
@@ -55,6 +57,7 @@ export type EventTiming = {
   scheduled_for?: string | null;
   started_at?: string | null;
   ended_at?: string | null;
+  scheduled_end_at?: string | null;
   duration_seconds?: number | null;
 };
 
@@ -68,12 +71,15 @@ const toTime = (iso?: string | null): number => {
 const CLOSED_STATUSES = new Set(['ended', 'completed', 'cancelled', 'canceled', 'past', 'archived']);
 
 /**
- * When the event finishes, as a timestamp. An explicit `ended_at` wins; otherwise
- * the start plus its duration; otherwise the start itself. NaN when nothing is known.
+ * When the event finishes, as a timestamp. An actual `ended_at` wins, then the planned
+ * `scheduled_end_at`; otherwise the start plus its duration; otherwise the start itself.
+ * NaN when nothing is known.
  */
 export function getEventEndTime(event: EventTiming): number {
   const ended = toTime(event.ended_at);
   if (!Number.isNaN(ended)) return ended;
+  const planned = toTime(event.scheduled_end_at);
+  if (!Number.isNaN(planned)) return planned;
 
   const start = toTime(event.started_at ?? event.scheduled_for);
   if (Number.isNaN(start)) return Number.NaN;
@@ -113,7 +119,7 @@ export interface StandaloneEventCreateRequest {
   show_type: 'free' | 'paid';
   price?: number;
   scheduled_for?: string;
-  ended_at?: string;
+  scheduled_end_at?: string | null;
   community_id?: string;
   tag_ids?: string[];
   co_host_ids?: string[];
@@ -130,7 +136,8 @@ export interface StandaloneEventUpdateRequest {
   show_type?: 'free' | 'paid';
   price?: number;
   scheduled_for?: string;
-  ended_at?: string;
+  /** Omit to keep the saved end, null to clear it. */
+  scheduled_end_at?: string | null;
   community_id?: string;
   tag_ids?: string[];
   co_host_ids?: string[];

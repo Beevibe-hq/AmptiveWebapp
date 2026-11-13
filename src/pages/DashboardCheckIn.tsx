@@ -484,7 +484,7 @@ export default function DashboardCheckIn() {
                 const isStillOpen = (event: StandaloneEvent) => {
                     const end = getEventEndTime(event);
                     if (Number.isNaN(end)) return true; // no date: can't tell, keep it
-                    const grace = event.ended_at ? 2 * HOUR : 12 * HOUR;
+                    const grace = event.ended_at || event.scheduled_end_at ? 2 * HOUR : 12 * HOUR;
                     return end + grace > now;
                 };
                 const startOf = (event: StandaloneEvent) => new Date(event.started_at || event.scheduled_for || 0).getTime();

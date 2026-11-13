@@ -142,7 +142,7 @@ export default function CheckoutPage() {
                     id: eventData.event_id || '',
                     title: eventData.title || '',
                     start_time: eventData.scheduled_for || eventData.started_at || null,
-                    ended_at: eventData.ended_at || null,
+                    ended_at: eventData.ended_at || eventData.scheduled_end_at || null,
                     venue: eventData.location?.venue || null,
                     user_id: eventData.host?.user_id || null,
                     thumbnail_url: eventData.thumbnail_url || null,
