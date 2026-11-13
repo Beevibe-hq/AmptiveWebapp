@@ -1274,10 +1274,10 @@ export default function CheckoutPage() {
                                         {processing ? (
                                             <>
                                                 <Loader2 className="h-6 w-6 animate-spin" />
-                                                Authenticating...
+                                                {totalAmount === 0 ? 'Getting your ticket...' : 'Authenticating...'}
                                             </>
                                         ) : (
-                                            attendees.length >= 2 ? "Continue to Summary" : "Proceed to Payment"
+                                            attendees.length >= 2 ? "Continue to Summary" : totalAmount === 0 ? "Get Free Ticket" : "Proceed to Payment"
                                         )}
                                     </button>
                                 )}
@@ -1371,7 +1371,7 @@ export default function CheckoutPage() {
                                         {processing ? (
                                             <>
                                                 <Loader2 className="h-6 w-6 animate-spin" />
-                                                Processing Payment...
+                                                {totalAmount === 0 ? 'Getting your tickets...' : 'Processing Payment...'}
                                             </>
                                         ) : (
                                             totalAmount === 0 ? 'Confirm — Free' : `Confirm & Pay ${formatPrice(totalAmount)}`
