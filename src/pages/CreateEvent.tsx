@@ -727,7 +727,7 @@ const CreateEvent = () => {
           title: duplicateId ? `${event.title || 'Untitled event'} (copy)` : (event.title || ''),
           description: event.description || '',
           startDateTime: duplicateId ? '' : safeFormat(event.scheduled_for),
-          endDateTime: duplicateId ? '' : safeFormat(event.ended_at),
+          endDateTime: duplicateId ? '' : safeFormat(event.scheduled_end_at),
           coverImage: event.thumbnail_url || '',
           price: deriveEventPrice(tickets || []),
           tickets: (tickets || []).map(t => {
@@ -997,7 +997,8 @@ const CreateEvent = () => {
         show_type: form.showType,
         price: form.price,
         scheduled_for: startTime ? startTime.toISOString() : undefined,
-        ended_at: endTimeIso,
+        // On an edit, a cleared end is sent as null so the saved one is removed.
+        scheduled_end_at: endTimeIso ?? (id ? null : undefined),
         hand_raising: form.handRaising,
         allow_whispers: form.allowWhispers,
         community_id: form.communityId || undefined,
@@ -1019,7 +1020,7 @@ const CreateEvent = () => {
         // no draft flag. So a new draft is created without its dates, which keeps it in
         // DRAFT, and the dates are added by an update, which doesn't change the status.
         const createPayload = asDraft
-          ? { ...insertPayload, scheduled_for: undefined, ended_at: undefined }
+          ? { ...insertPayload, scheduled_for: undefined, scheduled_end_at: undefined }
           : insertPayload;
         const result = await createNewEvent(createPayload);
         if (!result.id) {
@@ -1027,10 +1028,10 @@ const CreateEvent = () => {
           return;
         }
         eventId = result.id;
-        if (asDraft && (insertPayload.scheduled_for || insertPayload.ended_at)) {
+        if (asDraft && (insertPayload.scheduled_for || insertPayload.scheduled_end_at)) {
           const dated = await updateEvent(eventId, {
             scheduled_for: insertPayload.scheduled_for,
-            ended_at: insertPayload.ended_at,
+            scheduled_end_at: insertPayload.scheduled_end_at,
           });
           if (!dated.ok) {
             console.error('Draft saved without its dates', dated.error);

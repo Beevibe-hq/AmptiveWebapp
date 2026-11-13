@@ -120,7 +120,7 @@ const mapStandaloneEvents = (
     .filter((e): e is StandaloneEvent & { event_id: string } => Boolean(e.event_id))
     .map((e) => {
       const startIso = e.scheduled_for ?? null;
-      const endIso = e.ended_at ?? null;
+      const endIso = e.ended_at ?? e.scheduled_end_at ?? null;
       const status = resolveEventStatus(startIso, endIso, now);
       const startTimeLabel = status === 'live' ? 'LIVE' : formatEventTimeLabel(startIso);
 

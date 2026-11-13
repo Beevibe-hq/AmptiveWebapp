@@ -333,6 +333,17 @@ const getLegacyLocationLabel = (event: StandaloneEvent) => {
 
 
 
+// The end time, with its date in front when the event runs past the day it starts.
+const formatEndTime = (startIso: string, endIso: string) => {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(end.getTime())) return '';
+  const time = end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return start.toDateString() === end.toDateString()
+    ? time
+    : `${end.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}, ${time}`;
+};
+
 const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
 
@@ -780,7 +791,7 @@ const EventDetail = () => {
                       </h3>
                       <p className="text-sm text-gray-500 mt-1">
                         {event.scheduled_for ? new Date(event.scheduled_for).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}
-                        {event.scheduled_for ? ` - ${new Date(event.scheduled_for).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}
+                        {event.scheduled_for && event.scheduled_end_at ? ` - ${formatEndTime(event.scheduled_for, event.scheduled_end_at)}` : ''}
                       </p>
                     </div>
                   </div>
