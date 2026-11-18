@@ -63,7 +63,8 @@ function Checkbox({ id, checked, onChange, children }: {
 }
 
 export default function CheckoutPage() {
-    const { id } = useParams<{ id: string }>();
+    // Trimmed: a link pasted with a trailing space carries it into the id.
+    const id = useParams<{ id: string }>().id?.trim();
     const navigate = useNavigate();
     const eventId = id;
 

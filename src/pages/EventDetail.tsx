@@ -345,7 +345,8 @@ const formatEndTime = (startIso: string, endIso: string) => {
 };
 
 const EventDetail = () => {
-  const { id } = useParams<{ id: string }>();
+  // Trimmed: a link pasted with a trailing space carries it into the id.
+  const id = useParams<{ id: string }>().id?.trim();
 
   const [event, setEvent] = useState<StandaloneEvent | null>(null);
   const [tickets, setTickets] = useState<EventTicket[]>([]);

@@ -120,6 +120,18 @@ async function ensureValidToken(): Promise<boolean> {
   return true;
 }
 
+/*
+ * IDs reach paths straight from the page address, and a link pasted with a trailing
+ * space (".../event/<id>%20") arrives as "<id> ", which sent "/events/<id> /list" to
+ * the backend. Trim whitespace from each path segment; the query string is untouched.
+ */
+function cleanPath(endpoint: string): string {
+  const queryStart = endpoint.indexOf('?');
+  const path = queryStart === -1 ? endpoint : endpoint.slice(0, queryStart);
+  const query = queryStart === -1 ? '' : endpoint.slice(queryStart);
+  return path.split('/').map(segment => segment.trim()).join('/') + query;
+}
+
 async function executeRequest<T>(
   endpoint: string,
   options: RequestInit & { skipAuth?: boolean; isFormData?: boolean } = {}
@@ -134,7 +146,7 @@ async function executeRequest<T>(
     }
   }
 
-  const url = `${API_BASE}${endpoint}`;
+  const url = `${API_BASE}${cleanPath(endpoint)}`;
   const headers = getAuthHeaders(isFormData);
 
   const response = await fetch(url, {
