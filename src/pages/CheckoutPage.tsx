@@ -480,7 +480,9 @@ export default function CheckoutPage() {
                     <div className="h-20 w-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <CheckCircle2 className="h-10 w-10 text-green-600" />
                     </div>
-                    <h2 className="text-3xl font-black text-gray-900">Payment Successful!</h2>
+                    <h2 className="text-3xl font-black text-gray-900">
+                        {totalAmount === 0 ? "You're in!" : 'Payment Successful!'}
+                    </h2>
                     <p className="text-gray-500 font-medium leading-relaxed">
                         {isGuest
                             ? `Your tickets have been sent to ${buyerEmail || 'your email'}.`
